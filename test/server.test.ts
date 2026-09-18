@@ -346,10 +346,23 @@ describe("jev provider", () => {
     expect(decision.usage?.costUsd).toBeCloseTo(0.0002, 9);
   });
 
-  it("holds fire when the trigger question is barely past even", async () => {
-    respond({ maneuver: choice("lag_pursuit"), commitment: score(2), power: score(3), fire: noul(0.52) });
-    const decision = await new JevProvider().decide(sampleObservation());
-    expect(decision.action.schema === "tactical" && decision.action.fire).toBe(false);
+  /**
+   * The trigger is asked strictly and answered generously, in that order.
+   *
+   * The question describes a shot worth firing, so the threshold sits below a
+   * half: there are five hundred rounds aboard and a gun solution lasts about a
+   * second. Demanding more than this fired seventy per cent less and hit
+   * nothing at all.
+   */
+  it("fires on a plausible solution and holds on a hopeless one", async () => {
+    const shot = { maneuver: choice("lag_pursuit"), commitment: score(2), power: score(3) };
+    respond({ ...shot, fire: noul(0.52) });
+    const fired = await new JevProvider().decide(sampleObservation());
+    expect(fired.action.schema === "tactical" && fired.action.fire).toBe(true);
+
+    respond({ ...shot, fire: noul(0.3) });
+    const held = await new JevProvider().decide(sampleObservation());
+    expect(held.action.schema === "tactical" && held.action.fire).toBe(false);
   });
 
   /**

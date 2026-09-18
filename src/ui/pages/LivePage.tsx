@@ -209,6 +209,10 @@ export function LivePage() {
           flying, how you are watching, and what to do now. Wrapped together as
           one row they read as a pile of controls. */}
       <footer className="controls">
+        {/* What the thing in your hands does, in the bar that chose it. It used
+            to be centred along the very bottom edge, where this bar -- also
+            centred, and taller -- covered it completely. */}
+        <div className="keymap">{KEYMAP[match.scheme]}</div>
         <div className="control-group">
         <label>
           You
@@ -350,7 +354,6 @@ export function LivePage() {
           inches from the one on the head-up display. */}
       <div className="flight-strip">
         <span id="flight-data">{followed ? followId.toUpperCase() : "STANDING BY"}</span>
-        <span className="keymap">{KEYMAP[match.scheme]}</span>
         <span id="event">{event}</span>
       </div>
 

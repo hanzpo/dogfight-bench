@@ -229,7 +229,16 @@ label { color: var(--text-muted); font-size: 11px; }
   pointer-events: none;
 }
 #event { color: var(--accent); }
-.keymap { flex: 1; text-align: center; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Anchored just above the bar it describes, and out of its layout: a full-width
+   child would have stretched a bar that is deliberately only as wide as its
+   contents across the whole window. */
+.keymap {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 9px);
+  text-align: center; color: var(--text-muted);
+  font: 11px/1 "JetBrains Mono";
+  /* It sits over the sky, which is pale, so it needs its own backing. */
+  text-shadow: 0 1px 5px #0c0d0f, 0 0 12px #0c0d0fcc;
+}
 
 /* Whether this match is going anywhere, said before it is flown rather than
    after, so nobody discovers their best fight was not recorded. */

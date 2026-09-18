@@ -206,8 +206,13 @@ export class JevProvider implements ModelProvider {
 
   constructor(
     options: ProviderOptions = {},
-    /** Fire only when the model is actually confident, not merely past a half. */
-    private readonly fireConfidence = 0.6,
+    /**
+     * How sure the trigger has to be.
+     *
+     * Below a half, because the question is asked strictly and the cost of
+     * being wrong runs one way: see the criteria.
+     */
+    private readonly fireConfidence = 0.45,
     /**
      * Below this, the previous manoeuvre is held.
      *
@@ -230,7 +235,7 @@ export class JevProvider implements ModelProvider {
       name: `jev/${this.model}`,
       provider: "jev",
       model: this.model,
-      policyVersion: "primitives-2",
+      policyVersion: "primitives-3",
       schema: "tactical",
     };
   }
@@ -270,17 +275,24 @@ export class JevProvider implements ModelProvider {
             type: "noul",
             instructions: "Would a burst fired this instant hit the bandit?",
             /**
-             * Named against the number the state already reports.
+             * Named against the number the state already reports, and scaled to
+             * what a burst is actually worth.
              *
              * Asked in the abstract -- "is the aim good?" -- this returned
-             * fifteen per cent on shots that would pass two kilometres wide and
-             * thirty-eight on ones that would hit, which is not a trigger. The
-             * predicted miss distance is in the briefing with the threshold
-             * beside it, so the question may as well point at it.
+             * fifteen per cent on shots that would pass two kilometres wide, so
+             * the question points at the predicted miss distance, which is in
+             * the briefing with its threshold beside it.
+             *
+             * Demanding an exact solution was worse than demanding nothing.
+             * Measured over six matches it cut the rounds fired by seventy per
+             * cent and the hits to none, while the looser question was hitting
+             * with one round in five. The economics are not symmetric: there
+             * are five hundred rounds aboard and a wasted burst costs nothing,
+             * while a gun solution lasts about a second and never comes back.
              */
             criteria: {
-              true: "The predicted miss distance is under fifteen metres and the rounds are still lethal at that range. The burst arrives where the bandit will be.",
-              false: "The predicted miss distance is tens of metres or more, or the bandit is beyond lethal range. The burst arrives where the bandit is not.",
+              true: "A burst now would be worth firing: the predicted miss is within a few tens of metres and the rounds are still lethal at that range.",
+              false: "A burst now would be thrown away: the predicted miss is hundreds of metres, or the bandit is far beyond lethal range.",
             },
           },
         },
