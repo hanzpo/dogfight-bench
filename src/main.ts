@@ -18,7 +18,7 @@ app.innerHTML = `
     <label>BLUE PILOT <select id="blue-pilot"><option value="human">HUMAN</option><option value="basic">BASELINE AI</option></select></label>
     <button id="follow">FOLLOW RED</button>
     <button id="pause">PAUSE</button>
-    <button id="speed">1× REALTIME</button>
+    <label>SPEED <select id="speed"><option value="1">1× REALTIME</option><option value="4">4× ACCELERATED</option><option value="16">16× ACCELERATED</option></select></label>
     <button id="restart">RESTART MATCH</button>
     <button id="replay">SAVE REPLAY</button>
   </footer>
@@ -70,14 +70,15 @@ addEventListener("keydown", (event) => {
 addEventListener("keyup", (event) => keys.delete(event.code));
 
 document.querySelector("#pause")!.addEventListener("click", () => { paused = !paused; });
-document.querySelector("#speed")!.addEventListener("click", () => {
-  timeScale = timeScale === 1 ? 4 : timeScale === 4 ? 16 : 1;
+document.querySelector("#speed")!.addEventListener("change", (event) => {
+  timeScale = Number((event.target as HTMLSelectElement).value);
 });
 document.querySelector("#restart")!.addEventListener("click", reset);
 document.querySelector("#blue-pilot")!.addEventListener("change", reset);
 document.querySelector("#follow")!.addEventListener("click", () => {
   followRed = !followRed;
   viewer.setFollow(followRed ? "red-1" : "blue-1");
+  text("follow", followRed ? "FOLLOW BLUE" : "FOLLOW RED");
 });
 document.querySelector("#replay")!.addEventListener("click", () => {
   const url = URL.createObjectURL(recorder.toBlob());
@@ -95,8 +96,14 @@ function updateHud(): void {
   const followed = followRed ? red : blue;
   text("flight-data", `${followed.team.toUpperCase()} · ${Math.round(followed.velocity.length() * 1.94384)} KT · ${Math.round(followed.position.y * 3.28084).toLocaleString()} FT · ${followed.ammo} ROUNDS`);
   text("run-status", simulation.state.finished ? "COMPLETE" : paused ? "PAUSED" : "LIVE");
-  text("speed", `${timeScale}× ${timeScale === 1 ? "REALTIME" : "ACCELERATED"}`);
+  (document.querySelector("#speed") as HTMLSelectElement).value = String(timeScale);
   text("pause", paused ? "RESUME" : "PAUSE");
+  app.dataset.simStatus = simulation.state.finished ? "complete" : paused ? "paused" : "running";
+  app.dataset.simTime = simulation.state.time.toFixed(3);
+  app.dataset.follow = followRed ? "red-1" : "blue-1";
+  app.dataset.timeScale = String(timeScale);
+  app.dataset.bluePilot = (document.querySelector("#blue-pilot") as HTMLSelectElement).value;
+  app.dataset.camera = viewer.camera.position.toArray().map((value) => value.toFixed(3)).join(",");
   const latest = simulation.state.events.at(-1);
   text("event", simulation.state.finished
     ? `${simulation.state.winnerId?.toUpperCase() ?? "DRAW"} · ${simulation.state.finishReason}`

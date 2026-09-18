@@ -89,7 +89,7 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 .keymap {
   position: fixed;
   left: 20px;
-  bottom: 20px;
+  top: 82px;
   color: #d8e5e077;
   font: 8px "JetBrains Mono";
   letter-spacing: .08em;
