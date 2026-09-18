@@ -20,7 +20,10 @@ Then open the viewer. Nothing needs an API key until you want a model to fly.
 | `src/sim/` | The simulation: 6-DOF flight model, ballistics, damage, scoring |
 | `src/agents/` | The action schema, the tactical autopilot, scripted baselines |
 | `src/ui/` | React viewer, flight display, leaderboard, match history, replay |
-| `server/` | Provider adapters, match runner, SQLite results, HTTP API |
+| `src/ui/input/` | Keyboard, mouse-as-joystick and gamepad, behind one interface |
+| `server/` | Provider adapters, match runner, accounts, HTTP API |
+| `server/store/` | Results: SQLite locally, Supabase when deployed |
+| `supabase/` | Schema migrations and project config |
 | `test/` | Envelope validation, conventions, ballistics, agents, replays |
 | `tools/ui-check/` | Playwright browser check (Chromium + WebKit, 1x and 2x) |
 | `tools/browser-feedback/` | Jev-driven agentic browser test loop |
@@ -145,6 +148,31 @@ Decisions have a wall-clock deadline and an inference budget. A model that
 misses its deadline holds its last command and is charged a timeout; one that
 blows its budget forfeits. Every decision is priced as it happens.
 
+### Who pays
+
+Whose credit is being spent decides who may ask for a decision.
+
+One provider is offered on the deployment's own credentials, so anybody can fly
+against a real model without an account or a key. That tier is protected by a
+daily cap in both dollars and decisions, kept in the database rather than in
+memory -- a process that restarts on every deploy would otherwise hand the
+internet a fresh budget each time -- with a small per-address burst limit in
+front of it so one runaway tab cannot spend the day before anyone else gets a
+turn. `DOGFIGHT_PUBLIC_PROVIDERS` chooses which, and it defaults to `jev`.
+
+Every other model runs on a key the person supplies, entered under **Model
+keys** in the viewer. The key goes to this application's own server, is used for
+exactly one upstream call, and is dropped: never written to the database, never
+logged, and scrubbed out of any error text on the way back. Where it is kept in
+the browser is the person's choice and the panel says what each option costs --
+this tab only, which forgets, or remembered on the device, which survives a
+restart and is readable by anything that ever runs on the origin.
+
+On the live page a model is asked for a decision once a second rather than four
+times, which is what the tactical schema is built for: the autopilot flies the
+standing order continuously in between. Four a second is twelve hundred calls in
+one match, which is a day's shared allowance in a single sitting.
+
 ## The display
 
 The interface is split along one line: what a pilot could actually see, and
@@ -174,9 +202,45 @@ three cloud decks, because altitude over featureless ground is unreadable.
 Water is a floor rather than a hole: sea level is as low as anything flies.
 
 **Observer panel** is everything else -- angle off the bandit's tail, the energy
-ledger, predicted miss distance, their fuel and damage. None of that is on an
-instrument in any cockpit, so it is presented as data: one plain monospace
-block, in one place, with none of the head-up display's styling.
+ledger, predicted miss distance, their fuel and damage, and where the ground is.
+None of that is on an instrument in any cockpit, so it is presented as data: one
+plain monospace block, in one place, with none of the head-up display's styling.
+
+When a model is flying, the panel leads with its last decision. For a model that
+reports calibrated probabilities the whole distribution is drawn, not just the
+winner: lead pursuit at 0.54 against a field of twelve is a different claim from
+lead pursuit at 0.94, and showing only the choice cannot tell them apart.
+
+Everything that is not flight instrumentation -- the leaderboard, the match
+history, the replay library, the panels -- is set as what it is: a research tool
+that happens to contain a flight simulator. Neutral greys, one accent, sentence
+case, type meant to be read. The two visual languages are kept apart on purpose;
+mixing them makes an interface feel like a costume.
+
+## Flying it yourself
+
+| | |
+|---|---|
+| Keyboard | `W` push, `S` pull, `A`/`D` roll, `Q`/`E` rudder, `R`/`F` throttle, `Space` fire |
+| Mouse | The pointer is the stick. Left button fires, right-drag looks around, the wheel zooms. |
+| Gamepad | Right stick flies, left stick is rudder, triggers are the throttle, `RB` or `A` fires. |
+
+The mouse has two modes and the page says which one is live. With the pointer
+captured it is *relative*: movement accumulates into a stick that stays where it
+is put, which is what a real stick does and what makes a sustained turn possible
+without holding the mouse at the edge of the mat. Pointer lock is refused in
+embedded frames, some locked-down browsers and every automated one, so there is
+a second mode that needs no permission at all -- deflection taken from how far
+the cursor sits from the centre of the viewport. Both drive the same stick.
+
+Looking around gets its own button because the left one is the trigger. It is
+handled directly rather than through the camera controls, because a captured
+pointer reports movement but never changes its coordinates, which is all those
+controls look at.
+
+The head-up display carries a control-position indicator driven by what the
+aircraft is being commanded to do rather than by the device in your hand, so it
+reads the same whether a person, an autopilot or a model is flying.
 
 ## Telemetry
 
@@ -207,6 +271,45 @@ Playback shows the same instruments the pilot had, reconstructed from recorded
 state, so a decision can be judged against what was actually on the display
 rather than guessed at from outside.
 
+## Accounts and the leaderboard
+
+Rating is Elo, and everything that flies holds one: models, scripted baselines
+and people, on the same scale and against the same opponents. That is the point
+of a crowdsourced board -- two people beating the same model must cost it twice,
+which only works because a model is one competitor rather than one per opponent.
+The board shows models by default, because "which model flies best" is the
+question the benchmark exists to answer; people are a tab away.
+
+A model's identity is provider, model and *policy version* together. Changing
+the prompt starts a new entrant instead of inheriting the old one's rating,
+because it is a different player.
+
+Signing in is optional. Without it the simulator, the baselines and the free
+model all work; an account is what makes a result count and keeps the replay.
+Guests are rated and their wins still cost their opponent -- refusing that would
+let a model farm guests for free -- but they are left off the visible board,
+because one person with a fresh guest session each time would otherwise be the
+whole leaderboard.
+
+### How much a reported result is worth
+
+A result flown in a browser is a claim, not a fact, and the code says so rather
+than pretending otherwise.
+
+The server issues a ticket when a match starts and counts the decisions it
+serves against it, so nobody can report a win over a model it never called, and
+a match can only be reported once. Against a scripted opponent there is nothing
+to count, so the only honest check left is the clock: a match cannot be reported
+sooner than it could have been flown at the fastest speed the page offers.
+
+What none of that catches is somebody flying a real match and lying about who
+won. A live match is not reproducible by construction -- a decision is applied
+whenever the network returns it, so the same log does not replay tick for tick
+-- so the match is recorded with `verified` set to what was actually checked,
+and the replay is kept so a result can be audited. Matches run by the server
+itself (`npm run bench`) *are* reproducible from their decision log and are
+marked accordingly.
+
 ## Deploying
 
 The server serves the built viewer, so a deployment is one process:
@@ -216,24 +319,48 @@ npm ci && npm run build
 DOGFIGHT_API_TOKEN=$(openssl rand -hex 24) \
 DOGFIGHT_DB=/data/dogfight.sqlite \
 HOST=0.0.0.0 PORT=8787 \
-ANTHROPIC_API_KEY=... \
+TYPESAFE_API_KEY=... \
 npm run server
 ```
 
+Copy `.env.example` to `.env` and the scripts will read it.
+
 | Variable | Why it matters |
 |---|---|
-| `DOGFIGHT_API_TOKEN` | Required to expose `/api/decide` and `/api/matches` off localhost. Without it those endpoints refuse to serve, because they spend provider credits on this server's keys. |
-| `DOGFIGHT_DB` | Point at a writable volume, or results vanish on redeploy. |
+| `DOGFIGHT_API_TOKEN` | Required to run a benchmark series (`POST /api/matches`) off localhost. That endpoint queues unbounded paid work on this server's keys. |
+| `DOGFIGHT_PUBLIC_PROVIDERS` | Which providers anyone may use with no key. Defaults to `jev`. Adding a provider here offers its credential to the internet, up to the cap. |
+| `DOGFIGHT_PUBLIC_DAILY_USD` | What that free tier may spend in a day, across everybody. Defaults to 5. |
+| `DOGFIGHT_ALLOW_CALLER_KEYS` | Set `false` to refuse caller-supplied keys entirely. |
+| `DOGFIGHT_DB` | SQLite path. Point at a writable volume, or results vanish on redeploy. Ignored when Supabase is configured. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Switches results to Postgres and replays to object storage. The service role key bypasses row level security, so it belongs only here. |
+| `SUPABASE_ANON_KEY` | Used to verify a caller's access token. Public by design. |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Build-time, compiled into the bundle. Only put values here that are public by design; a provider key never is. |
 | `DOGFIGHT_ALLOWED_ORIGINS` | Only needed to allow another origin to call the API. Off by default. |
 | `HOST` | Defaults to `127.0.0.1`. Binding wider is what makes the server "exposed". |
-| `DOGFIGHT_MAX_ROUNDS` | Ceiling on matches per `/api/matches` request. |
 
-The leaderboard, match history and replays are public and read-only. The two
-endpoints that call paid providers are not, and the server will tell you at
-startup if it is exposed with providers configured and no token set.
+The leaderboard, match history and replays are public and read-only. Nothing in
+the browser can write to them: the server holds the only credential that can,
+and the tables have row level security with select-only policies.
 
-Two things it does not do: terminate TLS, or authenticate individual users. Put
-it behind a reverse proxy if either matters.
+### Supabase
+
+Schema lives in `supabase/migrations/` and is applied with `supabase db push`.
+It creates `competitors`, `matches`, `participants`, `public_usage` and
+`live_matches`, a private `replays` storage bucket, and the functions that
+record a match and settle a ticket. Recording is a single database function on
+purpose: Elo is a read-modify-write on two rows, and two matches finishing at
+the same moment would otherwise overwrite each other.
+
+**Still to do by hand, because it needs credentials this repository must not
+hold:** Google and GitHub sign-in are wired up in the UI but disabled on the
+project. Create an OAuth app with each, then in the Supabase dashboard under
+Authentication → Providers paste the client ID and secret and enable them. The
+callback URL is `https://<project>.supabase.co/auth/v1/callback`. Add the
+deployed origin to Authentication → URL Configuration. Anonymous sign-in and the
+redirect URLs are already enabled via `supabase/config.toml`.
+
+Two things the server does not do: terminate TLS, or rate limit per account
+beyond the shared daily cap. Put it behind a reverse proxy if either matters.
 
 ## Checks
 
@@ -250,6 +377,15 @@ This is deliberate. A camera regression once shipped after being "verified"
 against a paused, narrow, non-default view in one engine at one pixel ratio;
 the aircraft ended up clipped into the corner on a real Retina display and only
 a user's screenshot caught it.
+
+It has grown to cover the things that kept breaking silently: instrument
+positions (a heading scale once drew half a screen right of its own readout
+while every assertion passed, because only the readout was measured), the whole
+sign-in-and-fly-a-ranked-match flow, mouse control and right-drag look, and a
+budget on triangles and draw calls so a scene change cannot quietly double what
+every frame costs. The account flow creates a guest on the real project, so it
+runs at pixel ratio 1 only and honours `UI_CHECK_SKIP_ACCOUNT=1`. The
+calibrated-probability check skips itself when there is no credential.
 
 `tools/browser-feedback/` is a separate, agentic loop: Jev drives the real
 controls and the harness then verifies the resulting state independently. It
@@ -296,9 +432,21 @@ Measured over twelve matches, both sides of every seeded scenario:
 - `energy-fighter` is a rule-based pilot, not a good one. It is the floor a
   model has to clear, and the benchmark has not yet been calibrated against a
   strong model.
-- The Anthropic and OpenAI adapters are unit-tested against a mocked transport
-  but have not been exercised against a live endpoint here; the Jev adapter
-  has.
+- The Anthropic adapter is unit-tested against a mocked transport but has never
+  been exercised against a live endpoint here. The OpenAI adapter has been
+  driven end to end far enough to prove the caller-key path reaches the provider
+  and is rejected for a bad key, which is not the same as a flown match. The Jev
+  adapter has been exercised live, including in a match.
+- Google and GitHub sign-in are wired up but need OAuth apps and their secrets
+  pasted into the Supabase dashboard. Anonymous sign-in works today.
+- The Supabase results store is written against the schema in
+  `supabase/migrations/`, which is applied and was exercised directly against
+  the database, but the server has not run with a service role key here, so that
+  path is unproven end to end. Without those variables everything falls back to
+  SQLite, which is fully tested.
+- A result flown in a browser cannot be verified by re-simulation, because a
+  live match is not deterministic by construction. See *How much a reported
+  result is worth*.
 - Scoring beyond survival is simple: damage, gun time, control-zone time. It
   has not been tuned against human judgement of who actually won.
 - No missiles, no countermeasures, no wingmen, no loadout.
