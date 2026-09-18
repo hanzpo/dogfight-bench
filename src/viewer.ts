@@ -2,7 +2,15 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { NOZZLE } from "./sim/config";
-import { SEA_LEVEL_M, TERRAIN_EXTENT_M, elevationNormal, terrainElevation, terrainHeight } from "./sim/terrain";
+import {
+  SEA_LEVEL_M,
+  TERRAIN_CHUNKS,
+  TERRAIN_CHUNK_SEGMENTS,
+  TERRAIN_EXTENT_M,
+  elevationNormal,
+  terrainElevation,
+  terrainHeight,
+} from "./sim/terrain";
 import { TRACER_TRAIL_SECONDS } from "./sim/tracer";
 import type { MatchState } from "./sim/types";
 
@@ -512,8 +520,9 @@ export class DogfightViewer {
      * reaches the GPU, and costs only the extra draw calls for the chunks that
      * survive.
      */
-    const chunksPerSide = 8;
-    const segmentsPerChunk = 38;
+    // Shared with the simulation, which collides with exactly these triangles.
+    const chunksPerSide = TERRAIN_CHUNKS;
+    const segmentsPerChunk = TERRAIN_CHUNK_SEGMENTS;
     const chunkExtent = TERRAIN_EXTENT_M / chunksPerSide;
     for (let row = 0; row < chunksPerSide; row += 1) {
       for (let column = 0; column < chunksPerSide; column += 1) {

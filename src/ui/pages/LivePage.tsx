@@ -10,6 +10,7 @@ import { FlightDisplay } from "../components/FlightDisplay";
 import { DetailsPanel } from "../components/DetailsPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
+import { OPEN_ACCOUNT_MENU } from "../components/AccountMenu";
 import { ModelKeysPanel } from "../components/ModelKeysPanel";
 import { useLiveMatch, type PilotChoice } from "../hooks/useLiveMatch";
 import { useRoster } from "../hooks/useRoster";
@@ -350,16 +351,34 @@ export function LivePage() {
       </div>
 
       {match.recording.status !== "idle" ? (
-        <div className={`recording recording-${match.recording.status}`} role="status">
-          <span className="recording-dot" />
-          <span>
-            {match.recording.status === "ranked"
+        (() => {
+          const label =
+            match.recording.status === "ranked"
               ? "Ranked"
               : match.recording.status === "saving"
                 ? "Saving…"
-                : (match.recording.message ?? "Not recorded")}
-          </span>
-        </div>
+                : (match.recording.message ?? "Not recorded");
+          // When it is telling you to sign in, it is also the way to.
+          const opensSignIn = label.includes("sign in");
+          const body = (
+            <>
+              <span className="recording-dot" />
+              <span>{label}</span>
+            </>
+          );
+          return opensSignIn ? (
+            <button
+              className={`recording recording-${match.recording.status}`}
+              onClick={() => dispatchEvent(new Event(OPEN_ACCOUNT_MENU))}
+            >
+              {body}
+            </button>
+          ) : (
+            <div className={`recording recording-${match.recording.status}`} role="status">
+              {body}
+            </div>
+          );
+        })()
       ) : null}
 
       {decisionError ? (

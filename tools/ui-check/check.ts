@@ -287,7 +287,20 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
       await page.click("#pause");
     }
 
-    await signIn.click();
+    /**
+     * The notice that says a match will not count is also the way to fix it.
+     * Telling somebody to sign in and then making them hunt the corner for the
+     * control is most of the reason nobody does.
+     */
+    const notice = page.locator("button.recording");
+    check((await notice.count()) === 1, "the 'not counted' notice is something you can act on");
+    if (await notice.count()) {
+      await notice.click();
+      await page.waitForTimeout(400);
+      check((await page.locator(".account-menu").count()) === 1, "it opens the sign-in menu");
+    } else {
+      await signIn.click();
+    }
     await page.getByRole("button", { name: "Play as a guest" }).click();
     await page.waitForTimeout(2_500);
     const chip = (await page.locator(".account-chip").first().textContent())?.trim();

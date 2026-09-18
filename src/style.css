@@ -242,7 +242,9 @@ label { color: var(--text-muted); font-size: 11px; }
   font-size: 12px; color: var(--text-muted);
   box-shadow: 0 6px 20px #00000044;
 }
-.recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
+button.recording { cursor: pointer; }
+button.recording:hover { border-color: var(--line-strong); color: var(--text); background: var(--surface-raised); }
 .recording-ranked .recording-dot { background: var(--good); }
 .recording-saving .recording-dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
 .recording-saved .recording-dot { background: var(--accent); }

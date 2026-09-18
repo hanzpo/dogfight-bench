@@ -9,6 +9,24 @@
 
 export const TERRAIN_EXTENT_M = 80_000;
 
+/**
+ * The ground is a heightfield, not a formula.
+ *
+ * The noise below generates the vertices; the surface is the triangles between
+ * them. That distinction is the whole point: the renderer can only draw
+ * triangles, so if the simulation collided with the underlying formula instead,
+ * the two would disagree wherever the real surface bulges above the flat
+ * triangle spanning it -- by up to 183 metres, measured, on a steep ridge. A
+ * pilot judges clearance by what is on the screen, and would fly visibly clear
+ * of a ridge and hit nothing at all.
+ *
+ * So these are shared with the renderer, which must build its mesh on exactly
+ * this grid, and the sampling below reproduces exactly its triangles.
+ */
+export const TERRAIN_CHUNKS = 8;
+export const TERRAIN_CHUNK_SEGMENTS = 38;
+export const TERRAIN_GRID_STEP_M = TERRAIN_EXTENT_M / (TERRAIN_CHUNKS * TERRAIN_CHUNK_SEGMENTS);
+
 /** Elevations below this are sea; the surface is drawn and flown as water. */
 export const SEA_LEVEL_M = 0;
 
@@ -98,17 +116,52 @@ export function terrainElevation(x: number, z: number): number {
 }
 
 /**
+ * Elevation of the drawn surface: the triangle, not the formula.
+ *
+ * `PlaneGeometry` splits every quad along the anti-diagonal -- the first
+ * triangle is the corner nearest the grid origin, the second the corner
+ * furthest from it -- so the point is interpolated over whichever of the two it
+ * actually falls in. Outside the meshed extent there are no triangles, and
+ * nothing can fly that far out anyway, so the formula stands in.
+ */
+export function sampledElevation(x: number, z: number): number {
+  const half = TERRAIN_EXTENT_M / 2;
+  if (x < -half || x >= half || z < -half || z >= half) return terrainElevation(x, z);
+
+  const step = TERRAIN_GRID_STEP_M;
+  const gridX = Math.floor((x + half) / step) * step - half;
+  const gridZ = Math.floor((z + half) / step) * step - half;
+  const fx = (x - gridX) / step;
+  const fz = (z - gridZ) / step;
+
+  if (fx + fz <= 1) {
+    const origin = terrainElevation(gridX, gridZ);
+    return (
+      origin +
+      (terrainElevation(gridX + step, gridZ) - origin) * fx +
+      (terrainElevation(gridX, gridZ + step) - origin) * fz
+    );
+  }
+  const far = terrainElevation(gridX + step, gridZ + step);
+  return (
+    far +
+    (terrainElevation(gridX, gridZ + step) - far) * (1 - fx) +
+    (terrainElevation(gridX + step, gridZ) - far) * (1 - fz)
+  );
+}
+
+/**
  * Surface the aircraft collides with.
  *
  * Water is a floor, not a hole: sea level is as low as anything flies, and
  * hitting it is hitting the ground.
  */
 export function terrainHeight(x: number, z: number): number {
-  return Math.max(terrainElevation(x, z), SEA_LEVEL_M);
+  return Math.max(sampledElevation(x, z), SEA_LEVEL_M);
 }
 
 export function isWater(x: number, z: number): boolean {
-  return terrainElevation(x, z) < SEA_LEVEL_M;
+  return sampledElevation(x, z) < SEA_LEVEL_M;
 }
 
 /**

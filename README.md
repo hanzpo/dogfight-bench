@@ -5,7 +5,7 @@ sides get perfect-information telemetry, the same airframe and the same flight
 control system; the only thing measured is the quality of the decisions. You can
 fly against them yourself.
 
-**Live: https://dogfight-bench.hanznathanpo.workers.dev**
+**Live: https://dogfight.hanzpo.com**
 
 ```bash
 npm install
