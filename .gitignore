@@ -13,3 +13,4 @@ artifacts/browser-feedback/
 # Local benchmark database
 data/
 .scratch/
+artifacts/ui-check/

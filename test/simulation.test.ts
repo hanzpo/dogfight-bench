@@ -153,3 +153,30 @@ describe("gun solution reporting", () => {
     }
   });
 });
+
+describe("relative geometry", () => {
+  it("reports 180 degrees off the tail at a head-on merge", () => {
+    const sim = new DogfightSimulation(neutralMerge);
+    const relative = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
+    // Nose to nose: as far from their six o'clock as it is possible to be.
+    expect(relative.angleOffTailDeg).toBeGreaterThan(175);
+    // And they are directly in front of us.
+    expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
+  });
+
+  it("reports 0 degrees off the tail from directly behind", () => {
+    const sim = new DogfightSimulation(neutralMerge);
+    const [blue, red] = sim.state.aircraft;
+    // Put blue on red's tail, both pointing the same way.
+    red!.orientation.copy(blue!.orientation);
+    red!.velocity.copy(blue!.velocity);
+    red!.position.copy(blue!.position).addScaledVector(blue!.velocity.clone().normalize(), 600);
+
+    const relative = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
+    expect(relative.angleOffTailDeg).toBeLessThan(5);
+    expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
+
+    // And the mirror: red sees blue at its six, far off its own tail angle.
+    expect(observationFor(sim.state, "red-1", neutralMerge, 0).relative.angleOffTailDeg).toBeGreaterThan(175);
+  });
+});

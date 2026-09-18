@@ -121,7 +121,14 @@ export interface RelativeTelemetry {
   /** Where the opponent is, relative to our nose. */
   bearingDeg: number;
   elevationDeg: number;
-  /** Angle between the opponent's tail and our position: 0 is directly behind. */
+  /**
+   * Angle off the opponent's tail: 0 means we are at their six o'clock, 180
+   * means we are nose to nose.
+   *
+   * This is the angle between where their nose points and the direction from
+   * them to us -- not the reverse, which inverts the whole measurement and
+   * tells an agent it is winning at the merge.
+   */
   angleOffTailDeg: number;
   /** Angle between our nose and the opponent: 0 is pointing straight at them. */
   antennaTrainAngleDeg: number;
@@ -328,8 +335,7 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     closureRateMps: -relativeVelocity.dot(lineOfSight),
     bearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     elevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
-    angleOffTailDeg:
-      (Math.acos(Math.max(-1, Math.min(1, opponentNose.dot(lineOfSight.clone().negate())))) * 180) / Math.PI,
+    angleOffTailDeg: (Math.acos(Math.max(-1, Math.min(1, opponentNose.dot(lineOfSight)))) * 180) / Math.PI,
     antennaTrainAngleDeg: (Math.acos(Math.max(-1, Math.min(1, axes.nose.dot(lineOfSight)))) * 180) / Math.PI,
     lineOfSightRateDegS: (lineOfSightRate * 180) / Math.PI,
     energyAdvantageM: ownEnergy - opponentEnergy,

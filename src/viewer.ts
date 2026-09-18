@@ -4,6 +4,47 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TERRAIN_EXTENT_M, terrainHeight } from "./sim/terrain";
 import type { MatchState } from "./sim/types";
 
+/**
+ * What the renderer needs to draw a moment of a match.
+ *
+ * Live play and replay playback both produce this, so there is one renderer
+ * rather than two that drift apart.
+ */
+export interface ViewerAircraft {
+  id: string;
+  team: "blue" | "red";
+  position: [number, number, number];
+  orientation: [number, number, number, number];
+  alive: boolean;
+}
+
+export interface ViewerTracer {
+  p: [number, number, number];
+  /** Direction of travel. Absent in replays, which store positions only. */
+  d?: [number, number, number];
+}
+
+export interface ViewerSnapshot {
+  aircraft: ViewerAircraft[];
+  tracers: ViewerTracer[];
+}
+
+export function snapshotFromMatch(state: MatchState): ViewerSnapshot {
+  return {
+    aircraft: state.aircraft.map((aircraft) => ({
+      id: aircraft.id,
+      team: aircraft.team,
+      position: aircraft.position.toArray() as [number, number, number],
+      orientation: aircraft.orientation.toArray() as [number, number, number, number],
+      alive: aircraft.alive,
+    })),
+    tracers: state.projectiles.slice(-400).map((shot) => ({
+      p: shot.position.toArray() as [number, number, number],
+      d: shot.velocity.clone().normalize().toArray() as [number, number, number],
+    })),
+  };
+}
+
 export class DogfightViewer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -12,9 +53,15 @@ export class DogfightViewer {
   private readonly aircraftMeshes = new Map<string, THREE.Object3D>();
   private readonly projectileGroup = new THREE.Group();
   private modelTemplate?: THREE.Object3D;
-  private readonly modelCenter = new THREE.Vector3();
   private followId = "blue-1";
+  private readonly tracerMaterial = new THREE.LineBasicMaterial({
+    color: 0xffd66b,
+    transparent: true,
+    opacity: 0.9,
+  });
   private cameraInitialized = false;
+
+  private readonly onResize = () => this.resize();
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -44,13 +91,12 @@ export class DogfightViewer {
     this.scene.add(this.projectileGroup);
     this.createTerrain();
     this.resize();
-    addEventListener("resize", () => this.resize());
+    addEventListener("resize", this.onResize);
   }
 
   async loadAircraft(url = "/F16_Clean.glb"): Promise<void> {
     const gltf = await new GLTFLoader().loadAsync(url);
     this.modelTemplate = gltf.scene;
-    new THREE.Box3().setFromObject(gltf.scene).getCenter(this.modelCenter);
   }
 
   setFollow(id: string): void {
@@ -85,9 +131,9 @@ export class DogfightViewer {
     this.scene.add(grid);
   }
 
-  private ensureAircraft(state: MatchState): void {
+  private ensureAircraft(snapshot: ViewerSnapshot): void {
     if (!this.modelTemplate) return;
-    for (const aircraft of state.aircraft) {
+    for (const aircraft of snapshot.aircraft) {
       if (this.aircraftMeshes.has(aircraft.id)) continue;
       const mesh = this.modelTemplate.clone(true);
       mesh.name = aircraft.id;
@@ -107,32 +153,37 @@ export class DogfightViewer {
     }
   }
 
-  render(state: MatchState): void {
-    this.ensureAircraft(state);
-    for (const aircraft of state.aircraft) {
+  render(snapshot: ViewerSnapshot): void {
+    this.ensureAircraft(snapshot);
+    for (const aircraft of snapshot.aircraft) {
       const mesh = this.aircraftMeshes.get(aircraft.id);
       if (!mesh) continue;
-      mesh.position.copy(aircraft.position);
-      mesh.quaternion.copy(aircraft.orientation);
+      mesh.position.fromArray(aircraft.position);
+      mesh.quaternion.fromArray(aircraft.orientation);
       mesh.visible = aircraft.alive;
     }
 
     this.projectileGroup.clear();
-    const material = new THREE.LineBasicMaterial({ color: 0xffd66b, transparent: true, opacity: 0.9 });
-    for (const p of state.projectiles.slice(-350)) {
-      const back = p.velocity.clone().normalize().multiplyScalar(-22).add(p.position);
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([back, p.position]), material);
-      this.projectileGroup.add(line);
+    for (const tracer of snapshot.tracers) {
+      const head = new THREE.Vector3().fromArray(tracer.p);
+      const tail = tracer.d
+        ? head.clone().addScaledVector(new THREE.Vector3().fromArray(tracer.d), -26)
+        : head.clone().addScaledVector(new THREE.Vector3(0, 1, 0), -3);
+      this.projectileGroup.add(
+        new THREE.Line(new THREE.BufferGeometry().setFromPoints([tail, head]), this.tracerMaterial),
+      );
     }
 
-    const follow = state.aircraft.find((a) => a.id === this.followId) ?? state.aircraft[0];
+    const follow =
+      snapshot.aircraft.find((aircraft) => aircraft.id === this.followId) ?? snapshot.aircraft[0];
     if (follow) {
       const followMesh = this.aircraftMeshes.get(follow.id);
       const target = followMesh
         ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
-        : this.modelCenter.clone().applyQuaternion(follow.orientation).add(follow.position);
+        : new THREE.Vector3().fromArray(follow.position);
       if (!this.cameraInitialized) {
-        const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(follow.orientation);
+        const orientation = new THREE.Quaternion().fromArray(follow.orientation);
+        const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(orientation);
         this.camera.position.copy(target).add(initialOffset);
         this.controls.target.copy(target);
         this.camera.up.set(0, 1, 0);
@@ -181,6 +232,14 @@ export class DogfightViewer {
       minY: (1 - maxY) / 2,
       maxY: (1 - minY) / 2,
     };
+  }
+
+  /** Releases GPU resources; React unmounts this component on navigation. */
+  dispose(): void {
+    this.controls.dispose();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+    removeEventListener("resize", this.onResize);
   }
 
   private resize(): void {
