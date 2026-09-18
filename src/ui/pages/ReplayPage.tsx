@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { api, ServerUnavailableError } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { api, ServerUnavailableError, type MatchRow } from "../api";
+import { authHeaders } from "../auth";
+import { useAccount } from "../hooks/useAccount";
 import { FlightDisplay } from "../components/FlightDisplay";
 import { ObserverPanel } from "../components/ObserverPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
@@ -8,6 +10,84 @@ import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useReplayPlayback } from "../hooks/useReplayPlayback";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 import { parseReplay, type ReplayFile } from "../../sim/replay";
+
+/**
+ * Everything there is to watch.
+ *
+ * The page used to be a file picker and nothing else, which made "Replays" a
+ * dead end that told people to go and look somewhere they had not been told
+ * about. It lists what is actually there instead, with a player's own matches
+ * first when they are signed in.
+ */
+function ReplayLibrary() {
+  const account = useAccount();
+  const [mine, setMine] = useState<MatchRow[]>();
+  const [recent, setRecent] = useState<MatchRow[]>();
+  const [failed, setFailed] = useState<string>();
+
+  const load = useCallback(async () => {
+    try {
+      setRecent(await api.matches());
+      if (account.user) setMine(await api.myMatches(await authHeaders()));
+      else setMine(undefined);
+    } catch (cause: unknown) {
+      setFailed(cause instanceof ServerUnavailableError ? cause.message : String(cause));
+    }
+  }, [account.user]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (failed) return <p className="notice">{failed}</p>;
+  if (!recent) return <p className="notice">Loading…</p>;
+
+  const sections: Array<{ title: string; note: string; rows: MatchRow[] }> = [];
+  if (mine?.length) {
+    sections.push({ title: "Yours", note: "Matches you flew.", rows: mine });
+  }
+  sections.push({
+    title: mine?.length ? "Everyone" : "Recent matches",
+    note: "Every match this deployment has recorded.",
+    rows: recent,
+  });
+
+  return (
+    <>
+      {sections.map((section) => (
+        <section className="replay-section" key={section.title}>
+          <h2>{section.title}</h2>
+          {section.rows.length ? (
+            <ul className="replay-list">
+              {section.rows.slice(0, 24).map((row) => {
+                const winner = row.participants.find((participant) => participant.competitorId === row.winner);
+                return (
+                  <li key={row.id}>
+                    <Link to={`/replay/${row.id}`}>
+                      <span className="replay-card-title">
+                        {row.participants.map((participant) => participant.name).join(" vs ")}
+                      </span>
+                      <span className="replay-card-line">
+                        {winner ? `${winner.name} won` : "Draw"}
+                        <span className="muted"> · {row.reason}</span>
+                      </span>
+                      <span className="replay-card-line muted">
+                        {new Date(row.createdAt).toLocaleString()} · {row.durationS.toFixed(0)}s ·{" "}
+                        {row.origin === "live" ? "flown" : "benchmark"}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="notice">Nothing here yet.</p>
+          )}
+        </section>
+      ))}
+    </>
+  );
+}
 
 /**
  * Replay playback.
@@ -88,12 +168,17 @@ export function ReplayPage() {
 
       {!replay ? (
         <main className="page overlay-page">
-          <h1>REPLAY</h1>
-          {error ? <p className="notice">{error}</p> : null}
-          <p className="notice">
-            {id ? "Loading replay…" : "Open a replay file saved from a match, or pick one from the match history."}
-          </p>
-          <button onClick={() => fileInput.current?.click()}>OPEN REPLAY FILE</button>
+          <div className="page-head">
+            <div>
+              <h1>Replays</h1>
+              <p className="page-intro">
+                Watch a recorded match back with the same instruments the pilot had, or open a replay file saved from
+                one. A replay carries the decision log, so a published result can be checked without the model, the
+                credentials or the server that produced it.
+              </p>
+            </div>
+            <button onClick={() => fileInput.current?.click()}>Open a file</button>
+          </div>
           <input
             ref={fileInput}
             type="file"
@@ -104,6 +189,8 @@ export function ReplayPage() {
               if (file) void loadFile(file);
             }}
           />
+          {error ? <p className="notice">{error}</p> : null}
+          {id ? <p className="notice">Loading replay…</p> : <ReplayLibrary />}
         </main>
       ) : null}
 

@@ -427,6 +427,10 @@ label { color: var(--text-muted); font-size: 11px; }
   position: fixed; inset: 56px 0 0 0; z-index: 4; overflow: auto;
   padding: 32px 32px 72px; background: var(--bg);
 }
+/* Content stops well short of a wide monitor's edge. A table stretched across
+   3000 pixels puts the number you are reading a foot away from its label. */
+.page > * { max-width: 1280px; margin-inline: auto; }
+.page > .page-head { width: 100%; }
 .page.overlay-page { background: #0c0d0fe8; backdrop-filter: blur(8px); }
 .page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
 .page-intro { margin: 0 0 26px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
@@ -483,6 +487,22 @@ table.data .muted { color: var(--text-faint); }
 table.data .warn { color: var(--warn); }
 table.data a { color: var(--accent); text-decoration: none; }
 table.data a:hover { text-decoration: underline; }
+
+.replay-section { margin-top: 26px; }
+.replay-section h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.replay-section > .notice { margin-top: 8px; }
+.replay-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px; margin: 14px 0 0; padding: 0; list-style: none;
+}
+.replay-list a {
+  display: grid; gap: 4px; padding: 14px 16px; height: 100%;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text-muted); text-decoration: none;
+}
+.replay-list a:hover { border-color: var(--line-strong); background: var(--surface-raised); }
+.replay-card-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.replay-card-line { font-size: 12px; }
 
 /* ---------- Replay ---------- */
 
