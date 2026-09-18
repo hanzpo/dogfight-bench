@@ -241,6 +241,32 @@ check(
   "pause control applied",
 );
 
+console.log("render budget");
+/**
+ * A standing budget, so a scene change cannot quietly double what every frame
+ * costs. Triangles *submitted*, not triangles in the scene: the ground is
+ * chunked precisely so that most of it is culled before it reaches the GPU, and
+ * a regression that merges it back into one mesh would show up here as the
+ * count tripling rather than as a vague report that the page feels slow.
+ */
+const render = await page.evaluate(() => {
+  const data = document.querySelector<HTMLElement>("#app")!.dataset;
+  return {
+    triangles: Number(data["triangles"]),
+    drawCalls: Number(data["drawCalls"]),
+    renderScale: Number(data["renderScale"]),
+  };
+});
+check(
+  render.triangles > 0 && render.triangles < 120_000,
+  `submits a sane triangle count (${render.triangles.toLocaleString()})`,
+);
+check(render.drawCalls > 0 && render.drawCalls < 90, `keeps draw calls low (${render.drawCalls})`);
+check(
+  render.renderScale >= 0.5 && render.renderScale <= 1.5,
+  `render scale is within its limits (${render.renderScale})`,
+);
+
 console.log("human controls");
 /**
  * Flying with the mouse, without pointer lock.

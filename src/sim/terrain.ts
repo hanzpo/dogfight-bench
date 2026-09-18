@@ -111,6 +111,24 @@ export function isWater(x: number, z: number): boolean {
   return terrainElevation(x, z) < SEA_LEVEL_M;
 }
 
+/**
+ * Upward normal of the elevation field, including the sea floor.
+ *
+ * Separate from `terrainNormal` because that one follows the collision surface,
+ * which is flat wherever there is water. The renderer wants the shape of the
+ * ground itself so the shallows and the coastline shade as slopes.
+ *
+ * Computing normals analytically rather than averaging mesh faces is what lets
+ * the ground be split into separately drawn chunks: two chunks that meet at an
+ * edge agree exactly on the normal there, so there is no lighting seam.
+ */
+export function elevationNormal(x: number, z: number, epsilon = 25): [number, number, number] {
+  const dx = (terrainElevation(x + epsilon, z) - terrainElevation(x - epsilon, z)) / (2 * epsilon);
+  const dz = (terrainElevation(x, z + epsilon) - terrainElevation(x, z - epsilon)) / (2 * epsilon);
+  const length = Math.hypot(dx, 1, dz);
+  return [-dx / length, 1 / length, -dz / length];
+}
+
 /** Upward surface normal, used for impact geometry and for lighting the mesh. */
 export function terrainNormal(x: number, z: number, epsilon = 25): [number, number, number] {
   const dx = (terrainHeight(x + epsilon, z) - terrainHeight(x - epsilon, z)) / (2 * epsilon);

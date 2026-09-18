@@ -82,6 +82,11 @@ export function LivePage() {
       }
       if (app && instance) {
         app.dataset["simTime"] = (match.simTimeRef.current ?? 0).toFixed(3);
+        const stats = instance.stats;
+        app.dataset["frameMs"] = stats.frameTimeMs.toFixed(2);
+        app.dataset["renderScale"] = stats.renderScale.toFixed(2);
+        app.dataset["drawCalls"] = String(stats.drawCalls);
+        app.dataset["triangles"] = String(stats.triangles);
         app.dataset["camera"] = instance.camera.position
           .toArray()
           .map((value) => value.toFixed(3))

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { NOZZLE } from "./sim/config";
-import { SEA_LEVEL_M, TERRAIN_EXTENT_M, terrainElevation, terrainHeight } from "./sim/terrain";
+import { SEA_LEVEL_M, TERRAIN_EXTENT_M, elevationNormal, terrainElevation, terrainHeight } from "./sim/terrain";
 import { TRACER_TRAIL_SECONDS } from "./sim/tracer";
 import type { MatchState } from "./sim/types";
 
@@ -180,6 +180,23 @@ const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
+/**
+ * Frame-interval band the adaptive render scale holds itself inside.
+ *
+ * Wide enough that a step in either direction lands inside it rather than
+ * triggering the opposite step, which is what stops the resolution pumping.
+ */
+const RENDER_SCALE_RAISE_MS = 17.5;
+const RENDER_SCALE_DROP_MS = 26;
+
+/** Reads `?render-scale=` from the URL, for benchmarking. */
+function pinnedRenderScale(): number | undefined {
+  if (typeof location === "undefined") return undefined;
+  const raw = new URLSearchParams(location.search).get("render-scale");
+  const value = raw === null ? Number.NaN : Number(raw);
+  return Number.isFinite(value) && value > 0 && value <= 1 ? value : undefined;
+}
+
 /** Orbit sensitivity for hand-driven camera rotation. */
 const ORBIT_RADIANS_PER_PIXEL = 0.005;
 
@@ -249,12 +266,39 @@ export class DogfightViewer {
   private frameTime = 16;
   private lastFrameAt = 0;
   private renderScale = 1;
+  /**
+   * Ceiling for the adaptive scale.
+   *
+   * A high-density display is already supersampling at scale 1, so there is
+   * nothing to gain above it. A standard-density one has edges to smooth, so
+   * spare capacity goes into drawing above native resolution.
+   */
+  private readonly maxScale = typeof devicePixelRatio === "number" && devicePixelRatio >= 1.5 ? 1 : 1.5;
+  /**
+   * Pins the render scale, disabling the adaptive scaler.
+   *
+   * Set with `?render-scale=1` on the URL. Performance work is meaningless if
+   * the thing being measured silently changes how many pixels it draws between
+   * runs, and that is exactly what the adaptive scaler does.
+   */
+  private readonly pinnedScale = pinnedRenderScale();
   private lastScaleChangeAt = 0;
   private pixelRatioQuery?: MediaQueryList;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      /**
+       * No multisampling. It was the single most expensive thing the renderer
+       * did -- more than half of all frame time, measured -- for edge quality
+       * that supersampling gives more cheaply and more adaptively.
+       *
+       * Anti-aliasing instead comes from drawing above the display's own
+       * resolution and letting the browser downsample, which on a high-density
+       * screen is already happening and on a low-density one is what the
+       * adaptive scale spends its headroom on. When there is no headroom it
+       * simply stops, which is the right trade; MSAA cannot be turned down.
+       */
+      antialias: false,
       powerPreference: "high-performance",
       // The scene spans eighty kilometres and the aircraft is fifteen metres
       // long; without a logarithmic depth buffer the model z-fights itself.
@@ -455,15 +499,32 @@ export class DogfightViewer {
       ),
     );
 
-    // The mesh samples the same height field the simulation collides against,
-    // so what the viewer draws as ground is exactly what the physics treats as
-    // ground.
-    const segments = 300;
-    this.scene.add(
-      this.buildTerrainMesh(
-        new THREE.PlaneGeometry(TERRAIN_EXTENT_M, TERRAIN_EXTENT_M, segments, segments).rotateX(-Math.PI / 2),
-      ),
-    );
+    /**
+     * The mesh samples the same height field the simulation collides against,
+     * so what the viewer draws as ground is exactly what the physics treats as
+     * ground.
+     *
+     * Built as a grid of chunks rather than one plane. The resolution is
+     * identical either way, but a single eighty-kilometre mesh is either
+     * entirely in the frustum or entirely out of it, so every one of its
+     * triangles is submitted on every frame even when most of the world is
+     * behind the camera. Chunking lets three quarters of it be culled before it
+     * reaches the GPU, and costs only the extra draw calls for the chunks that
+     * survive.
+     */
+    const chunksPerSide = 8;
+    const segmentsPerChunk = 38;
+    const chunkExtent = TERRAIN_EXTENT_M / chunksPerSide;
+    for (let row = 0; row < chunksPerSide; row += 1) {
+      for (let column = 0; column < chunksPerSide; column += 1) {
+        const centreX = (column + 0.5) * chunkExtent - TERRAIN_EXTENT_M / 2;
+        const centreZ = (row + 0.5) * chunkExtent - TERRAIN_EXTENT_M / 2;
+        const geometry = new THREE.PlaneGeometry(chunkExtent, chunkExtent, segmentsPerChunk, segmentsPerChunk)
+          .rotateX(-Math.PI / 2)
+          .translate(centreX, 0, centreZ);
+        this.scene.add(this.buildTerrainMesh(geometry));
+      }
+    }
 
     // Sea surface. Slightly translucent so the shallows read as shallow, and
     // rendered after the terrain so the sea floor shows through.
@@ -495,7 +556,22 @@ export class DogfightViewer {
       // the coastline is a slope rather than a cliff at the waterline.
       positions.setY(i, terrainElevation(positions.getX(i), positions.getZ(i)));
     }
-    geometry.computeVertexNormals();
+
+    /**
+     * Normals from the height field itself, not from the mesh faces.
+     *
+     * Averaging face normals stops at the edge of a chunk, so neighbouring
+     * chunks disagree about which way the ground faces and the seams light up
+     * as visible creases. Sampling the field gives both chunks the same answer.
+     */
+    const normalValues = new Float32Array(positions.count * 3);
+    for (let i = 0; i < positions.count; i++) {
+      const [nx, ny, nz] = elevationNormal(positions.getX(i), positions.getZ(i));
+      normalValues[i * 3] = nx;
+      normalValues[i * 3 + 1] = ny;
+      normalValues[i * 3 + 2] = nz;
+    }
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normalValues, 3));
 
     /**
      * Tint by elevation and steepness.
@@ -767,6 +843,14 @@ export class DogfightViewer {
    */
   private adaptResolution(): void {
     const now = performance.now();
+    if (this.pinnedScale !== undefined) {
+      if (this.lastFrameAt > 0) {
+        const delta = now - this.lastFrameAt;
+        if (delta < 500) this.frameTime += (delta - this.frameTime) * 0.1;
+      }
+      this.lastFrameAt = now;
+      return;
+    }
     if (this.lastFrameAt > 0) {
       const delta = now - this.lastFrameAt;
       // Ignore long gaps from a backgrounded tab.
@@ -777,8 +861,21 @@ export class DogfightViewer {
     // Hysteresis: never react to a single slow frame, and never oscillate.
     if (now - this.lastScaleChangeAt < 1_500) return;
     const previous = this.renderScale;
-    if (this.frameTime > 34 && this.renderScale > 0.5) this.renderScale = Math.max(0.5, this.renderScale - 0.25);
-    else if (this.frameTime < 15 && this.renderScale < 1) this.renderScale = Math.min(1, this.renderScale + 0.25);
+
+    /**
+     * The measurement is the frame interval, which on a healthy vsynced display
+     * is 16.7 ms no matter how much headroom the GPU has. The old threshold
+     * asked for better than 15 ms before raising the resolution, which a 60 Hz
+     * display can never deliver -- so the scale could fall after one slow patch
+     * and had no way back up for the rest of the session. The band is set
+     * around the vsync interval instead: comfortably at refresh rate, climb;
+     * clearly below it, drop; in between, leave it alone.
+     */
+    if (this.frameTime > RENDER_SCALE_DROP_MS && this.renderScale > 0.5) {
+      this.renderScale = Math.max(0.5, this.renderScale - 0.25);
+    } else if (this.frameTime < RENDER_SCALE_RAISE_MS && this.renderScale < this.maxScale) {
+      this.renderScale = Math.min(this.maxScale, this.renderScale + 0.25);
+    }
 
     if (this.renderScale !== previous) {
       this.lastScaleChangeAt = now;
@@ -788,8 +885,26 @@ export class DogfightViewer {
     }
   }
 
+  /**
+   * What the renderer is currently costing.
+   *
+   * Exposed because performance work without measurement is guesswork, and
+   * because the browser check can then fail on a frame budget rather than on
+   * somebody's impression of smoothness.
+   */
+  get stats(): { frameTimeMs: number; renderScale: number; drawCalls: number; triangles: number; programs: number } {
+    return {
+      frameTimeMs: this.frameTime,
+      renderScale: this.renderScale,
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      programs: this.renderer.info.programs?.length ?? 0,
+    };
+  }
+
   private applyPixelRatio(): void {
-    this.renderer.setPixelRatio(Math.max(0.5, Math.min(devicePixelRatio, 2) * this.renderScale));
+    const scale = this.pinnedScale ?? this.renderScale;
+    this.renderer.setPixelRatio(Math.max(0.5, Math.min(Math.min(devicePixelRatio, 2) * scale, 2)));
   }
 
   /**
