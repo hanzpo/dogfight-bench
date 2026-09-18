@@ -9,3 +9,7 @@ tools/browser-feedback/.venv/
 **/.ruff_cache/
 **/__pycache__/
 artifacts/browser-feedback/
+
+# Local benchmark database
+data/
+.scratch/

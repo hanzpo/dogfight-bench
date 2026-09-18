@@ -96,6 +96,11 @@ export interface GunSolution {
    * couple of degrees sounds tight and is a forty-metre miss at a kilometre, so
    * gating on the angle alone produces agents that fire constantly and never
    * hit anything.
+   *
+   * It is the perpendicular distance from the target to the line of fire, which
+   * stays finite at every angle. Using the tangent instead reports billions of
+   * metres as the aim error approaches a right angle, which is true but useless
+   * and looks like a bug to anything reading it.
    */
   predictedMissM: number;
   /** Range to the predicted intercept point, metres. */
@@ -281,7 +286,7 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
   return {
     timeOfFlightS: timeOfFlight,
     aimErrorDeg: (aimErrorRad * 180) / Math.PI,
-    predictedMissM: Math.tan(Math.min(aimErrorRad, Math.PI / 2 - 1e-6)) * leadRange,
+    predictedMissM: aimErrorRad >= Math.PI / 2 ? leadRange : Math.sin(aimErrorRad) * leadRange,
     leadRangeM: leadRange,
     leadBearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,

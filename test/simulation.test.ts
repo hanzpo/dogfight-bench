@@ -140,3 +140,16 @@ describe("dogfight simulation", () => {
     expect(set[0]!.startLateralOffsetM).not.toBe(set[1]!.startLateralOffsetM);
   });
 });
+
+describe("gun solution reporting", () => {
+  it("keeps the predicted miss finite however badly the nose is pointed", () => {
+    const sim = new DogfightSimulation(neutralMerge);
+    for (let i = 0; i < 120 * 20; i += 1) sim.step();
+    for (const id of ["blue-1", "red-1"]) {
+      const solution = observationFor(sim.state, id, neutralMerge, 0).relative;
+      expect(Number.isFinite(solution.gunSolution.predictedMissM)).toBe(true);
+      // A miss can never be further away than the target is.
+      expect(solution.gunSolution.predictedMissM).toBeLessThanOrEqual(solution.gunSolution.leadRangeM + 1);
+    }
+  });
+});
