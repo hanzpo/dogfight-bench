@@ -1,7 +1,7 @@
 import { Vector3 } from "three";
 import { atmosphere, GRAVITY_MPS2, equivalentAirspeed } from "./atmosphere";
 import { EARTH_RADIUS_M, FLCS, GEOMETRY, GUN, MIN_LETHAL_ENERGY_J } from "./config";
-import { kineticEnergyJ, projectileDeceleration } from "./ballistics";
+import { hitThresholdM, solveGunsight } from "./gunsight";
 import { bodyAxes } from "./flight-model";
 import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
 import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
@@ -248,61 +248,32 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
   };
 }
 
-/**
- * Solves the gun problem the way a lead-computing sight does: iterate the
- * round's time of flight against where the target will be, then report how far
- * the nose is from where it needs to point.
- */
 export function gunSolutionFor(shooter: AircraftState, target: AircraftState): GunSolution {
   const axes = bodyAxes(shooter.orientation);
-  const air = atmosphere(shooter.position.y);
+  const solution = solveGunsight({
+    position: shooter.position,
+    velocity: shooter.velocity,
+    orientation: shooter.orientation,
+    targetPosition: target.position,
+    targetVelocity: target.velocity,
+    targetAcceleration: target.acceleration,
+  });
 
-  let timeOfFlight = shooter.position.distanceTo(target.position) / GUN.muzzleVelocityMps;
-  let lead = new Vector3();
-  let impactSpeed: number = GUN.muzzleVelocityMps;
-  for (let i = 0; i < 6; i += 1) {
-    const predicted = target.position
-      .clone()
-      .addScaledVector(target.velocity, timeOfFlight)
-      .addScaledVector(target.acceleration, 0.5 * timeOfFlight * timeOfFlight);
-    lead = predicted.sub(shooter.position);
-    const range = lead.length();
-
-    // March the round's speed down the range to get a time of flight that
-    // accounts for drag rather than assuming muzzle velocity all the way.
-    let speed = GUN.muzzleVelocityMps + shooter.velocity.dot(lead.clone().normalize());
-    let travelled = 0;
-    let elapsed = 0;
-    while (travelled < range && elapsed < GUN.maxLifeSeconds) {
-      speed -= projectileDeceleration(speed, air.densityKgM3, air.speedOfSoundMps) * 0.01;
-      travelled += speed * 0.01;
-      elapsed += 0.01;
-    }
-    timeOfFlight = elapsed;
-    impactSpeed = speed;
-  }
-
-  const leadRange = lead.length();
-  const leadDirection = lead.clone().normalize();
   const local = new Vector3(
-    leadDirection.dot(axes.right),
-    leadDirection.dot(axes.up),
-    leadDirection.dot(axes.nose),
+    solution.direction.dot(axes.right),
+    solution.direction.dot(axes.up),
+    solution.direction.dot(axes.nose),
   );
-  const aimErrorRad = Math.acos(Math.max(-1, Math.min(1, local.z)));
   return {
-    timeOfFlightS: timeOfFlight,
-    aimErrorDeg: (aimErrorRad * 180) / Math.PI,
-    predictedMissM: aimErrorRad >= Math.PI / 2 ? leadRange : Math.sin(aimErrorRad) * leadRange,
-    leadRangeM: leadRange,
+    timeOfFlightS: solution.timeOfFlightS,
+    aimErrorDeg: (solution.aimErrorRad * 180) / Math.PI,
+    predictedMissM: solution.predictedMissM,
+    leadRangeM: solution.leadRangeM,
     leadBearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
-    // Lethality depends on the round's speed *relative to the target along the
-    // line of fire*, not on the target's speed in some other direction.
-    inLethalRange:
-      kineticEnergyJ(Math.abs(impactSpeed - target.velocity.dot(leadDirection))) > MIN_LETHAL_ENERGY_J &&
-      timeOfFlight < GUN.maxLifeSeconds,
-    trackingSolution: false,
+    inLethalRange: solution.inLethalRange,
+    /** True when the burst would actually connect, not merely be close. */
+    trackingSolution: solution.inLethalRange && solution.predictedMissM < hitThresholdM(solution.leadRangeM),
   };
 }
 
@@ -325,8 +296,6 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
   const opponentEnergy = opponent.position.y + opponent.velocity.lengthSq() / (2 * GRAVITY_MPS2);
 
   const gunSolution = gunSolutionFor(own, opponent);
-  gunSolution.trackingSolution =
-    gunSolution.predictedMissM < 12 && gunSolution.inLethalRange && range < 2_500;
   const threat = gunSolutionFor(opponent, own);
 
   return {
@@ -341,7 +310,7 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     energyAdvantageM: ownEnergy - opponentEnergy,
     altitudeAdvantageM: own.position.y - opponent.position.y,
     gunSolution,
-    threatened: threat.predictedMissM < 40 && threat.inLethalRange && range < 2_500,
+    threatened: threat.inLethalRange && threat.predictedMissM < hitThresholdM(threat.leadRangeM) * 3,
   };
 }
 

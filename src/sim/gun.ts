@@ -12,9 +12,11 @@ const MUZZLE_ENERGY_J = kineticEnergyJ(GUN.muzzleVelocityMps);
 /**
  * Fires the M61A1 for one tick.
  *
- * The barrel cluster has to spin up before the first round leaves the muzzle,
- * rounds inherit the aircraft's velocity, and dispersion is seeded so a match
- * replays bit-for-bit.
+ * The rotor spins up over a fifth of a second and the rate of fire ramps with
+ * it, so the first rounds leave almost immediately and the gun reaches its full
+ * cadence shortly after. It also keeps turning for a moment after the trigger
+ * is released, which is what makes short bursts work. Rounds inherit the
+ * aircraft's velocity and dispersion is seeded, so a match replays bit-for-bit.
  */
 export function fireGun(
   state: MatchState,
@@ -25,17 +27,20 @@ export function fireGun(
 ): void {
   const wantsToFire = aircraft.alive && aircraft.controls.fire && aircraft.ammo > 0;
   if (!wantsToFire) {
-    aircraft.gunSpin = Math.max(0, aircraft.gunSpin - dt / GUN.spinUpSeconds);
+    // The rotor coasts down rather than stopping dead, so a burst fired a
+    // moment later starts at speed.
+    aircraft.gunSpin = Math.max(0, aircraft.gunSpin - dt / GUN.spinDownSeconds);
     aircraft.gunAccumulator = Math.min(aircraft.gunAccumulator, 1);
     if (aircraft.roundsThisBurst > 0 && !aircraft.controls.fire) aircraft.roundsThisBurst = 0;
     return;
   }
 
   aircraft.gunSpin = Math.min(1, aircraft.gunSpin + dt / GUN.spinUpSeconds);
-  if (aircraft.gunSpin < 1) return;
 
   const axes = bodyAxes(aircraft.orientation);
-  aircraft.gunAccumulator += GUN.ratePerSecond * dt;
+  // Rate ramps with the rotor instead of gating on it.
+  const rate = GUN.ratePerSecond * (GUN.initialRateFraction + (1 - GUN.initialRateFraction) * aircraft.gunSpin);
+  aircraft.gunAccumulator += rate * dt;
   let fired = 0;
   while (aircraft.gunAccumulator >= 1 && aircraft.ammo > 0) {
     aircraft.gunAccumulator -= 1;

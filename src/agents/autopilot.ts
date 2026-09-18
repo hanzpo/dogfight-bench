@@ -1,32 +1,24 @@
 import { Quaternion, Vector3 } from "three";
 import { bodyAxes } from "../sim/flight-model";
+import { hitThresholdM, solveGunsight } from "../sim/gunsight";
+import { availableLoadFactor } from "../sim/performance";
 import type { AgentObservation, AircraftTelemetry } from "../sim/telemetry";
-import type { ControlInput } from "../sim/types";
+import type { AircraftState, ControlInput } from "../sim/types";
 import { THROTTLE_VALUES, type Maneuver, type TacticalAction } from "./action";
 
 /**
- * Resolves a tactical command into stick and throttle.
+ * Everything the autopilot needs to fly a standing order for one tick.
  *
- * Every manoeuvre reduces to the same question a pilot asks: where should the
- * velocity vector point next? The manoeuvre picks that direction, and a single
- * controller rolls the lift vector onto it and pulls. That keeps the tactical
- * schema honest -- it is a way of choosing a goal, not a set of scripted
- * animations, and a model still loses if it picks the wrong goal.
- *
- * It is deliberately built from the same observation an agent receives, so an
- * agent can predict exactly what its command will do.
+ * A tactical command is an order that is flown continuously, not a stick
+ * position captured at the moment a model answered. Resolving it against live
+ * state every tick is the difference between an autopilot and a quarter-second
+ * old snapshot of one, and it is what lets a gun solution ever converge.
  */
-
 const WORLD_UP = new Vector3(0, 1, 0);
 const GRAVITY = 9.80665;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function telemetryAxes(aircraft: AircraftTelemetry) {
-  const [x, y, z, w] = aircraft.orientationQuaternion;
-  return bodyAxes(new Quaternion(x, y, z, w));
 }
 
 function toVector(values: [number, number, number]): Vector3 {
@@ -38,14 +30,76 @@ function rotateAbout(direction: Vector3, axis: Vector3, angle: number): Vector3 
   return direction.clone().applyQuaternion(new Quaternion().setFromAxisAngle(axis.clone().normalize(), angle));
 }
 
+export interface SteeringContext {
+  position: Vector3;
+  velocity: Vector3;
+  orientation: Quaternion;
+  opponentPosition: Vector3;
+  opponentVelocity: Vector3;
+  altitudeAglM: number;
+  hardDeckAglM: number;
+  availableLoadFactorG: number;
+  flightPathAngleRad: number;
+}
+
+export function contextFromState(
+  own: AircraftState,
+  opponent: AircraftState,
+  hardDeckAglM: number,
+): SteeringContext {
+  const speed = Math.max(own.velocity.length(), 1e-6);
+  return {
+    position: own.position,
+    velocity: own.velocity,
+    orientation: own.orientation,
+    opponentPosition: opponent.position,
+    opponentVelocity: opponent.velocity,
+    altitudeAglM: own.heightAboveGroundM,
+    hardDeckAglM,
+    availableLoadFactorG: availableLoadFactor(own.position.y, speed, own.massKg),
+    flightPathAngleRad: Math.asin(clamp(own.velocity.y / speed, -1, 1)),
+  };
+}
+
+export function contextFromObservation(observation: AgentObservation): SteeringContext {
+  const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
+  const opponent = observation.aircraft.find((aircraft) => aircraft.id === observation.relative.opponentId)!;
+  const [x, y, z, w] = own.orientationQuaternion;
+  return {
+    position: toVector(own.positionM),
+    velocity: toVector(own.velocityMps),
+    orientation: new Quaternion(x, y, z, w),
+    opponentPosition: toVector(opponent.positionM),
+    opponentVelocity: toVector(opponent.velocityMps),
+    altitudeAglM: own.altitudeAglM,
+    hardDeckAglM: observation.arena.hardDeckAglM,
+    availableLoadFactorG: own.availableLoadFactorG,
+    flightPathAngleRad: (own.flightPathAngleDeg * Math.PI) / 180,
+  };
+}
+
 /**
- * Which axis a manoeuvre is asking to point.
+ * Where the gun has to point for the rounds to arrive where the target will be.
  *
- * Pursuit is about where the *nose* goes, because that is where the gun
- * points. Everything else is about where the *velocity vector* goes, because
- * that is the trajectory. Conflating the two biases every command by the angle
- * of attack, which at high g is twenty degrees of unintended dive.
+ * The same iteration the telemetry reports, run cheaply enough to use on every
+ * tick of the simulation.
  */
+export function leadDirection(context: SteeringContext): { direction: Vector3; rangeM: number; missM: number; lethal: boolean } {
+  const solution = solveGunsight({
+    position: context.position,
+    velocity: context.velocity,
+    orientation: context.orientation,
+    targetPosition: context.opponentPosition,
+    targetVelocity: context.opponentVelocity,
+  });
+  return {
+    direction: solution.direction,
+    rangeM: solution.leadRangeM,
+    missM: solution.predictedMissM,
+    lethal: solution.inLethalRange,
+  };
+}
+
 export function referenceAxis(maneuver: Maneuver): "nose" | "flightPath" {
   switch (maneuver) {
     case "pure_pursuit":
@@ -74,30 +128,14 @@ function withClimb(direction: Vector3, climbRad: number): Vector3 {
 /**
  * Where the manoeuvre wants the velocity vector to point, in world axes.
  */
-export function goalDirection(maneuver: Maneuver, observation: AgentObservation): Vector3 {
-  const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
-  const opponent = observation.aircraft.find((aircraft) => aircraft.id === observation.relative.opponentId)!;
-  const axes = telemetryAxes(own);
+export function goalDirection(maneuver: Maneuver, context: SteeringContext): Vector3 {
+  const axes = bodyAxes(context.orientation);
+  const lineOfSight = context.opponentPosition.clone().sub(context.position).normalize();
+  const lead = leadDirection(context).direction;
+  const ownVelocity = context.velocity;
 
-  const ownPosition = toVector(own.positionM);
-  const ownVelocity = toVector(own.velocityMps);
-  const opponentPosition = toVector(opponent.positionM);
-  const opponentVelocity = toVector(opponent.velocityMps);
-  const lineOfSight = opponentPosition.clone().sub(ownPosition).normalize();
-
-  // The gun solution already reports the lead direction in body axes.
-  const { leadBearingDeg, leadElevationDeg } = observation.relative.gunSolution;
-  const bearing = (leadBearingDeg * Math.PI) / 180;
-  const elevation = (leadElevationDeg * Math.PI) / 180;
-  const lead = axes.right
-    .clone()
-    .multiplyScalar(Math.sin(bearing) * Math.cos(elevation))
-    .addScaledVector(axes.up, Math.sin(elevation))
-    .addScaledVector(axes.nose, Math.cos(bearing) * Math.cos(elevation))
-    .normalize();
-
-  // Out-of-plane axis for the yo-yos: perpendicular to the line of sight,
-  // in the vertical plane containing it.
+  // Out-of-plane axis for the yo-yos: perpendicular to the line of sight, in
+  // the vertical plane containing it.
   const acrossLineOfSight = lineOfSight.clone().cross(WORLD_UP).normalize();
 
   switch (maneuver) {
@@ -108,8 +146,8 @@ export function goalDirection(maneuver: Maneuver, observation: AgentObservation)
     case "lag_pursuit": {
       // Aim at where the opponent has been, which cuts closure and holds the
       // corner of their turn circle.
-      const lagPoint = opponentPosition.clone().addScaledVector(opponentVelocity, -2.5);
-      return lagPoint.sub(ownPosition).normalize();
+      const lagPoint = context.opponentPosition.clone().addScaledVector(context.opponentVelocity, -2.5);
+      return lagPoint.sub(context.position).normalize();
     }
     case "break_left":
       return withClimb(rotateAbout(horizontal(ownVelocity), WORLD_UP, Math.PI / 2), -0.05);
@@ -137,6 +175,7 @@ export function goalDirection(maneuver: Maneuver, observation: AgentObservation)
     default:
       return horizontal(ownVelocity);
   }
+  void axes;
 }
 
 /**
@@ -154,13 +193,12 @@ export function goalDirection(maneuver: Maneuver, observation: AgentObservation)
 export function steerToward(
   goal: Vector3,
   targetG: number,
-  own: AircraftTelemetry,
+  context: SteeringContext,
   reference: "nose" | "flightPath" = "flightPath",
 ): { pitch: number; roll: number } {
-  const axes = telemetryAxes(own);
-  const velocity = toVector(own.velocityMps);
-  const moving = velocity.lengthSq() > 1;
-  const flightPath = moving ? velocity.clone().normalize() : axes.nose.clone();
+  const axes = bodyAxes(context.orientation);
+  const moving = context.velocity.lengthSq() > 1;
+  const flightPath = moving ? context.velocity.clone().normalize() : axes.nose.clone();
   const pointing = reference === "nose" || !moving ? axes.nose : flightPath;
 
   const direction = goal.clone().normalize();
@@ -171,10 +209,9 @@ export function steerToward(
   if (across.lengthSq() < 1e-8) return { pitch: 0, roll: 0 };
   across.normalize();
 
-  // Centripetal acceleration to spend on the turn, capped by the commanded g.
-  // A shallow slope here tracks a gun solution far too slowly: a one-degree
-  // error would take seconds to null. Saturating by about nine degrees keeps
-  // large manoeuvres unchanged while making fine tracking crisp.
+  // A shallow slope tracks a gun solution far too slowly: a one-degree error
+  // would take seconds to null. Saturating by about nine degrees keeps large
+  // manoeuvres unchanged while making fine tracking crisp.
   const turnG = clamp(errorRad / 0.15, 0, 1) * (clamp(targetG, 1, 9) - 1);
   const required = across
     .clone()
@@ -199,15 +236,27 @@ export function steerToward(
 }
 
 /**
+ * How far the burst would pass from the target right now, in metres.
+ *
+ * Perpendicular distance from the target to the line of fire, which stays
+ * finite at every angle.
+ */
+export function predictedMissM(context: SteeringContext): number {
+  return leadDirection(context).missM;
+}
+
+/**
  * Small rudder input to null the last fraction of a degree of aim error.
  *
  * Sideslip is expensive, so this only engages when a gun solution is nearly
  * there and is deliberately weak.
  */
-function gunTrackingYaw(observation: AgentObservation): number {
-  const { gunSolution } = observation.relative;
-  if (gunSolution.predictedMissM > 60 || !gunSolution.inLethalRange) return 0;
-  return clamp(gunSolution.leadBearingDeg / 15, -0.25, 0.25);
+function gunTrackingYaw(context: SteeringContext): number {
+  if (predictedMissM(context) > 60) return 0;
+  const axes = bodyAxes(context.orientation);
+  const { direction } = leadDirection(context);
+  const bearing = Math.atan2(direction.dot(axes.right), direction.dot(axes.nose));
+  return clamp(((bearing * 180) / Math.PI) / 15, -0.25, 0.25);
 }
 
 /**
@@ -221,48 +270,66 @@ function gunTrackingYaw(observation: AgentObservation): number {
  * the nose up. It blends in rather than snatching, so a model can still fly
  * itself into the dirt by pointing straight down with plenty of speed.
  */
-export function groundAvoidanceUrgency(observation: AgentObservation): number {
-  const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
-  if (own.verticalSpeedMps >= 0) return 0;
+export function groundAvoidanceUrgency(context: SteeringContext): number {
+  if (context.velocity.y >= 0) return 0;
 
-  const climbRad = (own.flightPathAngleDeg * Math.PI) / 180;
-  const pullG = Math.max(Math.min(own.availableLoadFactorG, 5), 1.5);
-  const radius = (own.speedMps * own.speedMps) / (9.80665 * (pullG - 1));
-  const recoveryLossM = radius * (1 - Math.cos(climbRad));
+  const speed = context.velocity.length();
+  const pullG = Math.max(Math.min(context.availableLoadFactorG, 5), 1.5);
+  const radius = (speed * speed) / (GRAVITY * (pullG - 1));
+  const recoveryLossM = radius * (1 - Math.cos(context.flightPathAngleRad));
 
   // Recover with room to spare: a pull that finishes exactly at the hard deck
   // has no margin for the manoeuvre the model asks for on the way out.
-  const margin = Math.max(observation.arena.hardDeckAglM * 2, 400);
+  const margin = Math.max(context.hardDeckAglM * 2, 400);
   const needed = recoveryLossM * 2.5 + margin;
-  const available = own.altitudeAglM;
-  if (available > needed) return 0;
-  return clamp((needed - available) / Math.max(needed * 0.6, margin), 0, 1);
+  if (context.altitudeAglM > needed) return 0;
+  return clamp((needed - context.altitudeAglM) / Math.max(needed * 0.6, margin), 0, 1);
 }
 
-export function resolveTactical(action: TacticalAction, observation: AgentObservation): ControlInput {
-  const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
-  const commanded = goalDirection(action.maneuver, observation);
+/**
+ * Flies a standing order for one tick.
+ *
+ * The trigger is gated on the live gun solution rather than on the value the
+ * model chose, because a decision is up to a quarter of a second old and the
+ * geometry moves a long way in that time. `fire` therefore means "shoot when
+ * the pipper is on", which is what a pilot with a lead-computing sight does,
+ * and it applies identically to every tactical agent so it advantages none of
+ * them. Raw-schema agents keep direct control of the trigger.
+ */
+export function resolveTactical(action: TacticalAction, context: SteeringContext): ControlInput {
+  const commanded = goalDirection(action.maneuver, context);
 
-  const urgency = groundAvoidanceUrgency(observation);
+  const urgency = groundAvoidanceUrgency(context);
   const goal =
     urgency > 0
       ? commanded
           .clone()
           .multiplyScalar(1 - urgency)
-          .addScaledVector(withClimb(toVector(own.velocityMps), 0.35), urgency)
+          .addScaledVector(withClimb(context.velocity, 0.35), urgency)
           .normalize()
       : commanded;
   const targetG = Math.max(action.targetG, urgency * 7);
   // A recovery is about the trajectory, whatever the manoeuvre was asking for.
   const reference = urgency > 0.3 ? "flightPath" : referenceAxis(action.maneuver);
 
-  const { pitch, roll } = steerToward(goal, targetG, own, reference);
+  const { pitch, roll } = steerToward(goal, targetG, context, reference);
+  const shot = leadDirection(context);
   return {
     pitch,
     roll,
-    yaw: gunTrackingYaw(observation),
+    yaw: gunTrackingYaw(context),
     // Recovering from the ground is not the moment to be at idle.
     throttle: Math.max(THROTTLE_VALUES[action.throttle], urgency > 0.4 ? 0.85 : 0),
-    fire: action.fire,
+    // Authorised only when the burst would actually connect: the target's size
+    // plus how far the dispersion cone has spread at that range. A flat
+    // threshold makes an agent spray at two kilometres and hit nothing.
+    fire: action.fire && shot.lethal && shot.missM < hitThresholdM(shot.rangeM),
   };
+}
+
+export function resolveTacticalForObservation(
+  action: TacticalAction,
+  observation: AgentObservation,
+): ControlInput {
+  return resolveTactical(action, contextFromObservation(observation));
 }

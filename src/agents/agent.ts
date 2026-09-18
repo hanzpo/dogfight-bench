@@ -1,7 +1,7 @@
 import type { AgentObservation } from "../sim/telemetry";
 import type { ControlInput } from "../sim/types";
 import { validateAction, type AgentAction } from "./action";
-import { resolveTactical } from "./autopilot";
+import { resolveTacticalForObservation } from "./autopilot";
 
 /**
  * The model-neutral agent boundary.
@@ -70,7 +70,7 @@ export function validateDecision(value: unknown): AgentDecision {
 
 /** Turns an action of either schema into the stick and throttle the jet flies. */
 export function resolveAction(action: AgentAction, observation: AgentObservation): ControlInput {
-  return action.schema === "raw" ? action.controls : resolveTactical(action, observation);
+  return action.schema === "raw" ? action.controls : resolveTacticalForObservation(action, observation);
 }
 
 export class AgentTimeoutError extends Error {

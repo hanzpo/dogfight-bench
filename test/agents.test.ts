@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Vector3 } from "three";
 import { MANEUVERS, validateAction } from "../src/agents/action";
 import { AgentTimeoutError, SCRIPTED_INFO, decideWithTimeout, resolveAction, validateDecision } from "../src/agents/agent";
-import { goalDirection, steerToward } from "../src/agents/autopilot";
+import { contextFromObservation, goalDirection, steerToward } from "../src/agents/autopilot";
 import { BasicPursuitAgent, EnergyFighterAgent } from "../src/agents/baselines";
 import { neutralMerge, scenarioSet } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
@@ -58,7 +58,7 @@ describe("tactical autopilot", () => {
     for (let i = 0; i < 600; i += 1) sim.step();
     const observation = observe(sim);
     for (const maneuver of MANEUVERS) {
-      const goal = goalDirection(maneuver, observation);
+      const goal = goalDirection(maneuver, contextFromObservation(observation));
       expect(Number.isFinite(goal.length())).toBe(true);
       expect(goal.length()).toBeCloseTo(1, 6);
     }
@@ -70,8 +70,8 @@ describe("tactical autopilot", () => {
     const observation = observe(sim);
     const [own, opponent] = [observation.aircraft[0]!, observation.aircraft[1]!];
     const lineOfSight = new Vector3(...opponent.positionM).sub(new Vector3(...own.positionM)).normalize();
-    const lead = goalDirection("lead_pursuit", observation);
-    const lag = goalDirection("lag_pursuit", observation);
+    const lead = goalDirection("lead_pursuit", contextFromObservation(observation));
+    const lag = goalDirection("lag_pursuit", contextFromObservation(observation));
     // Lead and lag sit on opposite sides of the line of sight.
     expect(lead.dot(lineOfSight)).toBeLessThan(1);
     expect(lead.distanceTo(lineOfSight)).toBeGreaterThan(0);
@@ -85,14 +85,14 @@ describe("tactical autopilot", () => {
 
     // A goal 60 degrees to the right should command right roll.
     const right = nose.clone().applyAxisAngle(new Vector3(0, 1, 0), -Math.PI / 3);
-    const toRight = steerToward(right, 7, own);
+    const toRight = steerToward(right, 7, contextFromObservation(observe(sim)));
     expect(toRight.roll).toBeGreaterThan(0.5);
 
     const left = nose.clone().applyAxisAngle(new Vector3(0, 1, 0), Math.PI / 3);
-    expect(steerToward(left, 7, own).roll).toBeLessThan(-0.5);
+    expect(steerToward(left, 7, contextFromObservation(observe(sim))).roll).toBeLessThan(-0.5);
 
     // A goal straight ahead needs neither.
-    const ahead = steerToward(nose, 7, own);
+    const ahead = steerToward(nose, 7, contextFromObservation(observe(sim)));
     expect(Math.abs(ahead.roll)).toBeLessThan(0.2);
     expect(ahead.pitch).toBeLessThan(0.1);
   });

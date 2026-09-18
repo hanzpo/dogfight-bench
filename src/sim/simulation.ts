@@ -1,6 +1,7 @@
 import type { AgentAdapter, AgentInfo, DecisionUsage } from "../agents/agent";
 import { AgentTimeoutError, decideWithTimeout, resolveAction, validateDecision } from "../agents/agent";
-import type { AgentAction } from "../agents/action";
+import type { AgentAction, TacticalAction } from "../agents/action";
+import { contextFromState, resolveTactical } from "../agents/autopilot";
 import { isDestroyed } from "./damage";
 import { stepAircraft } from "./flight-model";
 import { fireGun, stepProjectiles } from "./gun";
@@ -110,6 +111,7 @@ export class DogfightSimulation {
   private readonly rng: Random;
   private projectileId = 1;
   private readonly slots = new Map<string, AgentSlot>();
+  private readonly standingOrders = new Map<string, TacticalAction>();
   private readonly bookkeeping = new Map<string, AircraftBookkeeping>();
   private readonly scoring = new Map<string, { roundsFired: number; hitsScored: number; timeOnTargetS: number; timeInControlZoneS: number }>();
 
@@ -183,7 +185,17 @@ export class DogfightSimulation {
         .then((raw) => {
           const decision = validateDecision(raw);
           const target = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
-          if (target?.alive) target.controls = resolveAction(decision.action, observation);
+          if (target?.alive) {
+            if (decision.action.schema === "tactical") {
+              // Hold it as a standing order, flown continuously below, rather
+              // than freezing the stick where it happened to be when the model
+              // answered.
+              this.standingOrders.set(aircraftId, decision.action);
+            } else {
+              this.standingOrders.delete(aircraftId);
+              target.controls = resolveAction(decision.action, observation);
+            }
+          }
           slot.decisions += 1;
           slot.costUsd += decision.usage?.costUsd ?? 0;
           slot.inputTokens += decision.usage?.inputTokens ?? 0;
@@ -235,9 +247,30 @@ export class DogfightSimulation {
     return this.stepPhysics();
   }
 
+  /**
+   * Flies every standing order against live state.
+   *
+   * A tactical command is an order, not a stick position. Resolving it once per
+   * decision and holding the result for a quarter of a second is the difference
+   * between an autopilot and a stale snapshot of one -- with the snapshot, a
+   * gun solution can never converge, because the jet stops correcting the
+   * moment the geometry starts moving.
+   */
+  private flyStandingOrders(): void {
+    if (!this.standingOrders.size) return;
+    for (const aircraft of this.state.aircraft) {
+      const order = this.standingOrders.get(aircraft.id);
+      if (!order || !aircraft.alive) continue;
+      const opponent = this.state.aircraft.find((candidate) => candidate.id !== aircraft.id);
+      if (!opponent) continue;
+      aircraft.controls = resolveTactical(order, contextFromState(aircraft, opponent, this.config.hardDeckAglM));
+    }
+  }
+
   private stepPhysics(): MatchState {
     const dt = this.config.fixedDt;
     const eventCount = this.state.events.length;
+    this.flyStandingOrders();
 
     for (const aircraft of this.state.aircraft) {
       const ammoBefore = aircraft.ammo;
@@ -394,7 +427,9 @@ export class DogfightSimulation {
 
   setHumanControls(aircraftId: string, controls: AircraftState["controls"]): void {
     const aircraft = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
-    if (aircraft) aircraft.controls = controls;
+    if (!aircraft) return;
+    this.standingOrders.delete(aircraftId);
+    aircraft.controls = controls;
   }
 
   agentStats(): Record<string, AgentStats> {

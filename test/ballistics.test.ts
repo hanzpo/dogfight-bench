@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Quaternion, Vector3 } from "three";
 import { atmosphere } from "../src/sim/atmosphere";
-import { FORM_FACTOR, g1DragCoefficient, kineticEnergyJ, projectileDeceleration } from "../src/sim/ballistics";
+import { FORM_FACTOR, g1DragCoefficient, kineticEnergyJ, projectileDeceleration, timeOfFlight } from "../src/sim/ballistics";
 import { GUN } from "../src/sim/config";
+import { solveGunsight } from "../src/sim/gunsight";
 import { HIT_VOLUMES, HULL_RADIUS_M, applyHit, createDamageState, isDestroyed } from "../src/sim/damage";
 import { fireGun, stepProjectiles } from "../src/sim/gun";
 import { Random } from "../src/sim/random";
@@ -290,5 +291,66 @@ describe("hit resolution", () => {
       state.time += DT;
     }
     expect(target!.damage.hitsTaken).toBeGreaterThan(0);
+  });
+});
+
+describe("the closed-form time of flight", () => {
+  it("agrees with the numerical trajectory it replaces", () => {
+    const air = atmosphere(4_500);
+    const shot = flyRound(4_500);
+    for (const range of [500, 1_000, 1_500, 2_000]) {
+      const marched = shot.at(range);
+      const closed = timeOfFlight(range, GUN.muzzleVelocityMps, air.densityKgM3, air.speedOfSoundMps);
+      // Within a few percent is plenty for a gun solution.
+      expect(Math.abs(closed.seconds - marched.t) / marched.t).toBeLessThan(0.08);
+      expect(Math.abs(closed.impactSpeedMps - marched.speed) / marched.speed).toBeLessThan(0.1);
+    }
+  });
+});
+
+describe("the gunsight", () => {
+  it("stays finite at any range and aspect", () => {
+    const state = createNeutralMerge(neutralMerge);
+    const [shooter, target] = state.aircraft;
+    for (const range of [50, 500, 2_000, 8_000, 40_000]) {
+      for (const bearing of [0, Math.PI / 4, Math.PI / 2, Math.PI]) {
+        target!.position
+          .copy(shooter!.position)
+          .addScaledVector(new Vector3(Math.sin(bearing), 0, Math.cos(bearing)), range);
+        const solution = solveGunsight({
+          position: shooter!.position,
+          velocity: shooter!.velocity,
+          orientation: shooter!.orientation,
+          targetPosition: target!.position,
+          targetVelocity: target!.velocity,
+        });
+        expect(Number.isFinite(solution.predictedMissM), `miss at ${range} m`).toBe(true);
+        expect(Number.isFinite(solution.timeOfFlightS)).toBe(true);
+        expect(solution.timeOfFlightS).toBeLessThanOrEqual(GUN.maxLifeSeconds);
+        expect(solution.predictedMissM).toBeLessThanOrEqual(solution.leadRangeM + 1);
+      }
+    }
+  });
+
+  it("aims above the target to compensate for the drop", () => {
+    const state = createNeutralMerge(neutralMerge);
+    const [shooter, target] = state.aircraft;
+    // A stationary target one kilometre straight ahead.
+    const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
+    target!.position.copy(shooter!.position).addScaledVector(nose, 1_000);
+    target!.velocity.set(0, 0, 0);
+    const solution = solveGunsight({
+      position: shooter!.position,
+      velocity: shooter!.velocity,
+      orientation: shooter!.orientation,
+      targetPosition: target!.position,
+      targetVelocity: target!.velocity,
+    });
+    // Rounds fall a few metres over a kilometre, so the sight must aim high.
+    const straightAt = target!.position.clone().sub(shooter!.position).normalize();
+    expect(solution.direction.y).toBeGreaterThan(straightAt.y);
+    const dropCompensation = Math.tan(Math.acos(solution.direction.dot(straightAt))) * 1_000;
+    expect(dropCompensation).toBeGreaterThan(1);
+    expect(dropCompensation).toBeLessThan(20);
   });
 });

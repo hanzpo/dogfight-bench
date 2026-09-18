@@ -165,8 +165,23 @@ export const GUN = {
   ballisticCoefficientG1: 0.46,
   /** Barrel-cluster dispersion, 1-sigma, radians (8 mil 80% circle). */
   dispersionRad1Sigma: 0.0020,
-  /** Spin-up before the first round leaves the muzzle, seconds. */
-  spinUpSeconds: 0.35,
+  /**
+   * Rotor spin-up, seconds.
+   *
+   * The rate of fire ramps with the rotor rather than the gun sitting dead
+   * until it is up to speed, which is both how a rotary cannon actually
+   * behaves and the difference between a trigger that responds and one that
+   * feels broken. First rounds are out within a few hundredths of a second.
+   */
+  spinUpSeconds: 0.22,
+  /**
+   * How long the rotor keeps turning after the trigger is released. Without
+   * this, tapping the trigger for short bursts never fires anything at all,
+   * because the rotor decays as fast as it spun up.
+   */
+  spinDownSeconds: 1.6,
+  /** Rate fraction the rotor produces the instant the trigger goes down. */
+  initialRateFraction: 0.35,
   maxLifeSeconds: 6.0,
   /**
    * Gun boresight elevation relative to the fuselage reference line. The M61 is
