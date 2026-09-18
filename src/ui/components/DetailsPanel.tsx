@@ -1,3 +1,4 @@
+import { CaretLeft, X } from "@phosphor-icons/react";
 import { neutralMerge } from "../../sim/scenario";
 import type { DecisionRecord } from "../../sim/simulation";
 import { observationFor } from "../../sim/telemetry";
@@ -46,7 +47,8 @@ export function DetailsPanel({
   if (!open) {
     return (
       <aside className="details collapsed">
-        <button className="details-toggle" onClick={onToggle}>
+        <button className="details-toggle" onClick={onToggle} aria-label="Show details" title="Show details">
+          <CaretLeft weight="bold" />
           DETAILS
         </button>
       </aside>
@@ -55,8 +57,8 @@ export function DetailsPanel({
 
   return (
     <aside className="details">
-      <button className="details-toggle" onClick={onToggle}>
-        ×
+      <button className="details-toggle icon" onClick={onToggle} aria-label="Hide details" title="Hide details">
+        <X weight="bold" />
       </button>
       <header>
         <span>DETAILS</span>

@@ -52,8 +52,8 @@ class FeedbackResult:
 SIMULATOR_SMOKE = FeedbackCase(
     name="simulator-smoke",
     goal=(
-        "In the control bar along the bottom: set 'You' to the energy fighter baseline, press 'Follow red', "
-        "set 'Speed' to 4×, and press 'Pause'. "
+        "In the control bar along the bottom: set 'You' to the energy fighter baseline, set the Camera to 'Red', "
+        "set 'Speed' to 4×, and press the pause button. "
         "Stop only when all four conditions are visibly reflected by the controls."
     ),
     expected_state={"bluePilot": "basic", "follow": "red-1", "timeScale": "4", "simStatus": "paused"},

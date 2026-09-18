@@ -1,3 +1,4 @@
+import { GithubLogo, GoogleLogo, SignOut, UserCircle } from "@phosphor-icons/react";
 import { useState } from "react";
 import { signInAsGuest, signInWith } from "../auth";
 import { useAccount } from "../hooks/useAccount";
@@ -22,6 +23,7 @@ export function AccountMenu() {
     return (
       <div className="account">
         <button className="account-chip" onClick={() => setOpen(!open)}>
+          <UserCircle />
           {account.displayName}
           {/* A guest's display name is already "Guest"; badging it too reads as
               "Guest guest". */}
@@ -46,6 +48,7 @@ export function AccountMenu() {
                 setOpen(false);
               }}
             >
+              <SignOut />
               Sign out
             </button>
           </div>
@@ -89,9 +92,11 @@ function SignInButtons({ onDone }: { onDone: () => void }) {
     <>
       <div className="account-actions">
         <button disabled={busy} onClick={() => void run(() => signInWith("google"))}>
+          <GoogleLogo weight="bold" />
           Continue with Google
         </button>
         <button disabled={busy} onClick={() => void run(() => signInWith("github"))}>
+          <GithubLogo weight="fill" />
           Continue with GitHub
         </button>
         <button className="ghost" disabled={busy} onClick={() => void run(signInAsGuest)}>

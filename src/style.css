@@ -91,7 +91,7 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 
 .account { position: relative; margin-left: 6px; }
 .account-chip {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 30px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; font-size: 13px;
   background: transparent; border-color: var(--line-strong); color: var(--text-muted);
 }
 .account-chip:hover:not(:disabled) { color: var(--text); }
@@ -103,7 +103,10 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 }
 .account-menu p { margin: 0; font-size: 12px; line-height: 1.55; }
 .account-menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 0; }
+/* Justified left, so the labels line up under each other rather than the
+   icons drifting with the text width. */
 .account-actions { display: grid; gap: 8px; }
+.account-actions button { justify-content: flex-start; }
 .account-error { color: var(--danger); }
 
 /**
@@ -145,11 +148,26 @@ select { appearance: none; padding-right: 26px; cursor: pointer;
   background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px;
   background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
 }
-button { cursor: pointer; padding: 0 12px; }
+button { cursor: pointer; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 button:hover:not(:disabled) { background: #24282c; border-color: #ffffff3a; }
 button:active:not(:disabled) { background: #101214; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 select:hover { border-color: #ffffff3a; }
+
+/**
+ * A button that is only an icon.
+ *
+ * Square, so a row of them reads as a row of controls rather than as boxes of
+ * different widths. Every one carries an `aria-label` and a `title`: the icon
+ * is the shorthand for people who already know it, not a replacement for the
+ * name.
+ */
+button.icon {
+  display: inline-grid; place-items: center;
+  width: 34px; min-height: 34px; padding: 0;
+  font-size: 17px;
+}
+button.icon svg { display: block; }
 
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
 button.primary:hover:not(:disabled) { background: #93dccb; border-color: #93dccb; }
@@ -192,6 +210,13 @@ label { color: var(--text-muted); font-size: 11px; }
    - needs a key" is very long, which pushed the whole bar into stacked rows. */
 .controls select { max-width: 200px; text-overflow: ellipsis; }
 .control-group > button { align-self: end; }
+/* A 5px track and a line of text sit with the button's centre, not its floor. */
+.controls .scrubber, .controls .timecode { align-self: center; }
+/* The segmented control sits where a select would, under its own label, and
+   has to end up exactly as tall or its label drifts off the shared baseline:
+   2px padding and 1px border each side means a 26px button makes 32. */
+.controls .segmented { padding: 2px; }
+.controls .segmented button { min-height: 26px; }
 
 /* One status line along the bottom edge. The keyboard hints used to be a
    separate fixed element sitting directly on top of it. */
@@ -392,8 +417,9 @@ label { color: var(--text-muted); font-size: 11px; }
 }
 .details-note { font-family: Inter, sans-serif; font-size: 11px; color: var(--text-faint); line-height: 1.45; }
 .details-toggle {
-  position: absolute; top: 10px; right: 10px; min-height: 0; padding: 3px 8px;
-  font-size: 11px; background: transparent; border-color: transparent; color: var(--text-faint);
+  position: absolute; top: 8px; right: 8px;
+  width: 26px; min-height: 26px; padding: 0;
+  font-size: 13px; background: transparent; border-color: transparent; color: var(--text-faint);
 }
 .details-toggle:hover { background: #ffffff0f; border-color: transparent; color: var(--text); }
 
@@ -403,7 +429,7 @@ label { color: var(--text-muted); font-size: 11px; }
 .details.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 84px; right: 0; }
 .details.collapsed header, .details.collapsed section { display: none; }
 .details.collapsed .details-toggle {
-  position: static; padding: 8px 13px;
+  position: static; width: auto; padding: 8px 12px 8px 9px; gap: 5px;
   font-family: Inter, sans-serif; font-size: 12px;
   background: #16181bf2; border: 1px solid var(--line); border-right: none;
   border-radius: var(--radius) 0 0 var(--radius); color: var(--text-muted);
@@ -523,7 +549,30 @@ table.data a:hover { text-decoration: underline; }
 }
 .replay-meta .muted { color: var(--text-faint); }
 .replay-meta .rationale { color: var(--accent); font-style: italic; }
-.scrubber { width: min(360px, 40vw); accent-color: var(--accent); min-height: 0; padding: 0; border: none; background: none; }
+/**
+ * The replay scrubber.
+ *
+ * A range input left alone renders as a bright white bar that shouts over
+ * everything beside it, and gives no way to colour the part already played --
+ * so the track is a gradient driven by `--played`, set from the playback
+ * position.
+ */
+.scrubber {
+  appearance: none; -webkit-appearance: none;
+  width: min(380px, 38vw); height: 5px; min-height: 0; padding: 0; border: none;
+  border-radius: 3px; cursor: pointer;
+  background: linear-gradient(to right, var(--accent) var(--played, 0%), #ffffff1f var(--played, 0%));
+}
+.scrubber::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--text); border: none; cursor: grab;
+}
+.scrubber::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--text); border: none; cursor: grab;
+}
+.scrubber:active::-webkit-slider-thumb { cursor: grabbing; }
 .timecode { font: 11px "JetBrains Mono"; color: var(--text-muted); min-width: 92px; text-align: center; }
 
 @media (max-width: 900px) {

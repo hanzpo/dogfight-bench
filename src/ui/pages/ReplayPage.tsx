@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FolderOpen, Pause, Play } from "@phosphor-icons/react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api, ServerUnavailableError } from "../api";
 import { FlightDisplay } from "../components/FlightDisplay";
@@ -108,7 +109,10 @@ export function ReplayPage() {
                 credentials or the server that produced it.
               </p>
             </div>
-            <button onClick={() => fileInput.current?.click()}>Open a file</button>
+            <button onClick={() => fileInput.current?.click()}>
+              <FolderOpen />
+              Open a file
+            </button>
           </div>
           <input
             ref={fileInput}
@@ -152,16 +156,26 @@ export function ReplayPage() {
           </div>
 
           <footer className="controls">
-            <button onClick={() => playback.setPlaying(!playback.playing)}>
-              {playback.playing ? "Pause" : "Play"}
+            <div className="control-group">
+            <button
+              className="icon"
+              aria-label={playback.playing ? "Pause" : "Play"}
+              title={playback.playing ? "Pause" : "Play"}
+              onClick={() => playback.setPlaying(!playback.playing)}
+            >
+              {playback.playing ? <Pause weight="fill" /> : <Play weight="fill" />}
             </button>
             <input
               className="scrubber"
               type="range"
+              aria-label="Position in the replay"
               min={0}
               max={playback.duration}
               step={0.05}
               value={playback.time}
+              /* The filled part of the track is drawn from this, because a
+                 range input gives no way to colour progress on its own. */
+              style={{ "--played": `${playback.duration ? (playback.time / playback.duration) * 100 : 0}%` } as React.CSSProperties}
               onChange={(changed) => {
                 playback.setPlaying(false);
                 playback.setTime(Number(changed.target.value));
@@ -170,6 +184,9 @@ export function ReplayPage() {
             <span className="timecode">
               {playback.time.toFixed(1)} / {playback.duration.toFixed(1)}s
             </span>
+            </div>
+
+            <div className="control-group">
             <label>
               View
               <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
@@ -186,7 +203,18 @@ export function ReplayPage() {
                 <option value="4">4×</option>
               </select>
             </label>
-            <button onClick={() => setFollowRed(!followRed)}>{followRed ? "Follow blue" : "Follow red"}</button>
+            <label>
+              Camera
+              <div className="segmented" role="group" aria-label="Which aircraft the camera follows">
+                <button aria-pressed={!followRed} onClick={() => setFollowRed(false)}>
+                  Blue
+                </button>
+                <button aria-pressed={followRed} onClick={() => setFollowRed(true)}>
+                  Red
+                </button>
+              </div>
+            </label>
+            </div>
           </footer>
         </>
       ) : null}

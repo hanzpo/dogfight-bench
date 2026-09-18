@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowCounterClockwise,
+  DownloadSimple,
+  Gear,
+  Pause,
+  Play,
+} from "@phosphor-icons/react";
 import { FlightDisplay } from "../components/FlightDisplay";
 import { DetailsPanel } from "../components/DetailsPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
@@ -264,11 +271,35 @@ export function LivePage() {
             <option value="cockpit">Cockpit</option>
           </select>
         </label>
-        <button id="follow" onClick={() => match.setFollowRed(!match.followRed)}>
-          {match.followRed ? "Follow blue" : "Follow red"}
-        </button>
-        <button id="pause" onClick={() => match.setPaused(!match.paused)}>
-          {match.paused ? "Resume" : "Pause"}
+        {/* Which aircraft the camera is on, shown as a state rather than as a
+            verb: "Follow red" never said which one you were watching. */}
+        <label>
+          Camera
+          <div className="segmented" role="group" aria-label="Which aircraft the camera follows">
+            <button
+              id="follow-blue"
+              aria-pressed={!match.followRed}
+              onClick={() => match.setFollowRed(false)}
+            >
+              Blue
+            </button>
+            <button
+              id="follow"
+              aria-pressed={match.followRed}
+              onClick={() => match.setFollowRed(true)}
+            >
+              Red
+            </button>
+          </div>
+        </label>
+        <button
+          id="pause"
+          className="icon"
+          aria-label={match.paused ? "Resume" : "Pause"}
+          title={match.paused ? "Resume" : "Pause"}
+          onClick={() => match.setPaused(!match.paused)}
+        >
+          {match.paused ? <Play weight="fill" /> : <Pause weight="fill" />}
         </button>
         <label>
           Speed
@@ -285,14 +316,26 @@ export function LivePage() {
         </div>
 
         <div className="control-group">
-        <button id="restart" onClick={match.restart}>
-          Restart
+        <button id="restart" className="icon" aria-label="Restart match" title="Restart match" onClick={match.restart}>
+          <ArrowCounterClockwise />
         </button>
-        <button id="replay" onClick={match.downloadReplay}>
-          Save replay
+        <button
+          id="replay"
+          className="icon"
+          aria-label="Save replay"
+          title="Save replay"
+          onClick={match.downloadReplay}
+        >
+          <DownloadSimple />
         </button>
-        <button id="model-keys" onClick={() => setKeysOpen(true)}>
-          Model keys
+        <button
+          id="model-keys"
+          className="icon"
+          aria-label="Model keys"
+          title="Model keys"
+          onClick={() => setKeysOpen(true)}
+        >
+          <Gear />
         </button>
         </div>
       </footer>

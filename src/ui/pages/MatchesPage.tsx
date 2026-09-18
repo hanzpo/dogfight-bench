@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FolderOpen } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ServerUnavailableError, type MatchRow } from "../api";
 import { authHeaders } from "../auth";
@@ -64,7 +65,10 @@ export function MatchesPage() {
             </div>
           ) : null}
           {/* A replay somebody sent you, or one saved from a match here. */}
-          <button onClick={() => fileInput.current?.click()}>Open a file</button>
+          <button onClick={() => fileInput.current?.click()}>
+            <FolderOpen />
+            Open a file
+          </button>
           <input
             ref={fileInput}
             type="file"

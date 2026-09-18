@@ -360,9 +360,7 @@ if (calibrated && engine.scale === 1) {
   if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused") {
     await page.click("#pause");
   }
-  if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["follow"])) !== "blue-1") {
-    await page.click("#follow");
-  }
+  await page.click("#follow-blue");
   await page.selectOption("#blue-pilot", "jev");
   await page.waitForTimeout(6_000);
   const questions = await page.locator(".distribution-head").count();
@@ -409,12 +407,10 @@ console.log("human controls");
  * real users hit in embedded frames and locked-down browsers, so it is the mode
  * most worth having a standing check on.
  */
-// The camera must be on the aircraft being flown. The follow control was
-// toggled to red above, and the indicator honestly reports whichever aircraft
-// is on screen -- which is the right behaviour and the wrong test.
-if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["follow"])) !== "blue-1") {
-  await page.click("#follow");
-}
+// The camera must be on the aircraft being flown. It was pointed at red above,
+// and the indicator honestly reports whichever aircraft is on screen -- which
+// is the right behaviour and the wrong test.
+await page.click("#follow-blue");
 await page.selectOption("#blue-pilot", "human");
 await page.selectOption("#control-scheme", "mouse");
 await page.waitForTimeout(600);
