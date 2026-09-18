@@ -160,6 +160,12 @@ internet a fresh budget each time -- with a small per-address burst limit in
 front of it so one runaway tab cannot spend the day before anyone else gets a
 turn. `DOGFIGHT_PUBLIC_PROVIDERS` chooses which, and it defaults to `jev`.
 
+Both a dollar limit and a decision limit guard that tier, and one of them can be
+inert: a provider that reports no price per call can never reach the dollar cap,
+so the decision count is the only thing standing between an open deployment and
+its whole inference budget. The server says which is actually doing the work at
+startup rather than leaving an operator to infer a limit that is not there.
+
 Every other model runs on a key the person supplies, entered under **Model
 keys** in the viewer. The key goes to this application's own server, is used for
 exactly one upstream call, and is dropped: never written to the database, never

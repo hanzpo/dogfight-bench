@@ -493,10 +493,41 @@ if (process.env["NODE_ENV"] !== "test") {
     console.log(`Dogfight Bench server on http://${env.host}:${info.port}`);
     console.log(`Viewer: ${existsSync(indexPath) ? `served from ${env.staticDir}` : "not built (run npm run build)"}`);
     console.log(`Providers: ${configured.length ? configured.join(", ") : "none (scripted agents only)"}`);
+    console.log(`Results:   ${storeIsShared() ? "Supabase" : `SQLite at ${env.databasePath}`}`);
+
+    /**
+     * Say which cap is actually doing the work.
+     *
+     * Both a dollar limit and a decision limit guard the free tier, but a
+     * provider that reports no price per call makes the dollar limit inert --
+     * it can never be reached, so the decision count is the only thing standing
+     * between an open deployment and its whole inference budget. Stating that
+     * at startup is better than an operator inferring a limit that is not there.
+     */
+    const free = configured.filter((name) => env.publicProviders.includes(name));
+    if (free.length) {
+      console.log(
+        `Free tier: ${free.join(", ")} -- ` +
+          `$${env.publicDailyBudgetUsd}/day and ${env.publicDailyDecisions.toLocaleString()} decisions/day, shared by everyone`,
+      );
+      void Promise.all(free.map(async (name) => [name, await store.publicUsageToday(name)] as const)).then(
+        (used) => {
+          for (const [name, usage] of used) {
+            if (usage.decisions > 0 && usage.costUsd === 0) {
+              console.log(
+                `           note: ${name} reports no price per call, so the dollar cap cannot bite; ` +
+                  `the decision count is the effective limit`,
+              );
+            }
+          }
+        },
+      );
+    }
+
     if (exposed && !env.apiToken && configured.length) {
       console.warn(
         "WARNING: bound to a public interface with providers configured and no DOGFIGHT_API_TOKEN.\n" +
-          "         Paid endpoints are disabled. Set DOGFIGHT_API_TOKEN to enable them.",
+          "         A benchmark series (POST /api/matches) is disabled without it.",
       );
     }
   });
