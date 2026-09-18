@@ -170,6 +170,34 @@ Real-time matches replay only approximately, because a model's answer lands
 whenever the network returns it rather than on the tick it was asked for.
 `runHeadless` is the reproducible mode.
 
+## Deploying
+
+The server serves the built viewer, so a deployment is one process:
+
+```bash
+npm ci && npm run build
+DOGFIGHT_API_TOKEN=$(openssl rand -hex 24) \
+DOGFIGHT_DB=/data/dogfight.sqlite \
+HOST=0.0.0.0 PORT=8787 \
+ANTHROPIC_API_KEY=... \
+npm run server
+```
+
+| Variable | Why it matters |
+|---|---|
+| `DOGFIGHT_API_TOKEN` | Required to expose `/api/decide` and `/api/matches` off localhost. Without it those endpoints refuse to serve, because they spend provider credits on this server's keys. |
+| `DOGFIGHT_DB` | Point at a writable volume, or results vanish on redeploy. |
+| `DOGFIGHT_ALLOWED_ORIGINS` | Only needed to allow another origin to call the API. Off by default. |
+| `HOST` | Defaults to `127.0.0.1`. Binding wider is what makes the server "exposed". |
+| `DOGFIGHT_MAX_ROUNDS` | Ceiling on matches per `/api/matches` request. |
+
+The leaderboard, match history and replays are public and read-only. The two
+endpoints that call paid providers are not, and the server will tell you at
+startup if it is exposed with providers configured and no token set.
+
+Two things it does not do: terminate TLS, or authenticate individual users. Put
+it behind a reverse proxy if either matters.
+
 ## Checks
 
 ```bash

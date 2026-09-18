@@ -6,7 +6,27 @@
  */
 export const env = {
   port: Number(process.env["PORT"] ?? 8787),
+  host: process.env["HOST"] ?? "127.0.0.1",
   databasePath: process.env["DOGFIGHT_DB"] ?? "data/dogfight.sqlite",
+
+  /**
+   * Shared secret for the endpoints that spend money.
+   *
+   * `/api/decide` and `/api/matches` call paid providers on this server's
+   * credentials, so an open deployment is an open invitation to spend someone
+   * else's inference budget. When this is set it is required; when it is not,
+   * the server refuses to expose those endpoints beyond localhost.
+   */
+  apiToken: process.env["DOGFIGHT_API_TOKEN"],
+  /** Comma-separated origins allowed to call the API cross-origin. */
+  allowedOrigins: (process.env["DOGFIGHT_ALLOWED_ORIGINS"] ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  /** Directory of the built viewer, served by this process in production. */
+  staticDir: process.env["DOGFIGHT_STATIC_DIR"] ?? "dist",
+  /** Most matches one `/api/matches` request may run. */
+  maxSeriesRounds: Number(process.env["DOGFIGHT_MAX_ROUNDS"] ?? 10),
 
   anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
   anthropicModel: process.env["ANTHROPIC_MODEL"] ?? "claude-opus-5",

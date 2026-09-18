@@ -58,7 +58,7 @@ function spanInSlice(vertices: [number, number, number][], fromZ: number, toZ: n
 }
 
 describe("the F-16 asset", () => {
-  const { primitives, nodeNames, vertices } = readGlb("F16_Clean.glb");
+  const { primitives, nodeNames, vertices } = readGlb("public/F16_Clean.glb");
 
   const bounds = primitives.reduce(
     (box, primitive) => ({
