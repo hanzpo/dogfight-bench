@@ -93,7 +93,10 @@ Positive pitch is stick back, which pulls g and brings the nose up through the a
 To turn, roll the lift vector onto the direction you want and then pull; pulling with the wings level only climbs.
 Energy is speed plus altitude. Hard pulls cost it, but a fight is won by pointing the nose, and a gentle pull never
 points it in time. Near corner speed, pull hard.
-The gun fires along the nose, so you must aim where the bandit will be. Predicted miss under 15 m hits.
+The gun fires along the nose, so you must aim where the bandit will be, not where it is. Guns gives you that lead:
+lead_bearing_deg is how far right (positive) or left (negative) of your nose the lead point sits, and
+lead_elevation_deg how far above (positive) or below it. Roll so that pulling moves the nose toward the lead point,
+then pull; bring both to zero and the burst connects. Predicted miss under 15 m hits.
 Nothing gates your trigger: if you say fire, the gun fires, and ammunition is finite.
 If threatened, defend before anything else. The ground, the hard deck and the arena edge all kill.`;
 
@@ -103,8 +106,10 @@ Hard turns cost energy, and a jet with no energy cannot fight -- but a turn too 
 never produces a shot either, and a fight is won by pointing the nose. Corner speed is where the jet turns
 best: near it, pull hard. Spend g to gain angles, and unload to rebuild speed once you have them.
 Angle off tail near 0 means you are behind the bandit, which wins; near 180 means they are behind you.
-The gun fires along the nose, so you must aim where the bandit will be. Predicted miss under 15 m hits.
-Do not fire when the predicted miss is large: ammunition is finite.
+The gun fires along the nose, so you must aim where the bandit will be, not where it is. Guns gives you that lead:
+lead_bearing_deg is how far right (positive) or left (negative) of your nose the lead point sits, and
+lead_elevation_deg how far above (positive) or below it. Bring both to zero and the burst connects.
+Predicted miss under 15 m hits. Do not fire when the predicted miss is large: ammunition is finite.
 If threatened, defend before anything else. The ground, the hard deck and the arena edge all kill.
 The ground is not flat. Terrain gives the clearance this flight path would leave over the next twenty seconds,
 what a recovery costs, and whether it still fits. On a pull-up warning, recover before anything else:
@@ -174,6 +179,13 @@ function state(observation: AgentObservation) {
       load_factor_g: round(own.loadFactorG, 1),
       available_g: round(own.availableLoadFactorG, 1),
       sustainable_g: round(own.sustainedLoadFactorG, 1),
+      // Turn performance, which is what the g is for.
+      turn_rate_deg_s: round(own.turnRateDegS, 1),
+      turn_radius_m: Number.isFinite(own.turnRadiusM) ? round(own.turnRadiusM) : null,
+      angle_of_attack_deg: round(own.angleOfAttackDeg, 1),
+      bank_deg: round(own.rollDeg),
+      heading_deg: round(own.headingDeg),
+      track_deg: round(own.trackDeg),
       alpha_limited: own.limiterActive,
       departed: own.departed,
       ammo: own.ammoRemaining,
@@ -189,7 +201,12 @@ function state(observation: AgentObservation) {
       off_our_nose_deg: round(relative.antennaTrainAngleDeg),
       line_of_sight_rate_deg_s: round(relative.lineOfSightRateDegS, 1),
       energy_advantage_m: round(relative.energyAdvantageM),
+      altitude_advantage_m: round(relative.altitudeAdvantageM),
       their_speed_mps: round(bandit.speedMps),
+      their_altitude_m: round(bandit.altitudeM),
+      their_load_factor_g: round(bandit.loadFactorG, 1),
+      their_turn_rate_deg_s: round(bandit.turnRateDegS, 1),
+      their_ammo: bandit.ammoRemaining,
       their_integrity: round(bandit.health, 2),
       threatened_by_them: relative.threatened,
     },
@@ -198,6 +215,18 @@ function state(observation: AgentObservation) {
       time_of_flight_s: round(relative.gunSolution.timeOfFlightS, 2),
       rounds_still_lethal: relative.gunSolution.inLethalRange,
       tracking_solution: relative.gunSolution.trackingSolution,
+      /**
+       * Where the nose has to point, not where the bandit is.
+       *
+       * These were missing, which left the model knowing how far its burst
+       * would miss by and nothing about which way to move to fix it. The
+       * briefing the other adapters read has carried them all along, so their
+       * absence here was also a handicap this one model was carrying alone.
+       */
+      aim_error_deg: round(relative.gunSolution.aimErrorDeg, 1),
+      lead_bearing_deg: round(relative.gunSolution.leadBearingDeg, 1),
+      lead_elevation_deg: round(relative.gunSolution.leadElevationDeg, 1),
+      lead_range_m: round(relative.gunSolution.leadRangeM),
     },
     terrain: {
       ground_elevation_m: round(own.terrain.groundElevationM),
@@ -267,14 +296,14 @@ export class JevProvider implements ModelProvider {
           name: `jev/${this.model}`,
           provider: "jev",
           model: this.model,
-          policyVersion: "stick-choices-1",
+          policyVersion: "stick-choices-2",
           schema: "raw",
         }
       : {
           name: `jev/${this.model}`,
           provider: "jev",
           model: this.model,
-          policyVersion: "bfm-choices-2",
+          policyVersion: "bfm-choices-3",
           schema: "tactical",
         };
   }
