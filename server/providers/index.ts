@@ -19,6 +19,10 @@ export function providerAgent(id: string, provider: ModelProvider): AgentAdapter
   return {
     id,
     info: provider.describe(),
+    // Forwarded, or a provider that carries state between decisions -- Jev holds
+    // the last manoeuvre when its confidence is low -- starts the second match
+    // of a series flying the end of the first.
+    reset: () => provider.reset?.(),
     decide: (observation, signal) => provider.decide(observation, signal),
   };
 }

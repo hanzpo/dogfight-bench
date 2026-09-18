@@ -12,6 +12,7 @@ import { observationFor } from "../src/sim/telemetry";
 import { SqliteStore, competitorFor, competitorIdFor, humanCompetitor } from "../server/store";
 import { costUsd, priceOf } from "../server/pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../server/prompt";
+import { providerAgent } from "../server/providers";
 import { JevProvider } from "../server/providers/jev";
 import { OpenAiCompatibleProvider } from "../server/providers/openai";
 
@@ -338,7 +339,9 @@ describe("jev provider", () => {
     expect(held.action).toMatchObject({ maneuver: "high_yoyo" });
     expect(held.rationale).toMatch(/held/);
 
-    provider.reset();
+    // A fresh match must not inherit the previous one's plan. The simulation
+    // resets the adapter rather than the provider, so the call has to reach it.
+    providerAgent("blue-1", provider).reset!();
     respond({ maneuver: choice("extend", 0.05), commitment: score(3), power: score(3), fire: noul(0.1) });
     expect((await provider.decide(sampleObservation())).action).toMatchObject({ maneuver: "extend" });
   });

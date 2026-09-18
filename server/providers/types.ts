@@ -11,5 +11,7 @@ export interface ModelProvider {
   readonly id: string;
   available(): boolean;
   describe(): AgentInfo;
+  /** Forgets anything carried between decisions, so a match starts clean. */
+  reset?(): void;
   decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision>;
 }
