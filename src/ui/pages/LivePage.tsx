@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FlightDisplay } from "../components/FlightDisplay";
-import { ObserverPanel } from "../components/ObserverPanel";
+import { DetailsPanel } from "../components/DetailsPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { ModelKeysPanel } from "../components/ModelKeysPanel";
@@ -32,11 +32,11 @@ export function LivePage() {
   const viewer = useRef<DogfightViewer>(undefined);
   const [view, setView] = useState<ViewMode>("orbit");
   /**
-   * The observer panel is 286 wide and would cover most of a phone, so it
+   * The details panel is 286 wide and would cover most of a phone, so it
    * starts as a tab there. Measured once, not tracked: somebody who opens it
    * deliberately should not have it shut again by a rotation.
    */
-  const [observerOpen, setObserverOpen] = useState(() => globalThis.innerWidth > 900);
+  const [detailsOpen, setDetailsOpen] = useState(() => globalThis.innerWidth > 900);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";
@@ -159,7 +159,7 @@ export function LivePage() {
           instance.setView(view);
         }}
       />
-      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} observerOpen={observerOpen} />
+      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} detailsOpen={detailsOpen} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
       {view === "orbit" && !pointerFlying ? (
         <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
@@ -179,12 +179,12 @@ export function LivePage() {
           </span>
         </div>
       ) : null}
-      <ObserverPanel
+      <DetailsPanel
         state={match.state}
         followId={followId}
         decision={lastDecision}
-        open={observerOpen}
-        onToggle={() => setObserverOpen(!observerOpen)}
+        open={detailsOpen}
+        onToggle={() => setDetailsOpen(!detailsOpen)}
       />
 
       {/* Three groups, because they answer three different questions: who is
@@ -288,12 +288,11 @@ export function LivePage() {
         </div>
       </footer>
 
+      {/* Callsign and last event only. Speed and ammunition used to be here as
+          well, which put a second, differently-defined airspeed on screen a few
+          inches from the one on the head-up display. */}
       <div className="flight-strip">
-        <span id="flight-data">
-          {followed
-            ? `${followId.toUpperCase()} · ${Math.round(followed.velocity.length() * 1.94384)} KT · ${followed.ammo} ROUNDS`
-            : "STANDING BY"}
-        </span>
+        <span id="flight-data">{followed ? followId.toUpperCase() : "STANDING BY"}</span>
         <span className="keymap">{KEYMAP[match.scheme]}</span>
         <span id="event">{event}</span>
       </div>

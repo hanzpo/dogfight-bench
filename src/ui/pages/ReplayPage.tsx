@@ -4,7 +4,7 @@ import { api, ServerUnavailableError, type MatchRow } from "../api";
 import { authHeaders } from "../auth";
 import { useAccount } from "../hooks/useAccount";
 import { FlightDisplay } from "../components/FlightDisplay";
-import { ObserverPanel } from "../components/ObserverPanel";
+import { DetailsPanel } from "../components/DetailsPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useReplayPlayback } from "../hooks/useReplayPlayback";
@@ -102,7 +102,7 @@ export function ReplayPage() {
   const [error, setError] = useState<string>();
   const [followRed, setFollowRed] = useState(false);
   const [view, setView] = useState<ViewMode>("orbit");
-  const [observerOpen, setObserverOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
   const viewer = useRef<DogfightViewer>(undefined);
   const playback = useReplayPlayback(replay);
@@ -154,18 +154,18 @@ export function ReplayPage() {
             stateRef={playback.stateRef}
             viewerRef={viewer}
             followId={followId}
-            observerOpen={observerOpen}
+            detailsOpen={detailsOpen}
           />
           <TacticalOverlay stateRef={playback.stateRef} viewerRef={viewer} followId={followId} />
           {/* The decision that was live at this moment, so a replay shows what
               the model chose and how sure it was, not only what the aircraft
               then did. */}
-          <ObserverPanel
+          <DetailsPanel
             state={playback.state}
             followId={followId}
             decision={decision}
-            open={observerOpen}
-            onToggle={() => setObserverOpen(!observerOpen)}
+            open={detailsOpen}
+            onToggle={() => setDetailsOpen(!detailsOpen)}
           />
         </>
       ) : null}

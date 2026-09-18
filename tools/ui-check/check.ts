@@ -244,7 +244,7 @@ check(
 /**
  * Signing in, flying a ranked match, and finding it afterwards.
  *
- * The flow that broke twice while being built: the observer panel covered the
+ * The flow that broke twice while being built: the details panel covered the
  * account menu and ate its clicks, and signing in did not re-open the match
  * ticket, so every match a newly signed-in player flew was quietly unranked.
  * Neither was visible in any other check.
@@ -523,10 +523,17 @@ check(
   `throttle sits bottom-left (${Math.round(throttle.x)}, ${Math.round(throttle.y)})`,
 );
 check(altitude.x > speed.x + 200, "airspeed and altitude are not stacked on each other");
-check((await page.locator(".observer").count()) === 1, "observer data has its own panel");
+check((await page.locator(".details").count()) === 1, "the details panel is its own place");
+/**
+ * Attitude symbology belongs to the cockpit alone.
+ *
+ * There was a small artificial horizon for the external views, which is a
+ * picture of the aircraft's attitude drawn next to a picture of the aircraft.
+ * From outside, the aeroplane itself is the better instrument.
+ */
 check(
-  (await page.locator(".flight-display .adi").getAttribute("visibility")) !== "hidden",
-  "external view shows an attitude indicator",
+  (await page.locator(".conformal").getAttribute("visibility")) === "hidden",
+  "external view leaves attitude to the aircraft itself",
 );
 
 await page.selectOption("#view", "cockpit");
@@ -537,10 +544,6 @@ check(
 );
 const ladderRungs = await page.locator(".conformal line").count();
 check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
-check(
-  (await page.locator(".flight-display .adi").getAttribute("visibility")) === "hidden",
-  "attitude indicator gives way to the conformal ladder in the cockpit",
-);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
 await page.selectOption("#view", "orbit");
 await page.waitForTimeout(1_500);
@@ -549,7 +552,7 @@ await page.waitForTimeout(1_500);
  * Nothing sits on top of anything else.
  *
  * This is the fault that keeps coming back in different clothes: a panel over
- * the account menu eating its clicks, a recording banner under the observer
+ * the account menu eating its clicks, a recording banner under the details panel
  * panel, instruments behind the control bar. Each was found by a person looking
  * at a screenshot. Measuring the rectangles is cheaper.
  */
@@ -564,7 +567,7 @@ const rectangles = (await page.evaluate(`(() => {
     box('control bar', '.controls'),
     box('throttle', '.flight-display .engine-group'),
     box('stores', '.flight-display .stores-group'),
-    box('observer panel', '.observer'),
+    box('details panel', '.details'),
     box('status strip', '.flight-strip'),
   ].filter(Boolean);
 })()`)) as Array<{ name: string; l: number; t: number; r: number; b: number }>;
@@ -573,9 +576,6 @@ for (let i = 0; i < rectangles.length; i += 1) {
   for (let j = i + 1; j < rectangles.length; j += 1) {
     const a = rectangles[i]!;
     const b = rectangles[j]!;
-    // The status strip runs the full width behind everything, so it is allowed
-    // to pass under the control bar; nothing else may overlap.
-    if (a.name === "status strip" || b.name === "status strip") continue;
     const overlaps = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
     check(!overlaps, `${a.name} does not sit on ${b.name}`);
   }

@@ -16,7 +16,7 @@ import type { MatchState } from "../../sim/types";
  * Keeping the two apart is the whole point. Mixing them produces a display that
  * looks like a cockpit and lies about what a cockpit contains.
  */
-export function ObserverPanel({
+export function DetailsPanel({
   state,
   followId,
   decision,
@@ -45,22 +45,22 @@ export function ObserverPanel({
 
   if (!open) {
     return (
-      <aside className="observer collapsed">
-        <button className="observer-toggle" onClick={onToggle}>
-          OBSERVER
+      <aside className="details collapsed">
+        <button className="details-toggle" onClick={onToggle}>
+          DETAILS
         </button>
       </aside>
     );
   }
 
   return (
-    <aside className="observer">
-      <button className="observer-toggle" onClick={onToggle}>
+    <aside className="details">
+      <button className="details-toggle" onClick={onToggle}>
         ×
       </button>
       <header>
-        <span>OBSERVER</span>
-        <span className="observer-note">perfect information · not visible to the pilot</span>
+        <span>DETAILS</span>
+        <span className="details-note">perfect information · not visible to the pilot</span>
       </header>
 
       {/* First, when there is one. Watching a model fly, how sure it was of
@@ -163,7 +163,7 @@ function DecisionSection({ decision }: { decision: DecisionRecord }) {
         ) : null}
         {decision.error ? <Row label="error" value={decision.error} tone="bad" /> : null}
       </dl>
-      {decision.rationale ? <p className="observer-rationale">{decision.rationale}</p> : null}
+      {decision.rationale ? <p className="details-rationale">{decision.rationale}</p> : null}
 
       {decision.distributions?.map((distribution) => (
         <div className="distribution" key={distribution.question}>
@@ -171,7 +171,7 @@ function DecisionSection({ decision }: { decision: DecisionRecord }) {
             <span>{distribution.question.replace(/_/g, " ")}</span>
             {/* The model's own calibrated confidence, which is not the same
                 number as the winning option's probability. */}
-            <span className="observer-sub">conf {(distribution.confidence * 100).toFixed(0)}%</span>
+            <span className="details-sub">conf {(distribution.confidence * 100).toFixed(0)}%</span>
           </div>
           {distribution.options.slice(0, 6).map((option) => (
             <div
@@ -206,7 +206,7 @@ function Row({ label, value, note, tone }: { label: string; value: string; note?
       <dt>{label}</dt>
       <dd className={tone ?? ""}>
         {value}
-        {note ? <span className="observer-sub"> {note}</span> : null}
+        {note ? <span className="details-sub"> {note}</span> : null}
       </dd>
     </>
   );

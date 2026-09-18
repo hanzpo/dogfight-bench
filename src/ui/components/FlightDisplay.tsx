@@ -47,19 +47,17 @@ export function FlightDisplay({
   stateRef,
   viewerRef,
   followId,
-  observerOpen,
+  detailsOpen,
 }: {
   stateRef: RefObject<MatchState | undefined>;
   viewerRef: RefObject<DogfightViewer | undefined>;
   followId: string;
-  observerOpen: boolean;
+  detailsOpen: boolean;
 }) {
   const root = useRef<SVGSVGElement>(null);
   const conformal = useRef<SVGGElement>(null);
   const ladder = useRef<SVGGElement>(null);
   const flightPath = useRef<SVGGElement>(null);
-  const adi = useRef<SVGGElement>(null);
-  const adiHorizon = useRef<SVGGElement>(null);
   const speedTicks = useRef<SVGGElement>(null);
   const altTicks = useRef<SVGGElement>(null);
   const headingTicks = useRef<SVGGElement>(null);
@@ -79,8 +77,8 @@ export function FlightDisplay({
    * cost of this component.
    */
   const rendered = useRef<Record<string, string>>({});
-  const observer = useRef(observerOpen);
-  observer.current = observerOpen;
+  const details = useRef(detailsOpen);
+  details.current = detailsOpen;
 
   useEffect(() => {
     let frame = 0;
@@ -96,7 +94,7 @@ export function FlightDisplay({
       const height = svg.clientHeight;
       if (!own || !width || !height) return;
 
-      layout(groups.current, width, height, observer.current);
+      layout(groups.current, width, height, details.current);
 
       const axes = bodyAxes(own.orientation);
       const speed = own.velocity.length();
@@ -105,9 +103,6 @@ export function FlightDisplay({
 
       const heading = compass(axes.nose);
       const track = speed > 1 ? compass(own.velocity) : heading;
-      const pitchDeg = (Math.asin(clamp(axes.nose.y, -1, 1)) * 180) / Math.PI;
-      const horizontalRight = axes.nose.clone().cross(UP).normalize();
-      const bankDeg = (Math.atan2(axes.up.dot(horizontalRight), axes.up.y) * 180) / Math.PI;
 
       const set = (key: string, value: string) => {
         const node = text.current[key];
@@ -122,6 +117,10 @@ export function FlightDisplay({
       set("agl", `R ${Math.round(own.heightAboveGroundM * FEET).toLocaleString()}`);
       set("vs", `${own.velocity.y >= 0 ? "+" : ""}${Math.round(own.velocity.y * FEET * 60).toLocaleString()}`);
       set("heading", String(Math.round(heading)).padStart(3, "0"));
+      // Where the aircraft is actually going, under the heading the nose is
+      // pointing. They differ whenever there is drift or sideslip, and the
+      // difference is the whole reason both are worth showing.
+      set("track", `TRK ${String(Math.round(track)).padStart(3, "0")}`);
       set("aoa", `${((own.aoaRad * 180) / Math.PI).toFixed(1)}° AOA`);
       set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
       set("ammo", String(own.ammo));
@@ -157,10 +156,18 @@ export function FlightDisplay({
       renderHeadingTape(headingTicks.current, rendered.current, heading, width);
 
       // --- attitude --------------------------------------------------------
+      /**
+       * Only the cockpit gets attitude symbology.
+       *
+       * There used to be a compact artificial horizon for the external views,
+       * which is a picture of the aircraft's attitude drawn next to a picture
+       * of the aircraft. The instrument exists on a real jet because the pilot
+       * cannot see the aeroplane they are sitting in; from outside it is
+       * duplicating what is already on screen, larger and better.
+       */
       if (cockpit) {
         conformal.current?.setAttribute("visibility", "visible");
         sizeHudField(hudField.current, viewer, width, height);
-        adi.current?.setAttribute("visibility", "hidden");
         drawLadder(ladder.current, rendered.current, own.position, axes.nose, viewer, width, height);
 
         // Flight path marker: where the aircraft is actually going, which is
@@ -182,16 +189,6 @@ export function FlightDisplay({
         }
       } else {
         conformal.current?.setAttribute("visibility", "hidden");
-        adi.current?.setAttribute("visibility", "visible");
-        // Compact attitude indicator: the horizon rolls and slides behind a
-        // fixed aircraft symbol, the way an artificial horizon does.
-        adiHorizon.current?.setAttribute(
-          "transform",
-          `rotate(${(-bankDeg).toFixed(1)}) translate(0 ${(clamp(pitchDeg, -90, 90) * 0.95).toFixed(1)})`,
-        );
-        set("adiPitch", `${pitchDeg >= 0 ? "+" : ""}${Math.round(pitchDeg)}°`);
-        set("adiBank", `${Math.abs(Math.round(bankDeg))}°${bankDeg >= 0 ? "R" : "L"}`);
-        set("track", `TRK ${String(Math.round(track)).padStart(3, "0")}`);
       }
     };
 
@@ -208,7 +205,7 @@ export function FlightDisplay({
   };
 
   return (
-    <svg ref={root} className={`flight-display${observerOpen ? " with-observer" : ""}`} aria-hidden>
+    <svg ref={root} className={`flight-display${detailsOpen ? " with-details" : ""}`} aria-hidden>
       {/* ---------- conformal head-up symbology (cockpit only) ---------- */}
       <defs>
         <clipPath id="hud-field">
@@ -226,43 +223,6 @@ export function FlightDisplay({
             <path d="M -30 -9 L -36 -9 L -36 9 L -30 9" />
           </g>
         </g>
-      </g>
-
-      {/* ---------- attitude indicator (external views) ---------- */}
-      <g ref={setBoth(adi, group("adi"))} className="adi" visibility="hidden">
-        <clipPath id="adi-clip">
-          <circle r="52" />
-        </clipPath>
-        <circle className="adi-face" r="52" />
-        <g clipPath="url(#adi-clip)">
-          <g ref={adiHorizon}>
-            <rect className="adi-sky" x="-150" y="-150" width="300" height="150" />
-            <rect className="adi-ground" x="-150" y="0" width="300" height="150" />
-            <line className="adi-horizon" x1="-150" y1="0" x2="150" y2="0" />
-            {[-30, -20, -10, 10, 20, 30].map((pitch) => (
-              <line
-                key={pitch}
-                className="adi-rung"
-                x1={Math.abs(pitch) === 10 ? -14 : -9}
-                y1={-pitch * 0.95}
-                x2={Math.abs(pitch) === 10 ? 14 : 9}
-                y2={-pitch * 0.95}
-              />
-            ))}
-          </g>
-        </g>
-        <path className="adi-symbol" d="M -24 0 L -9 0 M 9 0 L 24 0 M 0 -3 L 0 3" />
-        <path className="adi-pointer" d="M 0 -52 L -5 -44 L 5 -44 Z" />
-        <circle className="adi-bezel" r="52" />
-        <text ref={label("adiPitch")} className="adi-readout" x="-52" y="68">
-          +0°
-        </text>
-        <text ref={label("adiBank")} className="adi-readout" x="52" y="68" textAnchor="end">
-          0°R
-        </text>
-        <text ref={label("track")} className="adi-readout" y="82" textAnchor="middle">
-          TRK 000
-        </text>
       </g>
 
       {/* ---------- airspeed, left ---------- */}
@@ -322,6 +282,9 @@ export function FlightDisplay({
             000
           </text>
         </g>
+        <text ref={label("track")} className="tape-sub" y="54" textAnchor="middle">
+          TRK 000
+        </text>
       </g>
 
       {/* ---------- engine and stores, bottom ---------- */}
@@ -366,14 +329,6 @@ export function FlightDisplay({
 
 const UP = new Vector3(0, 1, 0);
 
-/** Lets one element feed two refs. */
-function setBoth<T>(a: { current: T | null }, b: (node: T | null) => void) {
-  return (node: T | null) => {
-    a.current = node;
-    b(node);
-  };
-}
-
 /**
  * Positions every instrument group from the measured viewport.
  *
@@ -384,31 +339,38 @@ function layout(
   groups: Record<string, SVGGElement | null>,
   width: number,
   height: number,
-  observerOpen: boolean,
+  detailsOpen: boolean,
 ): void {
+  /**
+   * Instruments scale with the window; the conformal symbology never does.
+   *
+   * A panel instrument is a fixed size on a real jet and should look the same
+   * fraction of the screen whatever it is being viewed on -- drawn at one fixed
+   * pixel size it is oversized on a laptop and lost on a large monitor. The
+   * pitch ladder is the opposite case: it is projected into the world and its
+   * size *is* the geometry, so scaling it would be a lie.
+   */
+  const scale = clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
   const margin = Math.min(Math.max(width * 0.05, 26), 92);
-  // The observer panel owns the right edge when it is open, so the altitude
+  // The details panel owns the right edge when it is open, so the altitude
   // tape and stores move inboard of it rather than hiding underneath.
   // The panel is 286 wide and sits 16 from the edge, so the instruments stop
   // clear of it rather than an inch under it.
-  const rightEdge = width - (observerOpen ? 318 : margin);
-  const place = (key: string, x: number, y: number) =>
-    groups[key]?.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+  const rightEdge = width - (detailsOpen ? 318 : margin);
+  const place = (key: string, x: number, y: number, scaled = true) =>
+    groups[key]?.setAttribute(
+      "transform",
+      `translate(${x.toFixed(1)} ${y.toFixed(1)})${scaled ? ` scale(${scale.toFixed(3)})` : ""}`,
+    );
 
-  place("speed", margin, 0);
+  place("speed", margin, 0, false);
   place("speedReadout", 0, height / 2);
-  place("alt", rightEdge, 0);
+  place("alt", rightEdge, 0, false);
   place("altReadout", 0, height / 2);
   place("heading", width / 2, 86);
-  // Clear of the control bar, which is 72 tall and sits 20 from the bottom.
-  place("engine", margin, height - 132);
-  place("stores", rightEdge, height - 132);
-  // The attitude indicator is 100 across and needs room beside the airspeed
-  // tape. On a narrow screen there is none, so it goes rather than overlapping
-  // the tape it sits next to.
-  const adiGroup = groups["adi"];
-  if (adiGroup) adiGroup.style.display = width < 760 ? "none" : "";
-  place("adi", Math.min(Math.max(width * 0.15, 196), 280), height / 2);
+  // Clear of the control bar, which is 72 tall and sits 36 from the bottom.
+  place("engine", margin, height - 152);
+  place("stores", rightEdge, height - 152);
 }
 
 /** Sizes the clip region to the combiner's field of view for this camera. */

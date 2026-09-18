@@ -56,7 +56,7 @@ export interface LiveMatch {
   simTimeRef: RefObject<number>;
   /** Live match state for overlays that draw every frame. */
   liveStateRef: RefObject<MatchState | undefined>;
-  /** Most recent decision per aircraft, for the observer panel. */
+  /** Most recent decision per aircraft, for the details panel. */
   decisions: Record<string, DecisionRecord | undefined>;
   /** How the finished match was recorded, if it was. */
   recording: RecordingState;

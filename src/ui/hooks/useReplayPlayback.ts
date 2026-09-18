@@ -36,7 +36,7 @@ export function useReplayPlayback(replay: ReplayFile | undefined) {
   /**
    * The replay rebuilt as match state.
    *
-   * The flight display, gun overlay and observer panel all read a `MatchState`,
+   * The flight display, gun overlay and details panel all read a `MatchState`,
    * so reconstructing one from each frame lets a replay show exactly the same
    * instruments as live flight instead of being a silent fly-by.
    */

@@ -63,7 +63,7 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
   position: fixed;
   inset: 0 0 auto 0;
   height: 56px;
-  /* Above the observer panel, which shares the top right corner and would
+  /* Above the details panel, which shares the top right corner and would
      otherwise swallow every click meant for the account menu below it. */
   z-index: 6;
   display: flex;
@@ -106,17 +106,26 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 .account-actions { display: grid; gap: 8px; }
 .account-error { color: var(--danger); }
 
-/* Below the heading tape, which owns the top centre. */
+/**
+ * How to move the camera, said once.
+ *
+ * It is an instruction for somebody who has just arrived, and after that it is
+ * a permanent caption on a flight simulator. It fades itself out rather than
+ * sitting under the compass forever.
+ */
 .orbit-help {
-  /* Clear of the heading scale, which owns the top centre down to about 130. */
-  position: fixed; top: 152px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 176px; left: 50%; transform: translateX(-50%);
   color: #d8e5e099; font: 11px/1 "JetBrains Mono"; pointer-events: none; z-index: 2;
   text-shadow: 0 1px 3px #000c;
+  animation: settle .8s ease 7s forwards;
+}
+@keyframes settle {
+  to { opacity: 0; visibility: hidden; }
 }
 
 /* Mouse-flying status. Deliberately not a modal: it sits over a live match. */
 .pointer-hint {
-  position: fixed; top: 146px; left: 50%; transform: translateX(-50%); z-index: 3;
+  position: fixed; top: 170px; left: 50%; transform: translateX(-50%); z-index: 3;
   display: flex; align-items: center; gap: 10px;
 }
 .pointer-hint span {
@@ -163,7 +172,8 @@ label { color: var(--text-muted); font-size: 11px; }
  * rows on a widescreen monitor with half the width unused.
  */
 .controls {
-  position: fixed; left: 0; right: 0; bottom: 20px; z-index: 3;
+  /* Clear of the status strip along the very bottom edge. */
+  position: fixed; left: 0; right: 0; bottom: 36px; z-index: 3;
   width: fit-content; margin-inline: auto;
   display: flex; align-items: flex-end; gap: 0; flex-wrap: wrap; justify-content: center;
   padding: 10px 4px;
@@ -199,7 +209,7 @@ label { color: var(--text-muted); font-size: 11px; }
 /* Whether this match is going anywhere, said before it is flown rather than
    after, so nobody discovers their best fight was not recorded. */
 .recording {
-  /* Top left: the top right belongs to the observer panel. */
+  /* Top left: the top right belongs to the details panel. */
   position: fixed; top: 68px; left: 16px; z-index: 5;
   display: flex; align-items: center; gap: 8px;
   padding: 7px 12px;
@@ -316,17 +326,6 @@ label { color: var(--text-muted); font-size: 11px; }
 .fpm line { stroke-width: 2; }
 .aoa-bracket path { fill: none; stroke: var(--ab); stroke-width: 2.2; }
 
-/* --- attitude indicator, external views --- */
-.adi-face { fill: #02150a; }
-.adi-sky { fill: #123a5e; }
-.adi-ground { fill: #4a3a1e; }
-.adi-horizon { stroke: #eafff1; stroke-width: 1.6; }
-.adi-rung { stroke: #eafff1cc; stroke-width: 1.1; }
-.adi-symbol { stroke: var(--ab); stroke-width: 2.4; fill: none; }
-.adi-pointer { fill: var(--hud); }
-.adi-bezel { fill: none; stroke: var(--hud); stroke-width: 1.4; }
-.adi-readout { font-size: 10px; opacity: .85; }
-
 /* ---------- Tactical overlay ----------
    Gun symbology, which genuinely is something the pilot sees, so it keeps the
    head-up display's treatment. Full viewport: the overlay projects in viewport
@@ -374,12 +373,12 @@ label { color: var(--text-muted); font-size: 11px; }
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
 
 
-/* ---------- Observer panel ----------
+/* ---------- Details panel ----------
 
    Deliberately not a HUD. This is the benchmark's omniscient view, so it reads
    as data: plain monospace, no glow, one block, one place. */
 
-.observer {
+.details {
   position: fixed; top: 68px; right: 16px; z-index: 3; width: 286px;
   max-height: calc(100vh - 190px); overflow: auto;
   padding: 14px 16px;
@@ -387,42 +386,42 @@ label { color: var(--text-muted); font-size: 11px; }
   font: 11px/1.45 "JetBrains Mono"; color: var(--text-muted);
   box-shadow: 0 8px 28px #00000044;
 }
-.observer header { display: grid; gap: 3px; margin-bottom: 14px; padding-right: 26px; }
-.observer header span:first-child {
+.details header { display: grid; gap: 3px; margin-bottom: 14px; padding-right: 26px; }
+.details header span:first-child {
   font-family: Inter, sans-serif; font-size: 13px; font-weight: 600; color: var(--text);
 }
-.observer-note { font-family: Inter, sans-serif; font-size: 11px; color: var(--text-faint); line-height: 1.45; }
-.observer-toggle {
+.details-note { font-family: Inter, sans-serif; font-size: 11px; color: var(--text-faint); line-height: 1.45; }
+.details-toggle {
   position: absolute; top: 10px; right: 10px; min-height: 0; padding: 3px 8px;
   font-size: 11px; background: transparent; border-color: transparent; color: var(--text-faint);
 }
-.observer-toggle:hover { background: #ffffff0f; border-color: transparent; color: var(--text); }
+.details-toggle:hover { background: #ffffff0f; border-color: transparent; color: var(--text); }
 
 /* Collapsed it becomes a tab on the edge of the screen, rather than a small
    floating box with a button loose inside it. */
-.observer.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 76px; right: 0; }
-.observer.collapsed header, .observer.collapsed section { display: none; }
-.observer.collapsed .observer-toggle {
+.details.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 76px; right: 0; }
+.details.collapsed header, .details.collapsed section { display: none; }
+.details.collapsed .details-toggle {
   position: static; padding: 8px 13px;
   font-family: Inter, sans-serif; font-size: 12px;
   background: #16181bf2; border: 1px solid var(--line); border-right: none;
   border-radius: var(--radius) 0 0 var(--radius); color: var(--text-muted);
 }
-.observer.collapsed .observer-toggle:hover { color: var(--text); border-right: none; }
+.details.collapsed .details-toggle:hover { color: var(--text); border-right: none; }
 
-.observer h2 {
+.details h2 {
   margin: 16px 0 7px; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;
   letter-spacing: .04em; color: var(--text-faint); text-transform: uppercase;
   border-bottom: 1px solid var(--line); padding-bottom: 5px;
 }
-.observer section:first-of-type h2 { margin-top: 0; }
-.observer dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
-.observer dt { color: var(--text-faint); white-space: nowrap; }
-.observer dd { margin: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
-.observer dd.good { color: var(--good); }
-.observer dd.bad { color: var(--warn); }
-.observer-sub { color: var(--text-faint); }
-.observer-rationale {
+.details section:first-of-type h2 { margin-top: 0; }
+.details dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+.details dt { color: var(--text-faint); white-space: nowrap; }
+.details dd { margin: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.details dd.good { color: var(--good); }
+.details dd.bad { color: var(--warn); }
+.details-sub { color: var(--text-faint); }
+.details-rationale {
   margin: 9px 0 0; font-family: Inter, sans-serif; font-size: 11px; line-height: 1.5;
   color: var(--text-muted); font-style: italic;
 }
@@ -541,9 +540,9 @@ table.data a:hover { text-decoration: underline; }
 .timecode { font: 11px "JetBrains Mono"; color: var(--text-muted); min-width: 92px; text-align: center; }
 
 @media (max-width: 900px) {
-  .controls { bottom: 52px; max-width: calc(100vw - 16px); justify-content: flex-start; }
+  .controls { bottom: 60px; max-width: calc(100vw - 16px); justify-content: flex-start; }
   .keymap { display: none; }
-  .observer { width: min(286px, calc(100vw - 24px)); max-height: calc(100vh - 260px); }
+  .details { width: min(286px, calc(100vw - 24px)); max-height: calc(100vh - 260px); }
   .page { padding: 22px 16px 72px; }
   table.data { font-size: 11px; }
   /* A table of twelve numeric columns cannot be made to fit; let it scroll
