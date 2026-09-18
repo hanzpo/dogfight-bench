@@ -1,9 +1,5 @@
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { validateDecision } from "../src/agents/agent";
 import type { MatchSummary } from "../src/sim/simulation";
@@ -16,17 +12,28 @@ import { SCRIPTED_NAMES, providers } from "./providers";
 import { priceOf } from "./pricing";
 
 /**
- * The benchmark server.
+ * The benchmark API.
  *
  * It owns three things the browser must not: provider credentials, match
  * orchestration, and the results database. The viewer talks to it over HTTP and
  * never sees a key.
+ *
+ * Only the routes live here. Serving the built viewer, binding a port and
+ * printing a banner are things a Node process does and a Cloudflare Worker does
+ * not, so they live in the entry points -- `server/node.ts` and `worker/` --
+ * which mount this same app.
  */
 const app = new Hono();
 const store = createStore();
 
-/** True when this process is reachable from somewhere other than this machine. */
-const exposed = env.host !== "127.0.0.1" && env.host !== "localhost";
+/**
+ * True when this process is reachable from somewhere other than this machine.
+ *
+ * A Worker is always exposed; a Node process bound to loopback is not.
+ */
+export const exposed =
+  (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers") ||
+  (env.host !== "127.0.0.1" && env.host !== "localhost");
 
 /**
  * Cross-origin access is off unless origins are named explicitly.
@@ -236,6 +243,12 @@ app.post("/api/decide", async (context) => {
 
 /** Runs a benchmark series and stores every match. */
 app.post("/api/matches", async (context) => {
+  if (!env.allowSeries) {
+    return context.json(
+      { error: "This deployment does not run benchmark series; use `npm run bench` on a machine that can." },
+      501,
+    );
+  }
   const request = (await context.req.json()) as SeriesRequest;
   if (!request?.blue?.kind || !request?.red?.kind) {
     return context.json({ error: "blue.kind and red.kind are required" }, 400);
@@ -467,71 +480,6 @@ const MAX_TIME_SCALE = 16;
 function boundedLimit(raw: string | undefined): number {
   const value = Number(raw ?? 50);
   return Number.isFinite(value) ? Math.max(1, Math.min(200, Math.floor(value))) : 50;
-}
-
-/**
- * Serve the built viewer, so a deployment is one process rather than two.
- *
- * Unknown paths fall through to the app shell because the viewer is a
- * client-routed single page: reloading on /leaderboard must not 404.
- */
-const indexPath = join(env.staticDir, "index.html");
-if (existsSync(indexPath)) {
-  app.use("/*", serveStatic({ root: env.staticDir }));
-  const shell = readFileSync(indexPath, "utf8");
-  app.notFound((context) =>
-    context.req.path.startsWith("/api/")
-      ? context.json({ error: "not found" }, 404)
-      : context.html(shell),
-  );
-}
-
-if (process.env["NODE_ENV"] !== "test") {
-  serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
-    const configured = [...providers()]
-      .filter(([, provider]) => provider.available())
-      .map(([name]) => name);
-    console.log(`Dogfight Bench server on http://${env.host}:${info.port}`);
-    console.log(`Viewer: ${existsSync(indexPath) ? `served from ${env.staticDir}` : "not built (run npm run build)"}`);
-    console.log(`Providers: ${configured.length ? configured.join(", ") : "none (scripted agents only)"}`);
-    console.log(`Results:   ${storeIsShared() ? "Supabase" : `SQLite at ${env.databasePath}`}`);
-
-    /**
-     * Say which cap is actually doing the work.
-     *
-     * Both a dollar limit and a decision limit guard the free tier, but a
-     * provider that reports no price per call makes the dollar limit inert --
-     * it can never be reached, so the decision count is the only thing standing
-     * between an open deployment and its whole inference budget. Stating that
-     * at startup is better than an operator inferring a limit that is not there.
-     */
-    const free = configured.filter((name) => env.publicProviders.includes(name));
-    if (free.length) {
-      console.log(
-        `Free tier: ${free.join(", ")} -- ` +
-          `$${env.publicDailyBudgetUsd}/day and ${env.publicDailyDecisions.toLocaleString()} decisions/day, shared by everyone`,
-      );
-      void Promise.all(free.map(async (name) => [name, await store.publicUsageToday(name)] as const)).then(
-        (used) => {
-          for (const [name, usage] of used) {
-            if (usage.decisions > 0 && usage.costUsd === 0) {
-              console.log(
-                `           note: ${name} reports no price per call, so the dollar cap cannot bite; ` +
-                  `the decision count is the effective limit`,
-              );
-            }
-          }
-        },
-      );
-    }
-
-    if (exposed && !env.apiToken && configured.length) {
-      console.warn(
-        "WARNING: bound to a public interface with providers configured and no DOGFIGHT_API_TOKEN.\n" +
-          "         A benchmark series (POST /api/matches) is disabled without it.",
-      );
-    }
-  });
 }
 
 export { app, store };

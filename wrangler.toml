@@ -1,0 +1,39 @@
+# Dogfight Bench on Cloudflare.
+#
+# The Worker serves the API; the built viewer is served from Workers Assets
+# alongside it, so the whole thing is one deployment rather than two.
+
+name = "dogfight-bench"
+main = "worker/index.ts"
+compatibility_date = "2026-09-01"
+# `process.env`, `node:zlib` and `node:crypto` all come from this. Verified:
+# process.env is populated from vars and secrets before module evaluation, so
+# the server's configuration module works unchanged.
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# The viewer is client-routed: reloading on /leaderboard must serve the shell.
+not_found_handling = "single-page-application"
+
+[vars]
+# Public by design: the project URL and its publishable key grant nothing
+# beyond acting as whoever is signed in, and the server verifies every token
+# with Supabase rather than trusting it.
+SUPABASE_URL = "https://gwvlpiadxhmghrnjbrll.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_SjQ3x3Ph9SOlAxtzb1XF-A_Lb4ZLolU"
+
+# A benchmark series runs many full matches with a model in the loop, which is
+# far past what a request-scoped Worker may spend. It stays on a machine that
+# can sit still for ten minutes.
+DOGFIGHT_ALLOW_SERIES = "false"
+DOGFIGHT_PUBLIC_PROVIDERS = "jev,jev-stick"
+DOGFIGHT_PUBLIC_DAILY_USD = "5"
+DOGFIGHT_PUBLIC_DAILY_DECISIONS = "40000"
+
+# Secrets, set with `wrangler secret put NAME` and never written here:
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, TYPESAFE_API_KEY

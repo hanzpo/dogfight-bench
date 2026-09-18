@@ -18,6 +18,18 @@ export function createStore(): ResultsStore {
   if (env.supabaseUrl && env.supabaseServiceRoleKey) {
     return new SupabaseStore(env.supabaseUrl, env.supabaseServiceRoleKey);
   }
+  /**
+   * There is no local file on a Worker.
+   *
+   * `node:sqlite` imports there and then refuses to construct, so without this
+   * the failure is an "Illegal constructor" thrown while the module is still
+   * being evaluated -- before any request handler exists to explain it.
+   */
+  if (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers") {
+    throw new Error(
+      "A Worker has no filesystem and cannot use SQLite. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+    );
+  }
   return new SqliteStore();
 }
 

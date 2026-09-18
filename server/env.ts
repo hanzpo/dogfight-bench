@@ -47,6 +47,15 @@ export const env = {
    * minute before anybody else gets a turn.
    */
   publicBurstPerSecond: Number(process.env["DOGFIGHT_PUBLIC_BURST"] ?? 12),
+  /**
+   * Whether this deployment may run a benchmark series.
+   *
+   * A series is many full matches with a model in the loop -- minutes of
+   * wall-clock work for one request. That is fine on a machine that can sit
+   * still and impossible inside a request-scoped Worker, so the Worker turns it
+   * off rather than timing out half way through and leaving a partial result.
+   */
+  allowSeries: process.env["DOGFIGHT_ALLOW_SERIES"] !== "false",
   /** Set false to refuse caller-supplied provider keys entirely. */
   allowCallerKeys: process.env["DOGFIGHT_ALLOW_CALLER_KEYS"] !== "false",
 
