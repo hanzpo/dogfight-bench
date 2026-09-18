@@ -40,6 +40,7 @@ class FeedbackResult:
     actual_state: dict[str, str]
     expected_state: dict[str, str]
     orbit_changed: bool | None
+    framing_centered: bool
     actions: list[dict[str, object | None]]
     trace_path: str
     screenshot_path: str
@@ -61,7 +62,8 @@ def _read_simulator_state(browser: BrowserProtocol) -> dict[str, str]:
     value = browser.evaluate(
         "(() => { const d=document.querySelector('#app')?.dataset; return d ? "
         "{bluePilot:d.bluePilot||'',follow:d.follow||'',timeScale:d.timeScale||'',"
-        "simStatus:d.simStatus||'',camera:d.camera||''} : {}; })()"
+        "simStatus:d.simStatus||'',camera:d.camera||'',subjectScreenX:d.subjectScreenX||'',"
+        "subjectScreenY:d.subjectScreenY||''} : {}; })()"
     )
     if not isinstance(value, dict):
         return {}
@@ -101,6 +103,15 @@ def matches_expected(actual: dict[str, str], expected: dict[str, str]) -> bool:
     return all(actual.get(key) == value for key, value in expected.items())
 
 
+def framing_is_centered(actual: dict[str, str], tolerance: float = 0.05) -> bool:
+    try:
+        x = float(actual["subjectScreenX"])
+        y = float(actual["subjectScreenY"])
+    except (KeyError, ValueError):
+        return False
+    return abs(x - 0.5) <= tolerance and abs(y - 0.5) <= tolerance
+
+
 def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackResult:
     if not os.environ.get("TYPESAFE_API_KEY"):
         raise RuntimeError("TYPESAFE_API_KEY is required")
@@ -115,13 +126,17 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
 
         browser = cast(BrowserProtocol, agent.browser)
         actual = _read_simulator_state(browser)
+        framing_centered = framing_is_centered(actual)
         orbit_changed = _exercise_orbit(browser) if case.exercise_orbit else None
         final_page = browser.observe(screenshot=True)
         screenshot_path = artifact_dir / "final.jpg"
         screenshot_path.write_bytes(base64.b64decode(str(final_page["screenshot"])))
 
         passed = (
-            state["status"] == "done" and matches_expected(actual, case.expected_state) and orbit_changed is not False
+            state["status"] == "done"
+            and matches_expected(actual, case.expected_state)
+            and framing_centered
+            and orbit_changed is not False
         )
         trace_path = artifact_dir / "summary.json"
         history = cast(list[dict[str, Any]], state["history"])
@@ -150,6 +165,7 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
             actual_state=actual,
             expected_state=case.expected_state,
             orbit_changed=orbit_changed,
+            framing_centered=framing_centered,
             actions=actions,
             trace_path=str(trace_path),
             screenshot_path=str(screenshot_path),

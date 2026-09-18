@@ -104,6 +104,11 @@ function updateHud(): void {
   app.dataset.timeScale = String(timeScale);
   app.dataset.bluePilot = (document.querySelector("#blue-pilot") as HTMLSelectElement).value;
   app.dataset.camera = viewer.camera.position.toArray().map((value) => value.toFixed(3)).join(",");
+  const framing = viewer.getFollowFraming();
+  if (framing) {
+    app.dataset.subjectScreenX = framing.x.toFixed(4);
+    app.dataset.subjectScreenY = framing.y.toFixed(4);
+  }
   const latest = simulation.state.events.at(-1);
   text("event", simulation.state.finished
     ? `${simulation.state.winnerId?.toUpperCase() ?? "DRAW"} · ${simulation.state.finishReason}`
