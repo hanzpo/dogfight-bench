@@ -47,7 +47,9 @@ const SAMPLE_RESULT = {
   summary: {
     scenarioId: "neutral-merge",
     seed: 1,
-    durationS: 60,
+    // Short, so the clock check below is satisfied by a brief wait rather than
+    // by sleeping for the length of a real match.
+    durationS: 12,
     winnerId: "blue-1",
     reason: "opponent destroyed",
     aircraft: [
@@ -62,6 +64,9 @@ async function startMatch(opponent: string, headers: Record<string, string>): Pr
   const response = await post("/api/live/start", { opponent }, undefined, headers);
   return (await response.json()).matchId as string;
 }
+
+/** Long enough that a 12-second match could have been flown at 16x. */
+const flyingTime = () => new Promise((resolve) => setTimeout(resolve, 500));
 
 function sampleObservation() {
   const sim = new DogfightSimulation(neutralMerge);
@@ -193,6 +198,7 @@ describe("the benchmark API", () => {
   it("records a match against a scripted opponent and ranks the player", async () => {
     const headers = withSignedInUser("22222222-2222-2222-2222-222222222222", { name: "Ana" });
     const matchId = await startMatch("basic", headers);
+    await flyingTime();
 
     const first = await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
     expect(first.status).toBe(200);
@@ -203,14 +209,56 @@ describe("the benchmark API", () => {
     const again = await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
     expect(again.status).toBe(409);
 
+    // A guest is rated -- the scripted opponent's rating moved -- but is not
+    // listed, or one person with a fresh guest session each time is the board.
     const board = await (await app.fetch(new Request("http://localhost/api/leaderboard?kinds=human"))).json();
-    const player = board.leaderboard.find(
-      (row: { competitorId: string }) => row.competitorId === "human:22222222-2222-2222-2222-222222222222",
+    expect(
+      board.leaderboard.some(
+        (row: { competitorId: string }) => row.competitorId === "human:22222222-2222-2222-2222-222222222222",
+      ),
+    ).toBe(false);
+
+    const scripted = await (await app.fetch(new Request("http://localhost/api/leaderboard"))).json();
+    const opponent = scripted.leaderboard.find(
+      (row: { competitorId: string }) => row.competitorId === "scripted:energy-fighter:1",
     );
-    expect(player.wins).toBe(1);
-    expect(player.rating).toBeGreaterThan(1500);
-    // A guest is rated but flagged, so the visible board can leave them off.
-    expect(player.provisional).toBe(true);
+    expect(opponent.losses).toBe(1);
+    expect(opponent.rating).toBeLessThan(1500);
+  });
+
+  /**
+   * A scripted opponent leaves no trace on the server, so the only thing left
+   * to check is the clock: a match cannot be reported sooner than it could
+   * possibly have been flown, even at the fastest speed the page offers.
+   */
+  it("refuses a scripted match reported sooner than it could have been flown", async () => {
+    const headers = withSignedInUser("44444444-4444-4444-4444-444444444444");
+    const matchId = await startMatch("basic", headers);
+    const response = await post(
+      `/api/live/${matchId}/result`,
+      { ...SAMPLE_RESULT, summary: { ...SAMPLE_RESULT.summary, durationS: 280 } },
+      undefined,
+      headers,
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/started/);
+  });
+
+  /**
+   * The viewer calls the energy fighter "basic". That is a label, not an
+   * identity; recording it under that name gave the same opponent two
+   * competitors and split its rating between them.
+   */
+  it("records a scripted opponent under one identity whatever the UI calls it", async () => {
+    const headers = withSignedInUser("33333333-3333-3333-3333-333333333333");
+    const matchId = await startMatch("basic", headers);
+    await flyingTime();
+    await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
+
+    const board = await (await app.fetch(new Request("http://localhost/api/leaderboard"))).json();
+    const ids = board.leaderboard.map((row: { competitorId: string }) => row.competitorId);
+    expect(ids).toContain("scripted:energy-fighter:1");
+    expect(ids).not.toContain("scripted:basic:1");
   });
 
   it("keeps people off the default leaderboard", async () => {

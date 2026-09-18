@@ -487,6 +487,7 @@ table.data tr:hover td { background: #ffffff06; }
 table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 table.data .strong { color: var(--text); font-weight: 500; }
 table.data .muted { color: var(--text-faint); }
+table.data .policy { font-size: 10px; color: var(--text-faint); opacity: .75; }
 table.data .warn { color: var(--warn); }
 table.data a { color: var(--accent); text-decoration: none; }
 table.data a:hover { text-decoration: underline; }

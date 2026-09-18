@@ -4,6 +4,11 @@ import type { AgentObservation } from "../src/sim/telemetry";
 /**
  * Turns perfect-information telemetry into a briefing a model can read.
  *
+ * Changing anything in here changes the pilot, so the adapters' policy version
+ * has to move with it: a rating earned by one prompt does not belong to
+ * another. `bfm-briefing-2` balanced the description of load factor, which in
+ * `-1` framed every setting above two g purely as a cost.
+ *
  * The observation carries roughly sixty numbers per aircraft. Handing all of
  * them to a language model four times a second buries the handful that decide
  * the fight, so this presents the tactical picture the way a pilot would think
@@ -32,6 +37,7 @@ export const SYSTEM_PROMPT = `You are flying an F-16C in a guns-only one-versus-
 How the fight is won:
 - The only weapon is a 20 mm cannon with 511 rounds. It fires along the nose. You need the bandit inside about 1.5 km with your nose pointed where they WILL be, not where they are. The briefing gives you the predicted miss distance; under about 15 m is a hit.
 - Energy is speed plus altitude. Specific excess power (Ps) is whether you are gaining or losing it. Pulling g costs energy; the harder the turn, the faster it drains. A jet that has run out of energy cannot turn, cannot climb and cannot run.
+- Energy is a means, not the goal. A fight is won by pointing the nose, and pointing the nose costs g. Two or three g will not move it in any useful time; near corner speed, pull hard, take the angles, and unload afterwards to rebuild. Hoarding energy and never turning loses slowly instead of quickly.
 - Corner speed is the slowest speed at which you can pull the full 9 g, and therefore where you turn best. Far below it you cannot generate g; far above it your turn radius is huge.
 - Angle off tail near 0 means you are behind them, which is where you want to be. Near 180 means they are behind you, which is where you do not.
 - If the briefing says THREATENED, the bandit has or nearly has a gun solution on you. Defend first; you cannot shoot if you are dead.

@@ -46,7 +46,7 @@ export class AnthropicProvider implements ModelProvider {
       name: `claude/${this.model}`,
       provider: "anthropic",
       model: this.model,
-      policyVersion: "bfm-briefing-1",
+      policyVersion: "bfm-briefing-2",
       schema: "tactical",
     };
   }

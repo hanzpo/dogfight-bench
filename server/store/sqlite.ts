@@ -307,9 +307,13 @@ export class SqliteStore implements ResultsStore {
     update.run(ratingB + k * (1 - scoreA - (1 - expectedA)), b);
   }
 
-  async leaderboard(kinds: CompetitorKind[]): Promise<LeaderboardRow[]> {
+  async leaderboard(
+    kinds: CompetitorKind[],
+    options: { includeProvisional?: boolean } = {},
+  ): Promise<LeaderboardRow[]> {
     const wanted = kinds.length ? kinds : ["model", "scripted"];
     const placeholders = wanted.map(() => "?").join(", ");
+    const provisionalFilter = options.includeProvisional ? "" : "AND c.provisional = 0";
     const rows = this.db
       .prepare(
         `SELECT c.id AS competitorId, c.kind, c.name, c.provider, c.model,
@@ -329,7 +333,7 @@ export class SqliteStore implements ResultsStore {
                 SUM(p.cost_usd) AS costUsd
          FROM competitors c
          JOIN participants p ON p.competitor_id = c.id
-         WHERE c.kind IN (${placeholders})
+         WHERE c.kind IN (${placeholders}) ${provisionalFilter}
          GROUP BY c.id
          ORDER BY c.rating DESC`,
       )

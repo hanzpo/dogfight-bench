@@ -376,7 +376,18 @@ app.post("/api/live/:id/result", async (context) => {
   const opponentAircraft = summary.aircraft.find((aircraft) => aircraft.id !== humanAircraftId);
   if (!opponentAircraft) return context.json({ error: "the summary names only one aircraft" }, 400);
 
-  const scripted = ticket.opponentKind === "basic" || ticket.opponentKind === "basic-pursuit";
+  /**
+   * The control in the viewer calls the energy fighter "basic", which is a
+   * label, not an identity. Recording it under that name gave the same
+   * opponent two competitors and split its rating between them.
+   */
+  const canonicalScripted: Record<string, string> = {
+    basic: "energy-fighter",
+    "energy-fighter": "energy-fighter",
+    "basic-pursuit": "basic-pursuit",
+  };
+  const scriptedName = canonicalScripted[ticket.opponentKind];
+  const scripted = scriptedName !== undefined;
   if (!scripted && ticket.decisionsServed < env.liveMatchMinimumDecisions) {
     return context.json(
       {
@@ -408,13 +419,13 @@ app.post("/api/live/:id/result", async (context) => {
   }
 
   const opponentInfo = body.opponentInfo;
-  const opponent: Competitor = scripted
+  const opponent: Competitor = scriptedName
     ? {
-        id: `scripted:${ticket.opponentKind}:1`,
+        id: `scripted:${scriptedName}:1`,
         kind: "scripted",
-        displayName: ticket.opponentKind,
+        displayName: scriptedName,
         provider: "scripted",
-        model: ticket.opponentKind,
+        model: scriptedName,
         policyVersion: "1",
       }
     : competitorFor({

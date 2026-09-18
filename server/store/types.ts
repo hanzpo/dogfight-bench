@@ -150,7 +150,15 @@ export interface LiveTicket {
 
 export interface ResultsStore {
   recordMatch(match: RecordedMatch): Promise<void>;
-  leaderboard(kinds: CompetitorKind[]): Promise<LeaderboardRow[]>;
+  /**
+   * Ranked competitors of the requested kinds.
+   *
+   * Provisional guests are excluded unless asked for: their wins still cost
+   * their opponent, because refusing that would let a model farm guests for
+   * free, but listing them means one person with a fresh guest session each
+   * time is the whole board.
+   */
+  leaderboard(kinds: CompetitorKind[], options?: { includeProvisional?: boolean }): Promise<LeaderboardRow[]>;
   listMatches(options: { limit: number; userId?: string | undefined }): Promise<MatchRow[]>;
   getMatch(id: string): Promise<Record<string, unknown> | undefined>;
   getReplay(id: string): Promise<string | undefined>;

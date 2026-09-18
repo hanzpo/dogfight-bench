@@ -16,12 +16,22 @@ import type { ModelProvider, ProviderOptions } from "./types";
  * own confidence rather than on a bare argmax.
  */
 
+/**
+ * What each load factor buys, not only what it costs.
+ *
+ * The first version of this described 2 g as preserving energy and every
+ * setting above it as costing, bleeding or draining energy. A calibrated model
+ * reading that picked 2 g on ninety decisions out of ninety, flew a whole match
+ * without ever pointing the nose at anything, and lost -- correctly, because it
+ * did what it was told. Turning is the thing the g is for; the descriptions
+ * have to say so, or the choice is between one good option and four warnings.
+ */
 const TARGET_G = {
-  "2": "Gentle, about 2 g. Preserves energy.",
-  "4": "Moderate, about 4 g. Sustainable in most conditions.",
-  "6": "Hard, about 6 g. Costs energy.",
-  "8": "Very hard, about 8 g. Bleeds energy quickly.",
-  "9": "Maximum, 9 g. Best instantaneous turn, worst energy cost.",
+  "2": "About 2 g. Barely turns. For running away, extending, or flying straight while you rebuild speed.",
+  "4": "About 4 g. A steady turn you can hold for a long time without losing much.",
+  "6": "About 6 g. A hard turn that moves the nose quickly. Costs speed you will have to rebuild.",
+  "8": "About 8 g. Very hard. Close to the limit, and the fastest way to bring the nose onto a bandit.",
+  "9": "Maximum, 9 g. The best turn the jet has. What you pull to convert a position into a shot.",
 } as const;
 
 const THROTTLE_GUIDE: Record<(typeof THROTTLE_DETENTS)[number], string> = {
@@ -38,7 +48,9 @@ const FIRE = {
 
 const RULES = `Fly an F-16C in a guns-only one-versus-one dogfight. Choose what to do for the next second.
 Energy is speed plus altitude; specific excess power says whether you are gaining or losing it.
-Hard turns cost energy, and a jet with no energy cannot fight. Corner speed is where the jet turns best.
+Hard turns cost energy, and a jet with no energy cannot fight -- but a turn too gentle to move the nose
+never produces a shot either, and a fight is won by pointing the nose. Corner speed is where the jet turns
+best: near it, pull hard. Spend g to gain angles, and unload to rebuild speed once you have them.
 Angle off tail near 0 means you are behind the bandit, which wins; near 180 means they are behind you.
 The gun fires along the nose, so you must aim where the bandit will be. Predicted miss under 15 m hits.
 Do not fire when the predicted miss is large: ammunition is finite.
@@ -172,7 +184,7 @@ export class JevProvider implements ModelProvider {
       name: `jev/${this.model}`,
       provider: "jev",
       model: this.model,
-      policyVersion: "bfm-choices-1",
+      policyVersion: "bfm-choices-2",
       schema: "tactical",
     };
   }

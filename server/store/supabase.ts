@@ -148,14 +148,19 @@ export class SupabaseStore implements ResultsStore {
     return path;
   }
 
-  async leaderboard(kinds: CompetitorKind[]): Promise<LeaderboardRow[]> {
+  async leaderboard(
+    kinds: CompetitorKind[],
+    options: { includeProvisional?: boolean } = {},
+  ): Promise<LeaderboardRow[]> {
     const wanted = kinds.length ? kinds : (["model", "scripted"] as CompetitorKind[]);
 
-    const { data: competitors, error } = await this.client
+    let query = this.client
       .from("competitors")
       .select("id, kind, display_name, provider, model, policy_version, rating, provisional")
       .in("kind", wanted)
       .order("rating", { ascending: false });
+    if (!options.includeProvisional) query = query.eq("provisional", false);
+    const { data: competitors, error } = await query;
     if (error) throw new Error(`Could not read the leaderboard: ${error.message}`);
 
     const ids = (competitors ?? []).map((row) => (row as CompetitorRow).id);
