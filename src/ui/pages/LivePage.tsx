@@ -126,6 +126,23 @@ export function LivePage() {
     app.dataset["view"] = view;
   }, [match.state?.finished, match.paused, match.timeScale, match.bluePilot, followId, view]);
 
+  /**
+   * Publishes the control bar's height so the layout can stay clear of it.
+   *
+   * It is not a constant: the bar grows a row when it wraps on a narrow window,
+   * and the details panel's height was tuned against one particular bar and
+   * silently started overlapping it when a row was added.
+   */
+  useEffect(() => {
+    const bar = document.querySelector(".controls");
+    if (!bar) return;
+    const observer = new ResizeObserver(([entry]) => {
+      document.documentElement.style.setProperty("--controls-height", `${entry!.contentRect.height}px`);
+    });
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     let frame = 0;
     const publish = () => {

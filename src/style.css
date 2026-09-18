@@ -310,7 +310,8 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 
 .details {
   position: fixed; top: 68px; right: 16px; z-index: 3; width: 286px;
-  max-height: calc(100vh - 190px); overflow: auto;
+  /* Clear of the control bar, whose height is published as it changes. */
+  max-height: calc(100vh - 68px - 36px - var(--controls-height, 96px) - 24px); overflow: auto;
   padding: 14px 16px;
   background: #16181bf2; border: 1px solid var(--line); border-radius: var(--radius);
   font: 11px/1.45 "JetBrains Mono"; color: var(--text-muted);

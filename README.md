@@ -184,15 +184,16 @@ Anonymous sign-in is already on.
 ## Checks
 
 ```bash
-npm test               # 142 tests, ~8 s
+npm test               # 147 tests, ~12 s
 npm run build          # typecheck and bundle
 npm run check:ui:fast  # one engine, ~40 s -- the loop while changing a layout
 npm run check:ui       # Chromium + WebKit, 1x and 2x, ~3 min -- before committing
 ```
 
 `check:ui` drives the *default* live state at widescreen size and fails on
-measured framing, instrument positions, overlapping panels, a render budget, the
-mouse and gamepad axes, and the whole sign-in-and-fly-a-ranked-match flow. Every
+measured framing, instrument positions, overlapping panels, the camera's own
+stand-off in each view, a render budget, the mouse and gamepad axes, and the
+whole sign-in-and-fly-a-ranked-match flow. Every
 one of those was added after a fault it would have caught shipped without
 anybody noticing. It creates a guest on the real project, so the account flow
 runs at pixel ratio 1 only and honours `UI_CHECK_SKIP_ACCOUNT=1`.

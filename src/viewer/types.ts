@@ -9,17 +9,15 @@ export interface ViewerAircraft {
 }
 
 export interface ViewerTracer {
-  /** Tail: where the round was a few milliseconds ago. */
-  a: [number, number, number];
-  /** Head: where the round is now. */
-  b: [number, number, number];
+  from: [number, number, number];
+  to: [number, number, number];
 }
 
 export interface ViewerSnapshot {
   aircraft: ViewerAircraft[];
   tracers: ViewerTracer[];
-  /** Impact points recorded since the previous snapshot. */
+  /** Impacts recorded since the previous snapshot. */
   impacts?: Array<[number, number, number]>;
-  /** Simulated time, used to age effects independently of frame rate. */
+  /** Simulated time, so effects age independently of the frame rate. */
   time: number;
 }

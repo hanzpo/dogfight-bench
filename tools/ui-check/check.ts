@@ -184,8 +184,19 @@ page.on("console", (message) => {
  * The console only says "Failed to load resource", which is the same message
  * whether the API refused a decision or an image was missing, and chasing one
  * of those on a deployed site with no URL to go on is not possible.
+ *
+ * A refused decision is counted rather than treated as a broken page: a model
+ * that errors or returns something malformed is a result the benchmark exists
+ * to record, and the leaderboard has a column for it. Only the rate is asserted.
  */
+const decisions = { served: 0, refused: 0 };
 page.on("response", (response) => {
+  const decision = response.url().endsWith("/api/decide");
+  if (decision) {
+    decisions.served += 1;
+    if (response.status() >= 500) decisions.refused += 1;
+    return;
+  }
   if (response.status() >= 500) errors.push(`HTTP ${response.status()} from ${response.url()}`);
 });
 
@@ -594,6 +605,13 @@ if (replayTime) {
 await page.screenshot({ path: `${OUT}/replay-${engine.name}.png` });
 
 check(errors.length === 0, `no console or page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`);
+if (decisions.served > 0) {
+  const rate = decisions.refused / decisions.served;
+  check(
+    rate < 0.1,
+    `the model answered nearly every decision (${decisions.served - decisions.refused} of ${decisions.served})`,
+  );
+}
 await checkCanvasFitsWindow(page);
 
 await browser.close();

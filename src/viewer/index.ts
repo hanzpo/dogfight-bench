@@ -52,8 +52,8 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       const trail = Math.min(TRACER_TRAIL_SECONDS * speed, speed * shot.age);
       const direction = shot.velocity.clone().divideScalar(Math.max(speed, 1e-6));
       return {
-        a: shot.position.clone().addScaledVector(direction, -trail).toArray() as [number, number, number],
-        b: shot.position.toArray() as [number, number, number],
+        from: shot.position.clone().addScaledVector(direction, -trail).toArray() as [number, number, number],
+        to: shot.position.toArray() as [number, number, number],
       };
     }),
     impacts,
@@ -484,8 +484,8 @@ export class DogfightViewer {
     let vertex = 0;
     for (const tracer of snapshot.tracers) {
       if (vertex >= MAX_TRACERS * 6) break;
-      const [ax, ay, az] = tracer.a;
-      const [bx, by, bz] = tracer.b;
+      const [ax, ay, az] = tracer.from;
+      const [bx, by, bz] = tracer.to;
       if ((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2 < 0.25) continue;
       this.tracerPositions[vertex++] = ax;
       this.tracerPositions[vertex++] = ay;

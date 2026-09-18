@@ -92,8 +92,8 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
       };
     }),
     tracers: (current.projectiles ?? []).map((segment) => ({
-      a: [segment[0], segment[1], segment[2]] as [number, number, number],
-      b: [segment[3], segment[4], segment[5]] as [number, number, number],
+      from: [segment[0], segment[1], segment[2]] as [number, number, number],
+      to: [segment[3], segment[4], segment[5]] as [number, number, number],
     })),
   };
 }
