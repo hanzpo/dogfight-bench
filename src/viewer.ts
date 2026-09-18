@@ -180,6 +180,9 @@ const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
+/** Orbit sensitivity for hand-driven camera rotation. */
+const ORBIT_RADIANS_PER_PIXEL = 0.005;
+
 /** Length of the afterburner flame at rest, metres. */
 const PLUME_LENGTH_M = 7;
 
@@ -205,6 +208,7 @@ export class DogfightViewer {
   private readonly tracerLines: THREE.LineSegments;
   private readonly effectGroup = new THREE.Group();
   private sky?: THREE.Mesh;
+  private pointerCaptured = false;
   private readonly plumes = new Map<string, THREE.Mesh>();
   private readonly effects: Array<{ mesh: THREE.Mesh; born: number; life: number; grow: number }> = [];
   private lastEffectTime = 0;
@@ -325,9 +329,59 @@ export class DogfightViewer {
     if (view === this.view) return;
     this.view = view;
     this.cameraInitialized = false;
+    this.applyControlAvailability();
+  }
+
+  /**
+   * Suspends the orbit camera while the pointer belongs to the aircraft.
+   *
+   * With the pointer captured, every mouse movement is a stick input. Leaving
+   * the orbit controls listening would swing the camera at the same time, so
+   * flying with the mouse would spin the world.
+   */
+  setPointerCaptured(captured: boolean): void {
+    if (this.pointerCaptured === captured) return;
+    this.pointerCaptured = captured;
+    this.applyControlAvailability();
+  }
+
+  private applyControlAvailability(): void {
     // Orbiting a camera that is bolted to the aircraft makes no sense, and
     // leaving the controls live would fight the attitude update every frame.
-    this.controls.enabled = view === "orbit";
+    this.controls.enabled = this.view === "orbit" && !this.pointerCaptured;
+  }
+
+  /**
+   * Swings the external camera around the aircraft.
+   *
+   * Driven by hand rather than by OrbitControls because a mouse pilot's pointer
+   * may be captured, and a captured pointer reports movement deltas but never
+   * moves its client coordinates -- which is all OrbitControls looks at. Doing
+   * the rotation here means right-drag orbits identically whether the pointer
+   * is locked to the aircraft or not.
+   */
+  orbitBy(deltaXPixels: number, deltaYPixels: number): void {
+    if (this.view !== "orbit") return;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    spherical.theta -= deltaXPixels * ORBIT_RADIANS_PER_PIXEL;
+    spherical.phi = Math.max(
+      this.controls.minPolarAngle,
+      Math.min(this.controls.maxPolarAngle, spherical.phi - deltaYPixels * ORBIT_RADIANS_PER_PIXEL),
+    );
+    this.camera.position.copy(this.controls.target).add(offset.setFromSpherical(spherical));
+    this.camera.lookAt(this.controls.target);
+  }
+
+  /** Dollies the external camera, honouring the same limits as the controls. */
+  zoomBy(factor: number): void {
+    if (this.view !== "orbit") return;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const distance = Math.max(
+      this.controls.minDistance,
+      Math.min(this.controls.maxDistance, offset.length() * factor),
+    );
+    this.camera.position.copy(this.controls.target).add(offset.setLength(distance));
   }
 
   get viewMode(): ViewMode {

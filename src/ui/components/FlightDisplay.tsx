@@ -40,6 +40,9 @@ const LADDER_GAP = 0.34;
  */
 const HUD_FIELD_DEG = { horizontal: 30, vertical: 24 };
 
+/** Half-width of the stick-position box, in display units. */
+const CONTROL_BOX_HALF = 22;
+
 export function FlightDisplay({
   stateRef,
   viewerRef,
@@ -62,6 +65,8 @@ export function FlightDisplay({
   const headingTicks = useRef<SVGGElement>(null);
   const text = useRef<Record<string, SVGTextElement | null>>({});
   const throttleFill = useRef<SVGRectElement>(null);
+  const stickDot = useRef<SVGCircleElement>(null);
+  const rudderBar = useRef<SVGRectElement>(null);
   const aoaBracket = useRef<SVGGElement>(null);
   const hudField = useRef<SVGEllipseElement>(null);
   const groups = useRef<Record<string, SVGGElement | null>>({});
@@ -126,6 +131,16 @@ export function FlightDisplay({
       );
       throttleFill.current?.setAttribute("width", (Math.max(0, Math.min(1, own.controls.throttle)) * 84).toFixed(1));
       throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
+
+      // --- control position -------------------------------------------------
+      // Driven by what the aircraft is being commanded to do rather than by the
+      // device in the pilot's hand, so it reads the same whether a person, an
+      // autopilot or a model is flying -- which is what makes it worth showing.
+      stickDot.current?.setAttribute("cx", (clamp(own.controls.roll, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
+      stickDot.current?.setAttribute("cy", (-clamp(own.controls.pitch, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
+      const rudder = clamp(own.controls.yaw, -1, 1) * CONTROL_BOX_HALF;
+      rudderBar.current?.setAttribute("x", Math.min(0, rudder).toFixed(1));
+      rudderBar.current?.setAttribute("width", Math.abs(rudder).toFixed(1));
 
       // --- moving tapes ----------------------------------------------------
       renderTape(
@@ -316,6 +331,19 @@ export function FlightDisplay({
         </text>
         <rect className="throttle-track" x="0" y="0" width="84" height="8" />
         <rect ref={throttleFill} className="throttle-fill" x="0" y="0" width="0" height="8" />
+        <g className="control-indicator" transform="translate(126 -20)">
+          <rect
+            className="control-box"
+            x={-CONTROL_BOX_HALF}
+            y={-CONTROL_BOX_HALF}
+            width={CONTROL_BOX_HALF * 2}
+            height={CONTROL_BOX_HALF * 2}
+          />
+          <line className="control-cross" x1={-CONTROL_BOX_HALF} y1="0" x2={CONTROL_BOX_HALF} y2="0" />
+          <line className="control-cross" x1="0" y1={-CONTROL_BOX_HALF} x2="0" y2={CONTROL_BOX_HALF} />
+          <circle ref={stickDot} className="control-dot" cx="0" cy="0" r="3.2" />
+          <rect ref={rudderBar} className="control-rudder" x="0" y={CONTROL_BOX_HALF + 5} width="0" height="4" />
+        </g>
         <text ref={label("throttleLabel")} className="tape-sub" x="92" y="8">
           IDLE
         </text>

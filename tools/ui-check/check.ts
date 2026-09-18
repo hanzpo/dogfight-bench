@@ -241,6 +241,79 @@ check(
   "pause control applied",
 );
 
+console.log("human controls");
+/**
+ * Flying with the mouse, without pointer lock.
+ *
+ * Pointer lock needs a focused OS window, which an automated browser does not
+ * have, so this exercises the uncaptured mode: stick deflection taken from how
+ * far the cursor sits from the centre of the viewport. That is the fallback
+ * real users hit in embedded frames and locked-down browsers, so it is the mode
+ * most worth having a standing check on.
+ */
+// The camera must be on the aircraft being flown. The follow control was
+// toggled to red above, and the indicator honestly reports whichever aircraft
+// is on screen -- which is the right behaviour and the wrong test.
+if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["follow"])) !== "blue-1") {
+  await page.click("#follow");
+}
+await page.selectOption("#blue-pilot", "human");
+await page.selectOption("#control-scheme", "mouse");
+await page.waitForTimeout(600);
+const controlDot = `(() => {
+  const dot = document.querySelector('.control-dot');
+  return dot ? { x: Number(dot.getAttribute('cx')), y: Number(dot.getAttribute('cy')) } : null;
+})()`;
+await page.mouse.move(800, 450);
+await page.waitForTimeout(300);
+const centred = (await page.evaluate(controlDot)) as { x: number; y: number } | null;
+await page.mouse.move(1_180, 250, { steps: 8 });
+await page.waitForTimeout(300);
+const deflected = (await page.evaluate(controlDot)) as { x: number; y: number } | null;
+check(centred !== null && deflected !== null, "control position indicator is drawn");
+if (centred && deflected) {
+  check(Math.abs(centred.x) < 2 && Math.abs(centred.y) < 2, "stick is centred when the cursor is centred");
+  // Cursor right and forward: stick right, stick forward. The indicator's y
+  // grows downward, and a stick pushed forward shows forward, so both are
+  // positive.
+  check(deflected.x > 5, `cursor right deflects the stick right (${deflected.x})`);
+  check(deflected.y > 3, `cursor forward pushes the stick forward (${deflected.y})`);
+}
+/**
+ * Right-drag looks around while flying with the mouse.
+ *
+ * The left button is the trigger and movement is the stick, so the camera needs
+ * a button of its own. It is driven by hand rather than by OrbitControls,
+ * because a captured pointer reports movement but never changes its client
+ * coordinates -- so this has to keep working in both mouse modes.
+ */
+const cameraBefore = String(
+  await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["camera"]),
+);
+await page.mouse.move(800, 450);
+await page.mouse.down({ button: "right" });
+await page.mouse.move(1_000, 470, { steps: 10 });
+await page.mouse.up({ button: "right" });
+await page.waitForTimeout(400);
+const cameraAfter = String(
+  await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["camera"]),
+);
+check(cameraBefore !== cameraAfter, "right-drag moves the external camera while flying with the mouse");
+check(
+  (await page.locator("#context-menu-should-not-exist").count()) === 0,
+  "right-drag does not open the browser context menu",
+);
+
+await page.selectOption("#control-scheme", "keyboard");
+await page.waitForTimeout(400);
+const released = (await page.evaluate(controlDot)) as { x: number; y: number } | null;
+check(
+  released !== null && Math.abs(released.x) < 2 && Math.abs(released.y) < 2,
+  "leaving mouse control returns the stick to centre",
+);
+await page.selectOption("#blue-pilot", "basic");
+await page.waitForTimeout(800);
+
 console.log("flight instruments");
 // Pilot instruments and omniscient benchmark data are deliberately separate
 // things in separate places; check both exist and that the cockpit view puts

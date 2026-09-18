@@ -4,7 +4,15 @@ import { ObserverPanel } from "../components/ObserverPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useLiveMatch, type PilotKind } from "../hooks/useLiveMatch";
+import { CONTROL_SCHEMES, type ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
+
+/** What to tell the pilot, for whatever they are holding. */
+const KEYMAP: Record<ControlScheme, string> = {
+  keyboard: "W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE",
+  mouse: "MOUSE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM · Q/E RUDDER · R/F THROTTLE",
+  gamepad: "RIGHT STICK · LEFT STICK RUDDER · TRIGGERS THROTTLE · RB FIRE",
+};
 
 /**
  * The live match page.
@@ -25,6 +33,13 @@ export function LivePage() {
   useEffect(() => {
     viewer.current?.setView(view);
   }, [view]);
+
+  // While the pointer belongs to the aircraft, it must not also orbit the
+  // camera.
+  const pointerFlying = match.scheme === "mouse";
+  useEffect(() => {
+    viewer.current?.setPointerCaptured(pointerFlying);
+  }, [pointerFlying]);
 
   // Derived during render. Setting this from an effect keyed on an object that
   // is rebuilt every frame is what drove React past its update depth.
@@ -58,6 +73,13 @@ export function LivePage() {
     const publish = () => {
       const app = document.querySelector<HTMLElement>("#app");
       const instance = viewer.current;
+      if (instance) {
+        // Camera movement the pilot asked for with the right button and wheel,
+        // applied once per frame rather than once per mouse event.
+        const view = match.inputRef.current.consumeViewDelta();
+        if (view.orbitX || view.orbitY) instance.orbitBy(view.orbitX, view.orbitY);
+        if (view.zoom) instance.zoomBy(Math.exp(view.zoom * 0.0012));
+      }
       if (app && instance) {
         app.dataset["simTime"] = (match.simTimeRef.current ?? 0).toFixed(3);
         app.dataset["camera"] = instance.camera.position
@@ -78,7 +100,7 @@ export function LivePage() {
     };
     frame = requestAnimationFrame(publish);
     return () => cancelAnimationFrame(frame);
-  }, [match.simTimeRef]);
+  }, [match.simTimeRef, match.inputRef]);
 
   const followed = match.state?.aircraft.find((aircraft) => aircraft.id === followId);
 
@@ -94,7 +116,24 @@ export function LivePage() {
       />
       <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} observerOpen={observerOpen} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
-      {view === "orbit" ? <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div> : null}
+      {view === "orbit" && !pointerFlying ? (
+        <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
+      ) : null}
+
+      {match.bluePilot === "human" && match.scheme === "mouse" ? (
+        <div className="pointer-hint">
+          {match.canCapturePointer ? (
+            <button id="capture-pointer" onClick={() => void match.inputRef.current.requestPointerLock()}>
+              CAPTURE POINTER
+            </button>
+          ) : null}
+          <span>
+            {match.mouseMode === "relative"
+              ? "MOVEMENT IS THE STICK · LEFT FIRE · RIGHT-DRAG LOOK · MIDDLE CENTRE · ESC RELEASES"
+              : "CURSOR OFFSET IS THE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM"}
+          </span>
+        </div>
+      ) : null}
       <ObserverPanel state={match.state} followId={followId} open={observerOpen} onToggle={() => setObserverOpen(!observerOpen)} />
 
       <footer className="controls">
@@ -108,6 +147,20 @@ export function LivePage() {
             <option value="human">HUMAN</option>
             <option value="basic">BASELINE AI</option>
             <option value="model">SERVER MODEL</option>
+          </select>
+        </label>
+        <label>
+          CONTROL
+          <select
+            id="control-scheme"
+            value={match.scheme}
+            onChange={(changed) => match.setScheme(changed.target.value as ControlScheme)}
+          >
+            {CONTROL_SCHEMES.map((option) => (
+              <option key={option} value={option}>
+                {option.toUpperCase()}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -151,7 +204,7 @@ export function LivePage() {
         </span>
         <span id="event">{event}</span>
       </div>
-      <div className="keymap">W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE</div>
+      <div className="keymap">{KEYMAP[match.scheme]}</div>
     </>
   );
 }

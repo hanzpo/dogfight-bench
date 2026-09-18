@@ -5,8 +5,16 @@ import { HttpAgent } from "../../agents/http-agent";
 import { ReplayRecorder } from "../../sim/replay";
 import { neutralMerge } from "../../sim/scenario";
 import { DogfightSimulation } from "../../sim/simulation";
-import type { ControlInput, MatchState } from "../../sim/types";
+import type { MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
+import {
+  PilotInput,
+  loadSettings,
+  saveSettings,
+  type ControlScheme,
+  type MouseMode,
+  type PilotInputSettings,
+} from "../input/pilot-input";
 
 export type PilotKind = "human" | "basic" | "model";
 
@@ -26,6 +34,17 @@ export interface LiveMatch {
   timeScale: number;
   followRed: boolean;
   bluePilot: PilotKind;
+  /** Which device is flying the blue jet. */
+  scheme: ControlScheme;
+  inputSettings: PilotInputSettings;
+  /** True when the pointer could still be captured for a free-moving stick. */
+  canCapturePointer: boolean;
+  /** How the mouse is being read right now. */
+  mouseMode: MouseMode;
+  /** Live stick position for the control indicator; read every frame. */
+  inputRef: RefObject<PilotInput>;
+  setScheme: (scheme: ControlScheme) => void;
+  setInputSettings: (settings: PilotInputSettings) => void;
   setPaused: (paused: boolean) => void;
   setTimeScale: (scale: number) => void;
   setFollowRed: (follow: boolean) => void;
@@ -33,20 +52,6 @@ export interface LiveMatch {
   restart: () => void;
   downloadReplay: () => void;
 }
-
-/**
- * Keyboard axes, as pairs of [positive, negative].
- *
- * Pitch follows the stick, not the camera: W is forward on the stick and puts
- * the nose down, S is back and pulls. The control input itself is a load-factor
- * command where positive pulls, so W maps to the negative end.
- */
-const KEY_AXES = {
-  pitch: ["KeyS", "KeyW"],
-  roll: ["KeyD", "KeyA"],
-  yaw: ["KeyE", "KeyQ"],
-  throttle: ["KeyR", "KeyF"],
-} as const;
 
 /**
  * Owns the live simulation and its animation loop.
@@ -62,8 +67,8 @@ export function useLiveMatch(): LiveMatch {
   const recorder = useRef<ReplayRecorder>(undefined);
   const accumulator = useRef(0);
   const lastFrame = useRef(performance.now());
-  const keys = useRef(new Set<string>());
-  const human = useRef<ControlInput>({ pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire: false });
+  const input = useRef<PilotInput>(undefined as unknown as PilotInput);
+  if (!input.current) input.current = new PilotInput();
 
   const snapshotRef = useRef<ViewerSnapshot>(undefined);
   const simTimeRef = useRef(0);
@@ -75,6 +80,10 @@ export function useLiveMatch(): LiveMatch {
   const [timeScale, setTimeScale] = useState(1);
   const [followRed, setFollowRed] = useState(false);
   const [bluePilot, setBluePilot] = useState<PilotKind>("human");
+  const [scheme, setSchemeState] = useState<ControlScheme>("keyboard");
+  const [inputSettings, setInputSettingsState] = useState<PilotInputSettings>(() => loadSettings());
+  const [canCapturePointer, setCanCapturePointer] = useState(false);
+  const [mouseMode, setMouseMode] = useState<MouseMode>("absolute");
 
   const pausedRef = useRef(paused);
   const scaleRef = useRef(timeScale);
@@ -106,23 +115,48 @@ export function useLiveMatch(): LiveMatch {
     });
     accumulator.current = 0;
     lastEventIndex.current = 0;
+    input.current.reset();
     setPaused(false);
   }, []);
 
   useEffect(() => restart(), [restart, bluePilot]);
 
+  /**
+   * Bind the devices to the viewport.
+   *
+   * The pointer has to be captured on the element the person actually clicked,
+   * so this waits for the canvas host to exist rather than listening on the
+   * document and hoping.
+   */
   useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      if (["Space", "ArrowUp", "ArrowDown"].includes(event.code)) event.preventDefault();
-      keys.current.add(event.code);
-    };
-    const up = (event: KeyboardEvent) => keys.current.delete(event.code);
-    addEventListener("keydown", down);
-    addEventListener("keyup", up);
+    const host = document.querySelector<HTMLElement>("#viewport") ?? document.body;
+    const detach = input.current.attach(host);
+    // Pointer lock can be lost without warning -- Escape, a window switch, the
+    // browser deciding it has had enough -- and there is no single event that
+    // covers every case, so the visible state is polled rather than inferred.
+    const poll = setInterval(() => {
+      setCanCapturePointer(input.current.canCapturePointer);
+      setMouseMode(input.current.mouseMode);
+    }, 250);
     return () => {
-      removeEventListener("keydown", down);
-      removeEventListener("keyup", up);
+      detach();
+      clearInterval(poll);
     };
+  }, []);
+
+  const setScheme = useCallback((next: ControlScheme) => {
+    input.current.scheme = next;
+    input.current.reset();
+    if (next !== "mouse") input.current.releasePointerLock();
+    setSchemeState(next);
+    setCanCapturePointer(input.current.canCapturePointer);
+    setMouseMode(input.current.mouseMode);
+  }, []);
+
+  const setInputSettings = useCallback((next: PilotInputSettings) => {
+    input.current.settings = next;
+    saveSettings(next);
+    setInputSettingsState(next);
   }, []);
 
   useEffect(() => {
@@ -136,17 +170,7 @@ export function useLiveMatch(): LiveMatch {
         accumulator.current += wallDt * scaleRef.current;
 
         if (pilotRef.current === "human") {
-          const axis = (pair: readonly [string, string]) =>
-            (keys.current.has(pair[0]) ? 1 : 0) - (keys.current.has(pair[1]) ? 1 : 0);
-          human.current.pitch = axis(KEY_AXES.pitch);
-          human.current.roll = axis(KEY_AXES.roll);
-          human.current.yaw = axis(KEY_AXES.yaw);
-          human.current.throttle = Math.max(
-            0,
-            Math.min(1, human.current.throttle + axis(KEY_AXES.throttle) * 0.006),
-          );
-          human.current.fire = keys.current.has("Space");
-          sim.setHumanControls("blue-1", { ...human.current });
+          sim.setHumanControls("blue-1", input.current.sample(wallDt));
         }
 
         let safety = 0;
@@ -195,6 +219,13 @@ export function useLiveMatch(): LiveMatch {
     timeScale,
     followRed,
     bluePilot,
+    scheme,
+    inputSettings,
+    canCapturePointer,
+    mouseMode,
+    inputRef: input,
+    setScheme,
+    setInputSettings,
     setPaused,
     setTimeScale,
     setFollowRed,

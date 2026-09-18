@@ -52,6 +52,16 @@ code { font: 11px "JetBrains Mono"; color: var(--accent); }
   color: #d8e5e099; font: 9px "JetBrains Mono"; letter-spacing: .12em; pointer-events: none; z-index: 2;
 }
 
+/* Mouse-flying status. Deliberately not a modal: it sits over a live match. */
+.pointer-hint {
+  position: fixed; top: 128px; left: 50%; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 12px;
+}
+.pointer-hint span {
+  font: 9px "JetBrains Mono"; letter-spacing: .12em; color: #d8e5e0aa; text-shadow: 0 1px 3px #000c;
+}
+.pointer-hint button { min-height: 26px; padding: 0 10px; }
+
 select, button {
   min-height: 32px;
   border: 1px solid #ffffff22;
@@ -130,6 +140,12 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 
 .throttle-track { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
 .throttle-fill { opacity: .8; }
+
+/* Control position: where the stick and pedals actually are, whoever is flying. */
+.control-box { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
+.control-cross { stroke: var(--hud); stroke-width: .8; opacity: .35; }
+.control-dot { fill: var(--hud); }
+.control-rudder { fill: var(--hud); opacity: .85; }
 .stores-value { font: 600 19px "Barlow Condensed"; letter-spacing: .05em; fill: #eafff1; }
 
 /* --- conformal symbology, cockpit view only --- */
