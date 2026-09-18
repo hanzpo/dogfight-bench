@@ -357,6 +357,17 @@ record a match and settle a ticket. Recording is a single database function on
 purpose: Elo is a read-modify-write on two rows, and two matches finishing at
 the same moment would otherwise overwrite each other.
 
+### Housekeeping
+
+Three things accumulate on their own and nothing removes them automatically:
+guest sessions from people who played once and never came back, match tickets
+for fights that were started and never finished (a closed tab reports nothing),
+and replays whose match has been deleted, because object storage does not
+cascade. `supabase/migrations/` adds `prune_abandoned()` and
+`orphaned_replays()` for exactly those. Schedule the first with pg_cron or run
+it by hand; it keeps any guest who actually recorded a result, because deleting
+them would strip the name off a match their opponent's rating already reflects.
+
 **Still to do by hand, because it needs credentials this repository must not
 hold:** Google and GitHub sign-in are wired up in the UI but disabled on the
 project. Create an OAuth app with each, then in the Supabase dashboard under
