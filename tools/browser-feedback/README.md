@@ -1,5 +1,16 @@
 # Browser feedback loop
 
+> This is the *agentic* browser test: Jev decides which control to operate, and
+> the harness then verifies the result independently. It needs a TypeSafe key
+> and Chrome remote debugging, and it costs money to run.
+>
+> For deterministic rendering and layout regressions -- camera framing, canvas
+> sizing, Retina, Safari -- use `npm run check:ui` from the repository root
+> instead. It is free, runs in Chromium and WebKit at two pixel ratios, and is
+> the check that belongs in CI. The two are complementary: this one answers
+> "can an agent drive the interface", that one answers "does the interface
+> render correctly".
+
 This tool pins [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) and uses Jev to exercise Dogfight Bench in a real Chromium tab.
 
 The loop is deliberately split into three responsibilities:
