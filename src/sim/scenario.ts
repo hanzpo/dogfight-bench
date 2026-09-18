@@ -9,7 +9,7 @@ import { trimLevelFlight, trimPower } from "./trim";
 import type { AircraftState, MatchState, ScenarioConfig, Team } from "./types";
 
 export const neutralMerge: ScenarioConfig = {
-  id: "neutral-merge-v1",
+  id: "neutral-merge-v2",
   seed: 0xd06f16,
   fixedDt: 1 / 120,
   maxTime: 300,
@@ -41,18 +41,31 @@ function placements(config: ScenarioConfig): [Placement, Placement] {
   const half = config.startSeparationM / 2;
   const lateral = config.startLateralOffsetM / 2;
   const split = config.startAltitudeSplitM / 2;
+  /**
+   * Each aircraft is turned off the head-on line by the same amount.
+   *
+   * The crossing angle used to be applied entirely to red: blue flew due north
+   * every time and red did all of the turning. At a beam crossing that is not a
+   * variation of the same fight, it is a different fight for each side -- one
+   * aircraft pointing at the merge and the other cutting across it -- and in
+   * self-play between identical agents it showed up as red winning nine of ten
+   * short matches. Splitting the deviation keeps the angle between the two
+   * velocity vectors exactly `startHeadingCrossingDeg` while asking the same of
+   * both.
+   */
+  const deviation = (180 - config.startHeadingCrossingDeg) / 2;
   return [
     {
       id: "blue-1",
       team: "blue",
       position: new Vector3(-lateral, config.startAltitudeM - split, -half),
-      headingDeg: 0,
+      headingDeg: deviation,
     },
     {
       id: "red-1",
       team: "red",
       position: new Vector3(lateral, config.startAltitudeM + split, half),
-      headingDeg: config.startHeadingCrossingDeg,
+      headingDeg: 180 - deviation,
     },
   ];
 }
@@ -141,7 +154,41 @@ export function scenarioVariant(seed: number, base: ScenarioConfig = neutralMerg
   };
 }
 
-/** A fixed, reproducible ladder of variants used by the benchmark runner. */
+/**
+ * The mirror image of a variant: the same fight from the other side.
+ *
+ * Only the two quantities that hand one aircraft an advantage are negated --
+ * the altitude split and the lateral offset. Everything else is shared by both
+ * jets and reversing it would make a different fight rather than the same one.
+ */
+export function mirrorScenario(scenario: ScenarioConfig): ScenarioConfig {
+  return {
+    ...scenario,
+    id: `${scenario.id}m`,
+    startAltitudeSplitM: -scenario.startAltitudeSplitM,
+    startLateralOffsetM: -scenario.startLateralOffsetM,
+  };
+}
+
+/**
+ * A fixed, reproducible ladder of variants used by the benchmark runner.
+ *
+ * Emitted in mirrored pairs, so the set is even-handed by construction. Drawn
+ * independently the offsets do not cancel: ten variants came out with a mean
+ * altitude split of nearly four hundred metres, which is a real advantage
+ * handed to one side for free. The match runner also flies both sides of every
+ * scenario, but anything that makes a single pass -- a quick sweep, a self-play
+ * check -- would otherwise be measuring the draw rather than the pilots.
+ *
+ * An odd count keeps the unpaired variant last, so `scenarioSet(1)` is still
+ * one scenario.
+ */
 export function scenarioSet(count: number, base: ScenarioConfig = neutralMerge): ScenarioConfig[] {
-  return Array.from({ length: count }, (_, index) => scenarioVariant(base.seed + index * 7919, base));
+  const scenarios: ScenarioConfig[] = [];
+  for (let index = 0; scenarios.length < count; index += 1) {
+    const variant = scenarioVariant(base.seed + index * 7919, base);
+    scenarios.push(variant);
+    if (scenarios.length < count) scenarios.push(mirrorScenario(variant));
+  }
+  return scenarios;
 }

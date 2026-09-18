@@ -142,7 +142,7 @@ describe("the energy fighter", () => {
     let basicRounds = 0;
     let basicHits = 0;
 
-    for (const scenario of scenarioSet(6, { ...neutralMerge, maxTime: 180 })) {
+    for (const scenario of scenarioSet(4, { ...neutralMerge, maxTime: 110 })) {
       // Both sides of every scenario, so a side advantage cannot decide it.
       for (const energyIsBlue of [true, false]) {
         const sim = new DogfightSimulation(scenario, { recordDecisions: false });

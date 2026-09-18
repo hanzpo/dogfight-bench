@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check:ui": "tsx tools/ui-check/check.ts"
+    "check:ui": "tsx tools/ui-check/check.ts",
+    "check:ui:fast": "UI_CHECK_ENGINES=webkit UI_CHECK_SKIP_ACCOUNT=1 tsx tools/ui-check/check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

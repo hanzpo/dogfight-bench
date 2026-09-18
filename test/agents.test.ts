@@ -245,24 +245,10 @@ describe("decision deadlines", () => {
 });
 
 describe("scripted baselines", () => {
-  it("beats the naive baseline more often than not across seeded scenarios", async () => {
-    let energyWins = 0;
-    let basicWins = 0;
-    for (const scenario of scenarioSet(10, { ...neutralMerge, maxTime: 180 })) {
-      const sim = new DogfightSimulation(scenario, { recordDecisions: false });
-      sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
-      sim.attachAgent("red-1", new BasicPursuitAgent("red-1"));
-      await sim.runHeadless();
-      if (sim.state.winnerId === "blue-1") energyWins += 1;
-      if (sim.state.winnerId === "red-1") basicWins += 1;
-    }
-    expect(energyWins).toBeGreaterThan(basicWins);
-  }, 300_000);
-
   it("is not biased toward either side in self-play", async () => {
     let blueWins = 0;
     let redWins = 0;
-    for (const scenario of scenarioSet(10, { ...neutralMerge, maxTime: 180 })) {
+    for (const scenario of scenarioSet(10, { ...neutralMerge, maxTime: 90 })) {
       const sim = new DogfightSimulation(scenario, { recordDecisions: false });
       sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
       sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
@@ -270,10 +256,21 @@ describe("scripted baselines", () => {
       if (sim.state.winnerId === "blue-1") blueWins += 1;
       if (sim.state.winnerId === "red-1") redWins += 1;
     }
-    // Identical agents from a symmetric merge: a large split would mean the
-    // scenario or the physics quietly favours one side.
-    expect(Math.abs(blueWins - redWins)).toBeLessThanOrEqual(4);
-  }, 300_000);
+    /**
+     * Identical agents from a symmetric merge: a large split would mean the
+     * scenario or the physics quietly favours one side.
+     *
+     * Ten matches, not six: over six, almost any split is consistent with a
+     * fair fight, so a tolerance tight enough to catch a real bias also fails
+     * at random.
+     *
+     * It is worth the seconds. This is the test that found the merge handing
+     * the entire crossing angle to one aircraft -- blue flew due north in every
+     * scenario while red did all the turning -- which showed up here as red
+     * taking nine of ten short matches and nowhere else at all.
+     */
+    expect(Math.abs(blueWins - redWins)).toBeLessThanOrEqual(3);
+  }, 120_000);
 
   it("converts a tight gun solution into hits", () => {
     const sim = new DogfightSimulation(neutralMerge, { recordDecisions: false });

@@ -162,12 +162,33 @@ function checkFraming(label: string, frame: Framing): void {
 
 mkdirSync(OUT, { recursive: true });
 
-const engines: Array<{ name: string; launch: () => Promise<Browser>; scale: number }> = [
+const ALL_ENGINES: Array<{ name: string; launch: () => Promise<Browser>; scale: number }> = [
   { name: "chromium", launch: () => chromium.launch(), scale: 1 },
   { name: "chromium@2x", launch: () => chromium.launch(), scale: 2 },
   { name: "webkit", launch: () => webkit.launch(), scale: 1 },
   { name: "webkit@2x", launch: () => webkit.launch(), scale: 2 },
 ];
+
+/**
+ * Which engines to run.
+ *
+ * All four by default, because the faults this catches are engine-specific and
+ * pixel-ratio-specific often enough that checking one proves little. While
+ * iterating, `UI_CHECK_ENGINES=webkit` narrows it to one -- useful for a tight
+ * loop on a layout change, and not a substitute for the full run before a
+ * commit.
+ */
+const requested = (process.env["UI_CHECK_ENGINES"] ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
+const engines = requested.length
+  ? ALL_ENGINES.filter((engine) => requested.includes(engine.name))
+  : ALL_ENGINES;
+if (!engines.length) {
+  console.error(`No engines matched ${requested.join(", ")}. Available: ${ALL_ENGINES.map((e) => e.name).join(", ")}`);
+  process.exit(1);
+}
 
 for (const engine of engines) {
 console.log(`\n=== ${engine.name} ===`);
@@ -327,6 +348,21 @@ const roster = (await page.evaluate(`fetch('/api/agents').then((r) => r.json())`
 const calibrated = roster.agents.find((agent) => agent.kind === "jev" && agent.free && agent.available);
 if (calibrated && engine.scale === 1) {
   console.log("calibrated model");
+  /**
+   * Put the page in the state this actually needs, rather than inheriting it.
+   *
+   * Earlier sections pause the match and point the camera at red, and the
+   * section that undoes both is skippable. A paused match asks nobody for a
+   * decision, and the details panel reports the aircraft being followed -- so
+   * watching red while the model flies blue shows a scripted pilot's absent
+   * probabilities and looks exactly like a broken feature.
+   */
+  if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused") {
+    await page.click("#pause");
+  }
+  if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["follow"])) !== "blue-1") {
+    await page.click("#follow");
+  }
   await page.selectOption("#blue-pilot", "jev");
   await page.waitForTimeout(6_000);
   const questions = await page.locator(".distribution-head").count();
