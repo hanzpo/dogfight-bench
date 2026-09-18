@@ -218,7 +218,7 @@ export function useLiveMatch(): LiveMatch {
       // nowhere to keep a replay. Say that rather than asking somebody to sign
       // in to a thing that does not exist.
       if (blue === HUMAN) {
-        setRecording({ status: "unranked", message: "This deployment does not record matches." });
+        setRecording({ status: "unranked", message: "Not recorded" });
       }
     } else if (blue === HUMAN && red !== HUMAN) {
       void authHeaders()
@@ -227,15 +227,14 @@ export function useLiveMatch(): LiveMatch {
           matchTicket.current = { id: ticket.matchId, ranked: ticket.ranked };
           setRecording({
             status: ticket.ranked ? "ranked" : "unranked",
-            message: ticket.ranked
-              ? undefined
-              : "Sign in to have this count on the leaderboard and to keep the replay.",
+            // Short on purpose: it sits over a live match for the whole match.
+            message: ticket.ranked ? undefined : "Not counted · sign in to rank",
           });
         })
         .catch(() => {
           // A server that cannot open a ticket is a server that cannot record
           // the result either. The match still flies.
-          setRecording({ status: "unranked", message: "This match will not be recorded." });
+          setRecording({ status: "unranked", message: "Not recorded" });
         });
     }
   }, []);
@@ -347,7 +346,7 @@ export function useLiveMatch(): LiveMatch {
     reported.current = true;
 
     if (!ticket.ranked) {
-      setRecording({ status: "unranked", message: "Sign in to have your matches counted and kept." });
+      setRecording({ status: "unranked", message: "Not counted · sign in to rank" });
       return;
     }
 
@@ -365,9 +364,7 @@ export function useLiveMatch(): LiveMatch {
       );
       setRecording({
         status: "saved",
-        message: outcome.provisional
-          ? "Recorded. Attach an account to appear on the leaderboard."
-          : "Recorded on the leaderboard.",
+        message: outcome.provisional ? "Recorded · attach an account to rank" : "Recorded",
       });
     } catch (cause: unknown) {
       setRecording({ status: "failed", message: cause instanceof Error ? cause.message : String(cause) });

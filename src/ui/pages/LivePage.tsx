@@ -311,9 +311,9 @@ export function LivePage() {
           <span className="recording-dot" />
           <span>
             {match.recording.status === "ranked"
-              ? "Ranked match — the result will count"
+              ? "Ranked"
               : match.recording.status === "saving"
-                ? "Saving result…"
+                ? "Saving…"
                 : (match.recording.message ?? "Not recorded")}
           </span>
         </div>

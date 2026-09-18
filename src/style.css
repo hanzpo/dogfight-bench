@@ -399,7 +399,8 @@ label { color: var(--text-muted); font-size: 11px; }
 
 /* Collapsed it becomes a tab on the edge of the screen, rather than a small
    floating box with a button loose inside it. */
-.details.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 76px; right: 0; }
+/* Clear of the navigation above it, which owns the same corner. */
+.details.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 84px; right: 0; }
 .details.collapsed header, .details.collapsed section { display: none; }
 .details.collapsed .details-toggle {
   position: static; padding: 8px 13px;
