@@ -184,6 +184,33 @@ check(
   "pause control applied",
 );
 
+console.log("flight instruments");
+// Pilot instruments and omniscient benchmark data are deliberately separate
+// things in separate places; check both exist and that the cockpit view puts
+// conformal symbology on the screen.
+check((await page.locator(".flight-display .tape-box").count()) >= 3, "airspeed, altitude and heading are displayed");
+check((await page.locator(".observer").count()) === 1, "observer data has its own panel");
+check(
+  (await page.locator(".flight-display .adi").getAttribute("visibility")) !== "hidden",
+  "external view shows an attitude indicator",
+);
+
+await page.selectOption("#view", "cockpit");
+await page.waitForTimeout(2_500);
+check(
+  (await page.locator(".conformal").getAttribute("visibility")) === "visible",
+  "cockpit view shows conformal head-up symbology",
+);
+const ladderRungs = await page.locator(".conformal line").count();
+check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
+check(
+  (await page.locator(".flight-display .adi").getAttribute("visibility")) === "hidden",
+  "attitude indicator gives way to the conformal ladder in the cockpit",
+);
+await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
+await page.selectOption("#view", "orbit");
+await page.waitForTimeout(1_500);
+
 console.log("tactical overlay");
 // The gunsight is the whole point of a guns-only game: prove it draws, that it
 // tracks the bandit, and that the shoot cue is gated rather than always on.

@@ -45,9 +45,10 @@ code { font: 11px "JetBrains Mono"; color: var(--accent); }
 .nav a:hover { color: var(--ink); }
 .nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 
+/* Below the heading tape, which owns the top centre. */
 .orbit-help {
   text-shadow: 0 1px 3px #000c;
-  position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 128px; left: 50%; transform: translateX(-50%);
   color: #d8e5e099; font: 9px "JetBrains Mono"; letter-spacing: .12em; pointer-events: none; z-index: 2;
 }
 
@@ -77,7 +78,7 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 
 .flight-strip {
   text-shadow: 0 1px 3px #000c;
-  position: fixed; left: 50%; bottom: 22px; width: min(680px, calc(100% - 32px));
+  position: fixed; left: 50%; bottom: 20px; width: min(680px, calc(100% - 32px));
   transform: translateX(-50%); display: flex; justify-content: space-between;
   color: #b8c8c5; font: 9px "JetBrains Mono"; letter-spacing: .07em; pointer-events: none; z-index: 2;
 }
@@ -89,125 +90,109 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
   color: #d8e5e077; font: 8px "JetBrains Mono"; letter-spacing: .08em; pointer-events: none; z-index: 2;
 }
 
-/* ---------- HUD ---------- */
+/* ---------- Flight display ----------
+   Everything a pilot could actually read: head-up display green, phosphor
+   glow, and laid out where a fighter HUD puts it. Nothing about the opponent
+   belongs in here. */
 
-/* The display sits over sky ranging from near-white to deep blue, so every
-   glyph carries its own shadow rather than relying on a background. */
-.hud {
-  --hud: #7dffd0;
-  position: fixed; inset: 64px 0 0 0; z-index: 2; pointer-events: none;
-  font: 10px "JetBrains Mono"; letter-spacing: .1em;
-  text-shadow: 0 1px 3px #000d, 0 0 12px #0009;
-  color: var(--hud);
-}
-.hud-red { --hud: #ff9d8a; }
-
-.hud-corner { position: absolute; top: 18px; display: flex; gap: 16px; align-items: flex-start; }
-.hud-tl { left: 22px; }
-.hud-tr { right: 22px; flex-direction: row-reverse; }
-
-/* --- vertical tapes --- */
-.tape { display: grid; gap: 4px; min-width: 96px; }
-.tape.right { justify-items: end; text-align: right; }
-.tape-head { display: flex; gap: 8px; align-items: baseline; }
-.tape.right .tape-head { flex-direction: row-reverse; }
-.tape-label { font-size: 8px; letter-spacing: .2em; opacity: .75; }
-.tape-hint { font-size: 8px; letter-spacing: .14em; color: #ffd98a; }
-.tape-value {
-  font: 600 27px "Barlow Condensed"; letter-spacing: .03em; line-height: .95; color: #fff;
-  display: flex; align-items: baseline; gap: 4px;
-}
-.tape.right .tape-value { flex-direction: row-reverse; }
-.tape-unit { font: 9px "JetBrains Mono"; opacity: .8; color: var(--hud); }
-.tape-track {
-  position: relative; width: 100%; height: 52px;
-  border-left: 1px solid currentColor; border-right: 1px solid transparent;
-  background: linear-gradient(#ffffff14, #ffffff05);
-}
-.tape.right .tape-track { border-left: 1px solid transparent; border-right: 1px solid currentColor; }
-.tape-fill { position: absolute; left: 0; right: 0; bottom: 0; background: currentColor; opacity: .32; }
-/* Corner speed: the number the whole fight is flown against. */
-.tape-marker { position: absolute; left: -3px; right: -3px; height: 2px; background: #ffd98a; box-shadow: 0 0 6px #ffd98a; }
-.tape-note { font-size: 8px; opacity: .7; }
-.tape.warn { --hud: #ff9a6b; }
-.tape.caution { --hud: #ffd98a; }
-
-/* --- compact readouts --- */
-.readout { display: grid; gap: 2px; min-width: 74px; }
-.readout.right { justify-items: end; text-align: right; }
-.readout-label { font-size: 8px; letter-spacing: .2em; opacity: .75; }
-.readout-value { font: 600 20px "Barlow Condensed"; letter-spacing: .04em; color: #fff; line-height: 1; }
-.readout-note { font-size: 8px; opacity: .7; }
-.readout.good .readout-value { color: #8dfba8; }
-.readout.warn .readout-value { color: #ff9a6b; }
-.readout.caution .readout-value { color: #ffd98a; }
-
-/* --- energy and status --- */
-.hud-bottom {
-  position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%);
-  display: grid; gap: 9px; justify-items: center; width: min(560px, calc(100% - 40px));
-}
-.energy-bar { display: flex; align-items: center; gap: 10px; width: 100%; }
-.energy-label, .energy-value { font-size: 8px; letter-spacing: .16em; white-space: nowrap; }
-.energy-value { min-width: 74px; text-align: right; }
-.energy-value.good { color: #8dfba8; }
-.energy-value.warn { color: #ff9a6b; }
-.energy-track { position: relative; flex: 1; height: 5px; background: #ffffff1f; overflow: hidden; }
-.energy-fill { position: absolute; top: 0; bottom: 0; background: currentColor; opacity: .85; }
-.energy-centre { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #ffffff77; }
-
-.ammo-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-.pill {
-  display: flex; align-items: baseline; gap: 6px; padding: 3px 9px;
-  background: #07101599; border: 1px solid #ffffff1f; backdrop-filter: blur(6px);
-}
-.pill span { font-size: 8px; letter-spacing: .16em; opacity: .7; }
-.pill strong { font: 600 12px "Barlow Condensed"; letter-spacing: .05em; color: #fff; }
-.pill.warn { border-color: #ff9a6b88; }
-.pill.warn strong { color: #ff9a6b; }
-.pill.caution strong { color: #ffd98a; }
-.pill.good strong { color: #8dfba8; }
-
-.hud-alerts {
-  position: absolute; left: 50%; top: 116px; transform: translateX(-50%);
-  display: grid; gap: 5px; justify-items: center;
-}
-.alert {
-  padding: 3px 12px; border: 1px solid currentColor; color: #ffd98a;
-  font-size: 9px; letter-spacing: .22em; background: #1a140699;
-}
-.alert.critical { color: #ff7a5c; background: #1a0a06cc; border-color: #ff7a5c; animation: pulse 1s ease-in-out infinite; }
-/* Never fades far enough to become unreadable: it is a warning, not a strobe. */
-@keyframes pulse { 50% { opacity: .55; } }
-
-/* ---------- Tactical overlay ---------- */
-
-.tactical {
+/* Full-viewport, exactly like the canvas it overlays. Conformal symbology is
+   projected in viewport coordinates, so an inset here would shift the pitch
+   ladder off the real horizon. Content is padded away from the chrome instead. */
+.flight-display {
   position: fixed; inset: 0; width: 100%; height: 100%;
-  z-index: 1; pointer-events: none;
-  --hud: #7dffd0;
-  --shoot: #8dfba8;
+  z-index: 2; pointer-events: none;
+  --hud: #6bff9e;
+  --ab: #ffb347;
+  color: var(--hud);
+  font: 12px "JetBrains Mono"; letter-spacing: .06em;
 }
-.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
+.flight-display text { fill: var(--hud); font: 11px "JetBrains Mono"; letter-spacing: .06em; }
+.flight-display line, .flight-display path, .flight-display rect, .flight-display circle { vector-effect: non-scaling-stroke; }
 
-.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
-.reticle circle { stroke: inherit; }
-.reticle .pip { fill: var(--hud); stroke: none; }
+/* A HUD is a projection on glass, so everything it draws glows a little. */
+.flight-display > g { filter: drop-shadow(0 0 3px #0b3d1f) drop-shadow(0 0 1px #000c); }
 
-.target-box { filter: drop-shadow(0 0 3px #000a); }
-.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
-.target-box text { fill: #ffd98a; }
+/* Tapes hug the edges of the view; the heading runs across the top and the
+   engine and stores sit along the bottom, as they do on the real display. */
+.speed-group { transform: translate(clamp(26px, 5vw, 92px), 0); }
+.alt-group { transform: translate(calc(100% - clamp(26px, 5vw, 92px)), 0); }
+.alt-group .tape-box, .alt-group .tape-caption, .alt-group .tape-sub { transform: translateY(50%); }
+.speed-group .tape-box, .speed-group .tape-caption, .speed-group .tape-sub { transform: translateY(50%); }
+.heading-group { transform: translate(50%, 86px); }
+.engine-group { transform: translate(clamp(26px, 5vw, 92px), calc(100% - 96px)); }
+.stores-group { transform: translate(calc(100% - clamp(26px, 5vw, 92px)), calc(100% - 96px)); }
+.adi { transform: translate(clamp(196px, 15vw, 280px), 50%); }
 
-/* Dashed, so it reads as a correction to close rather than a solid object. */
-.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
+/* The observer panel occupies the right edge when open, so the altitude tape
+   moves inboard of it rather than hiding underneath. */
+.flight-display.with-observer .alt-group { transform: translate(calc(100% - 300px), 0); }
+.flight-display.with-observer .stores-group { transform: translate(calc(100% - 300px), calc(100% - 96px)); }
 
-.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
+.tape-ticks line { stroke: var(--hud); stroke-width: 1.2; opacity: .75; }
+.tape-ticks text { font-size: 10px; opacity: .85; }
+.tape-box path, .tape-box rect { fill: #02150acc; stroke: var(--hud); stroke-width: 1.3; }
+.tape-box text { font: 600 17px "Barlow Condensed"; letter-spacing: .06em; fill: #eafff1; }
+.tape-caption { font-size: 9px; letter-spacing: .2em; opacity: .7; }
+.tape-sub { font-size: 10px; opacity: .9; }
 
-.shoot-cue text {
-  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
-  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
+.heading-caret { fill: var(--hud); }
+
+.throttle-track { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
+.throttle-fill { opacity: .8; }
+.stores-value { font: 600 19px "Barlow Condensed"; letter-spacing: .05em; fill: #eafff1; }
+
+/* --- conformal symbology, cockpit view only --- */
+.conformal line { stroke: var(--hud); stroke-width: 1.6; }
+.conformal .horizon { stroke-width: 2.1; }
+.conformal .rung-label { font-size: 10px; }
+.fpm circle { fill: none; stroke: var(--hud); stroke-width: 2; }
+.fpm line { stroke-width: 2; }
+.aoa-bracket path { fill: none; stroke: var(--ab); stroke-width: 2.2; }
+
+/* --- attitude indicator, external views --- */
+.adi-face { fill: #02150a; }
+.adi-sky { fill: #123a5e; }
+.adi-ground { fill: #4a3a1e; }
+.adi-horizon { stroke: #eafff1; stroke-width: 1.6; }
+.adi-rung { stroke: #eafff1cc; stroke-width: 1.1; }
+.adi-symbol { stroke: var(--ab); stroke-width: 2.4; fill: none; }
+.adi-pointer { fill: var(--hud); }
+.adi-bezel { fill: none; stroke: var(--hud); stroke-width: 1.4; }
+.adi-readout { font-size: 10px; opacity: .85; }
+
+/* ---------- Observer panel ----------
+   Deliberately not a HUD. This is the benchmark's omniscient view, so it reads
+   as data: plain monospace, no glow, one block, one place. */
+
+.observer {
+  position: fixed; top: 78px; right: 18px; z-index: 3; width: 252px;
+  max-height: calc(100vh - 200px); overflow: auto;
+  padding: 12px 14px;
+  background: #080d10ee; border: 1px solid #ffffff1a;
+  font: 10px "JetBrains Mono"; color: #b7c6c3; letter-spacing: .02em;
 }
-.shoot-cue { animation: pulse .7s ease-in-out infinite; }
+.observer header { display: grid; gap: 3px; margin-bottom: 11px; padding-right: 22px; }
+.observer-toggle {
+  position: absolute; top: 8px; right: 8px; min-height: 0; padding: 2px 7px;
+  font: 9px "JetBrains Mono"; background: transparent; border-color: #ffffff22;
+}
+/* Collapsed, it stays reachable without covering the right edge of the display. */
+.observer.collapsed { width: auto; padding: 6px 10px; }
+.observer.collapsed header, .observer.collapsed section { display: none; }
+.observer header span:first-child { font-size: 9px; letter-spacing: .24em; color: #e7f0ee; }
+.observer-note { font-size: 8px; color: #6f817e; line-height: 1.4; }
+.observer h2 {
+  margin: 12px 0 5px; font: 8px "JetBrains Mono"; letter-spacing: .2em;
+  color: #6f817e; font-weight: 400;
+  border-bottom: 1px solid #ffffff12; padding-bottom: 4px;
+}
+.observer section:first-of-type h2 { margin-top: 0; }
+.observer dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+.observer dt { color: #7f8f8c; white-space: nowrap; }
+.observer dd { margin: 0; text-align: right; color: #dfeae8; font-variant-numeric: tabular-nums; }
+.observer dd.good { color: #8dfba8; }
+.observer dd.bad { color: #ff9a6b; }
+.observer-sub { color: #6f817e; }
 
 /* ---------- Data pages ---------- */
 

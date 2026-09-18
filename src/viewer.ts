@@ -28,6 +28,16 @@ export interface ViewerTracer {
   d?: [number, number, number];
 }
 
+/**
+ * Where the camera sits.
+ *
+ * `orbit` is the external chase view. `cockpit` puts the eye at the pilot's
+ * position looking along the nose, which is the only view in which conformal
+ * head-up symbology -- a pitch ladder, a flight path marker, a gun cross -- is
+ * actually telling the truth.
+ */
+export type ViewMode = "orbit" | "cockpit";
+
 export interface ViewerSnapshot {
   aircraft: ViewerAircraft[];
   tracers: ViewerTracer[];
@@ -80,10 +90,15 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
   };
 }
 
+/** Pilot's eye in body axes: up out of the seat, forward under the canopy. */
+const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
+/** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
+const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
 export class DogfightViewer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(55, 1, 0.3, 80_000);
+  readonly camera = new THREE.PerspectiveCamera(55, 1, 0.3, 400_000);
   readonly controls: OrbitControls;
   private readonly aircraftMeshes = new Map<string, THREE.Object3D>();
   private readonly projectileGroup = new THREE.Group();
@@ -94,6 +109,7 @@ export class DogfightViewer {
   private lastEffectTime = 0;
   private modelTemplate?: THREE.Object3D;
   private followId = "blue-1";
+  private view: ViewMode = "orbit";
   private readonly tracerMaterial = new THREE.LineBasicMaterial({
     color: 0xffd06a,
     transparent: true,
@@ -195,6 +211,19 @@ export class DogfightViewer {
     this.cameraInitialized = false;
   }
 
+  setView(view: ViewMode): void {
+    if (view === this.view) return;
+    this.view = view;
+    this.cameraInitialized = false;
+    // Orbiting a camera that is bolted to the aircraft makes no sense, and
+    // leaving the controls live would fight the attitude update every frame.
+    this.controls.enabled = view === "orbit";
+  }
+
+  get viewMode(): ViewMode {
+    return this.view;
+  }
+
   /**
    * Gradient sky dome.
    *
@@ -243,6 +272,23 @@ export class DogfightViewer {
   }
 
   private createTerrain(): void {
+    /**
+     * Ground out to the real horizon.
+     *
+     * The detailed height field is eighty kilometres across, but from twenty
+     * thousand feet the horizon is hundreds of kilometres away, so the mesh
+     * ended in mid-air and the head-up display's horizon line sat well above
+     * where the ground appeared to stop. A plain disc underneath, large enough
+     * that the fog swallows it long before its edge, puts the horizon where the
+     * pitch ladder says it is.
+     */
+    const seaLevel = new THREE.Mesh(
+      new THREE.CircleGeometry(260_000, 64).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x6e7658, fog: true }),
+    );
+    seaLevel.position.y = -8;
+    this.scene.add(seaLevel);
+
     // The mesh samples the same height field the simulation collides against,
     // so what the viewer draws as ground is exactly what the physics treats as
     // ground.
@@ -336,24 +382,37 @@ export class DogfightViewer {
       snapshot.aircraft.find((aircraft) => aircraft.id === this.followId) ?? snapshot.aircraft[0];
     if (follow) {
       const followMesh = this.aircraftMeshes.get(follow.id);
-      const target = followMesh
-        ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
-        : new THREE.Vector3().fromArray(follow.position);
-      if (!this.cameraInitialized) {
-        const orientation = new THREE.Quaternion().fromArray(follow.orientation);
-        const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(orientation);
-        this.camera.position.copy(target).add(initialOffset);
-        this.controls.target.copy(target);
-        this.camera.up.set(0, 1, 0);
-        this.cameraInitialized = true;
+      if (this.view === "cockpit") {
+        this.placeCockpitCamera(follow);
+        // You cannot see your own airframe from inside it, and drawing it would
+        // fill the screen.
+        if (followMesh) followMesh.visible = false;
       } else {
-        // Follow translation without overwriting the player's orbit angle.
-        const movement = target.clone().sub(this.controls.target);
-        this.camera.position.add(movement);
-        this.controls.target.copy(target);
+        const target = followMesh
+          ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
+          : new THREE.Vector3().fromArray(follow.position);
+        if (!this.cameraInitialized) {
+          const orientation = new THREE.Quaternion().fromArray(follow.orientation);
+          const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(orientation);
+          this.camera.position.copy(target).add(initialOffset);
+          this.controls.target.copy(target);
+          this.camera.up.set(0, 1, 0);
+          this.cameraInitialized = true;
+        } else {
+          // Follow translation without overwriting the player's orbit angle.
+          const movement = target.clone().sub(this.controls.target);
+          this.camera.position.add(movement);
+          this.controls.target.copy(target);
+        }
       }
     }
-    this.controls.update();
+
+    // OrbitControls.update() repositions the camera from its own target and
+    // spherical state whether or not it is enabled, so in the cockpit it would
+    // silently overwrite the attitude set above -- leaving a view that looks
+    // plausible while every conformal projection is computed against the wrong
+    // camera.
+    if (this.view === "orbit") this.controls.update();
     this.sky?.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
   }
@@ -431,6 +490,21 @@ export class DogfightViewer {
       effect.mesh.scale.setScalar(1 + progress * effect.grow);
       (effect.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - progress) * 0.6;
     }
+  }
+
+  /**
+   * Puts the eye where the pilot's head is and points it down the nose.
+   *
+   * The camera takes the aircraft's roll as well as its heading and pitch: a
+   * head-up display is fixed to the airframe, so the horizon rotating behind it
+   * is the whole point.
+   */
+  private placeCockpitCamera(aircraft: ViewerAircraft): void {
+    const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
+    const eye = COCKPIT_EYE.clone().applyQuaternion(orientation).add(new THREE.Vector3().fromArray(aircraft.position));
+    this.camera.position.copy(eye);
+    this.camera.quaternion.copy(orientation).multiply(NOSE_FORWARD);
+    this.cameraInitialized = true;
   }
 
   /**

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Hud } from "../components/Hud";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FlightDisplay } from "../components/FlightDisplay";
+import { ObserverPanel } from "../components/ObserverPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useLiveMatch, type PilotKind } from "../hooks/useLiveMatch";
-import type { DogfightViewer } from "../../viewer";
+import type { DogfightViewer, ViewMode } from "../../viewer";
 
 /**
  * The live match page.
@@ -17,7 +18,13 @@ import type { DogfightViewer } from "../../viewer";
 export function LivePage() {
   const match = useLiveMatch();
   const viewer = useRef<DogfightViewer>(undefined);
+  const [view, setView] = useState<ViewMode>("orbit");
+  const [observerOpen, setObserverOpen] = useState(true);
   const followId = match.followRed ? "red-1" : "blue-1";
+
+  useEffect(() => {
+    viewer.current?.setView(view);
+  }, [view]);
 
   // Derived during render. Setting this from an effect keyed on an object that
   // is rebuilt every frame is what drove React past its update depth.
@@ -38,7 +45,8 @@ export function LivePage() {
     app.dataset["follow"] = followId;
     app.dataset["timeScale"] = String(match.timeScale);
     app.dataset["bluePilot"] = match.bluePilot;
-  }, [match.state?.finished, match.paused, match.timeScale, match.bluePilot, followId]);
+    app.dataset["view"] = view;
+  }, [match.state?.finished, match.paused, match.timeScale, match.bluePilot, followId, view]);
 
   /**
    * Camera and framing are published from their own frame loop rather than from
@@ -79,11 +87,15 @@ export function LivePage() {
       <ViewerCanvas
         snapshotRef={match.snapshotRef}
         followId={followId}
-        onReady={(instance) => (viewer.current = instance)}
+        onReady={(instance) => {
+          viewer.current = instance;
+          instance.setView(view);
+        }}
       />
+      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} observerOpen={observerOpen} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
-      <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
-      <Hud state={match.state} followId={followId} />
+      {view === "orbit" ? <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div> : null}
+      <ObserverPanel state={match.state} followId={followId} open={observerOpen} onToggle={() => setObserverOpen(!observerOpen)} />
 
       <footer className="controls">
         <label>
@@ -96,6 +108,13 @@ export function LivePage() {
             <option value="human">HUMAN</option>
             <option value="basic">BASELINE AI</option>
             <option value="model">SERVER MODEL</option>
+          </select>
+        </label>
+        <label>
+          VIEW
+          <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
+            <option value="orbit">EXTERNAL</option>
+            <option value="cockpit">COCKPIT</option>
           </select>
         </label>
         <button id="follow" onClick={() => match.setFollowRed(!match.followRed)}>

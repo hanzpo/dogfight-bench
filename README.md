@@ -19,7 +19,7 @@ Then open the viewer. Nothing needs an API key until you want a model to fly.
 |---|---|
 | `src/sim/` | The simulation: 6-DOF flight model, ballistics, damage, scoring |
 | `src/agents/` | The action schema, the tactical autopilot, scripted baselines |
-| `src/ui/` | React viewer, HUD, leaderboard, match history, replay playback |
+| `src/ui/` | React viewer, flight display, leaderboard, match history, replay |
 | `server/` | Provider adapters, match runner, SQLite results, HTTP API |
 | `test/` | Envelope validation, conventions, ballistics, agents, replays |
 | `tools/ui-check/` | Playwright browser check (Chromium + WebKit, 1x and 2x) |
@@ -144,6 +144,32 @@ is gated on the model's own confidence rather than a bare argmax.
 Decisions have a wall-clock deadline and an inference budget. A model that
 misses its deadline holds its last command and is charged a timeout; one that
 blows its budget forfeits. Every decision is priced as it happens.
+
+## The display
+
+The interface is split along one line: what a pilot could actually see, and
+what only the benchmark knows. Mixing them produces something that looks like a
+cockpit and lies about what a cockpit contains.
+
+**Flight display** is head-up green and laid out where a fighter puts it:
+calibrated airspeed left, altitude right, heading across the top, throttle and
+stores along the bottom. In the cockpit view (`VIEW · COCKPIT`) the pitch
+ladder, horizon and flight path marker are drawn *conformally* -- each rung is
+placed in the world at its own pitch angle and projected, so it lies along the
+real horizon, banks with the aircraft, and is clipped to a combiner-sized field
+of view rather than sprayed across the canopy. From an external view that would
+be a lie, so the same information appears as a compact attitude indicator.
+
+**Tactical overlay** is the gun symbology: a reticle marking where the rounds
+will be at the bandit's range with drop included, ringed by the dispersion cone
+at that range; the bandit boxed with a lead line; an arrow when they are off
+screen; and a shoot cue that lights exactly when the simulation would authorise
+the trigger.
+
+**Observer panel** is everything else -- angle off the bandit's tail, the energy
+ledger, predicted miss distance, their fuel and damage. None of that is on an
+instrument in any cockpit, so it is presented as data: one plain monospace
+block, in one place, with none of the head-up display's styling.
 
 ## Telemetry
 
