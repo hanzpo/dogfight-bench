@@ -4,12 +4,6 @@ import type { FlcsState } from "./flcs";
 
 export type Team = "blue" | "red";
 
-export const BODY_TO_AERO = {
-  noseBody: [0, 0, 1],
-  rightBody: [-1, 0, 0],
-  downBody: [0, -1, 0],
-} as const;
-
 export interface ControlInput {
   pitch: number;
   roll: number;

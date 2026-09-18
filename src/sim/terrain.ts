@@ -124,13 +124,6 @@ export function elevationNormal(x: number, z: number, epsilon = 25): [number, nu
   return [-dx / length, 1 / length, -dz / length];
 }
 
-export function terrainNormal(x: number, z: number, epsilon = 25): [number, number, number] {
-  const dx = (terrainHeight(x + epsilon, z) - terrainHeight(x - epsilon, z)) / (2 * epsilon);
-  const dz = (terrainHeight(x, z + epsilon) - terrainHeight(x, z - epsilon)) / (2 * epsilon);
-  const length = Math.hypot(dx, 1, dz);
-  return [-dx / length, 1 / length, -dz / length];
-}
-
 export function heightAboveGround(x: number, y: number, z: number): number {
   return y - terrainHeight(x, z);
 }

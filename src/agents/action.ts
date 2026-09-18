@@ -85,23 +85,3 @@ export function validateAction(value: unknown): AgentAction {
   };
 }
 
-export function isWellFormedAction(value: unknown): boolean {
-  const record = (value ?? {}) as Record<string, unknown>;
-  if (record["schema"] === "raw") {
-    const controls = record["controls"] as Record<string, unknown> | undefined;
-    return (
-      controls !== undefined &&
-      ["pitch", "roll", "yaw", "throttle"].every((axis) => typeof controls[axis] === "number") &&
-      typeof controls["fire"] === "boolean"
-    );
-  }
-  if (record["schema"] === "tactical") {
-    return (
-      MANEUVERS.includes(record["maneuver"] as Maneuver) &&
-      THROTTLE_DETENTS.includes(record["throttle"] as ThrottleDetent) &&
-      typeof record["targetG"] === "number" &&
-      typeof record["fire"] === "boolean"
-    );
-  }
-  return false;
-}

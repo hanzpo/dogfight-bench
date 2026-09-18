@@ -192,16 +192,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   aircraft.position.addScaledVector(aircraft.velocity, dt);
 }
 
-export function refreshAirData(aircraft: AircraftState): void {
-  const axes = bodyAxes(aircraft.orientation);
-  const air = atmosphere(aircraft.position.y);
-  const vTrue = Math.max(aircraft.velocity.length(), 1e-3);
-  aircraft.aoaRad = Math.atan2(aircraft.velocity.dot(axes.down), aircraft.velocity.dot(axes.nose));
-  aircraft.sideslipRad = Math.asin(clamp(aircraft.velocity.dot(axes.right) / vTrue, -1, 1));
-  aircraft.mach = vTrue / air.speedOfSoundMps;
-  aircraft.heightAboveGroundM = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);
-}
-
 export function availableLoadFactor(aircraft: AircraftState): number {
   const air = atmosphere(aircraft.position.y);
   const qbar = 0.5 * air.densityKgM3 * aircraft.velocity.lengthSq();

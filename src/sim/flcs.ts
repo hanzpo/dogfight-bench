@@ -56,11 +56,6 @@ export function gainSchedule(dynamicPressurePa: number): number {
   return clamp(FLCS.referenceQ / Math.max(dynamicPressurePa, FLCS.minGainScheduleQ), 0.25, 2.5);
 }
 
-export function limiterLoadFactor(dynamicPressurePa: number, massKg: number): number {
-  const lift = liftCoefficientAt(FLCS.alphaLimitRad) * dynamicPressurePa * GEOMETRY.wingAreaM2;
-  return Math.min(FLCS.maxLoadFactor, lift / (massKg * GRAVITY_MPS2));
-}
-
 export function stepFlcs(state: FlcsState, input: FlcsInputs, dt: number): FlcsState {
   const schedule = gainSchedule(input.dynamicPressurePa);
   const speed = Math.max(input.trueAirspeedMps, 30);

@@ -177,11 +177,3 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <main className="page">
-      <h1>{title}</h1>
-      {children}
-    </main>
-  );
-}

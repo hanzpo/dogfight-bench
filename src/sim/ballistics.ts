@@ -37,10 +37,6 @@ export function projectileDeceleration(speed: number, density: number, speedOfSo
   return (0.5 * density * speed * speed * cd * PROJECTILE_AREA_M2) / GUN.projectileMassKg;
 }
 
-export function densityRatioForBallistics(density: number): number {
-  return density / SEA_LEVEL_DENSITY;
-}
-
 export function timeOfFlight(
   rangeM: number,
   muzzleSpeedMps: number,

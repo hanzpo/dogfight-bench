@@ -120,11 +120,3 @@ export const MIN_LETHAL_ENERGY_J = 3_000;
 
 export const EARTH_RADIUS_M = 6_371_000;
 
-export const F16 = {
-  massKg: MASS.emptyKg + MASS.internalFuelKg * MASS.startFuelFraction,
-  wingAreaM2: GEOMETRY.wingAreaM2,
-  maxThrustN: ENGINE.militaryThrustSlN,
-  afterburnerThrustN: ENGINE.afterburnerThrustSlN,
-  maxAoARad: FLCS.alphaLimitRad,
-  gun: GUN,
-} as const;
