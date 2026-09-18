@@ -1,0 +1,38 @@
+[project]
+name = "browser-feedback"
+version = "0.1.0"
+description = "Jev-driven browser feedback loop for Dogfight Bench"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jev-ultrafast",
+]
+
+[project.scripts]
+browser-feedback = "browser_feedback:main"
+
+[build-system]
+requires = ["uv_build>=0.9.11,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+jev-ultrafast = { git = "https://github.com/browser-use/jev-ultrafast.git", rev = "452c1ad2dd628008f1d5608f28158d76e49e6cc0" }
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

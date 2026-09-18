@@ -3,3 +3,9 @@ dist/
 .DS_Store
 *.log
 .playwright-cli/
+.env*
+tools/browser-feedback/.venv/
+**/.pytest_cache/
+**/.ruff_cache/
+**/__pycache__/
+artifacts/browser-feedback/
