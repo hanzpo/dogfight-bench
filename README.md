@@ -19,7 +19,8 @@ Nothing needs a key until you want a model to fly.
 |---|---|
 | `src/sim/` | 6-DOF flight model, ballistics, damage, terrain, scoring |
 | `src/agents/` | Action schemas, the tactical autopilot, scripted baselines |
-| `src/ui/` | Viewer, flight display, leaderboard, matches, replay |
+| `src/viewer/` | Three.js scene, terrain, effects, the five cameras |
+| `src/ui/` | Flight display, tactical overlay, leaderboard, matches, replay |
 | `server/` | Provider adapters, match runner, accounts, HTTP API |
 | `worker/`, `wrangler.toml` | The same API on Cloudflare |
 | `supabase/migrations/` | Results schema, Elo, housekeeping |
@@ -57,6 +58,32 @@ calibrated confidence. The adapter asks four at once, one round trip:
 Confidence is used rather than discarded: below a threshold the previous
 manoeuvre is held, because a guess is not a reason to abandon a plan mid-fight.
 The distributions are drawn live in the details panel.
+
+Two things about the mapping were worth measuring. A score is a
+probability-weighted mean, so an uncertain answer lands in the middle of
+whatever scale it is mapped onto: an even 1..9 g put every uncertain answer at
+4 g, which in a 9 g aeroplane cannot stay inside anybody, and every merge ended
+ten kilometres apart. The rubric's rungs are not evenly spaced in g, because
+four of the five describe a jet that is turning and one does not. And the
+trigger is asked strictly but answered generously -- demanding a perfect
+solution rather than a plausible one cut the rounds fired by seventy per cent
+and the hits to none. Against the scripted energy fighter over six matches:
+3W-3L, 10.4% accuracy to its 9.0%.
+
+## Cameras
+
+Five, because a fight asks five different questions.
+
+| | |
+|---|---|
+| **Chase** | Behind the aircraft and not rolling with it, so the horizon stays level and the airframe is the attitude instrument |
+| **Target track** | On the line through both aircraft -- camera, your jet, the bandit, in that order -- so angle off and range are one picture rather than two numbers |
+| **Arena** | Down on both from outside, broadside to the line between them, framing the pair while they fit |
+| **Cockpit** | The pilot's eye, and the only view where the pitch ladder and flight path marker are telling the truth |
+| **Free look** | Hand-driven orbit, for whatever the others do not point at |
+
+The wheel works in all of them: in a view that places itself it changes how far
+off that view stands.
 
 ## Running models
 
