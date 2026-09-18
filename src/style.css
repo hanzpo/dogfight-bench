@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root { font-family: "Barlow Condensed", sans-serif; color: #eef7f3; background: #080d10; font-synthesis: none; }
+* { box-sizing: border-box; }
+html, body, #app, #viewport { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+canvas { display: block; }
+.topbar { position: fixed; inset: 0 0 auto 0; height: 78px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: linear-gradient(#071015e8, #07101500); pointer-events: none; }
+.brand { display: flex; align-items: center; gap: 12px; font-size: 19px; letter-spacing: .12em; line-height: .9; }
+.brand b { color: #67e5d0; }
+.brand small { display: block; margin-top: 9px; color: #8fa3a5; font: 10px "JetBrains Mono"; letter-spacing: .16em; }
+.mark { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #67e5d0; color: #67e5d0; font-weight: 700; }
+.status { display: flex; align-items: center; gap: 10px; font: 11px "JetBrains Mono"; letter-spacing: .12em; }
+.status strong { min-width: 72px; font-size: 14px; color: #fff; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: #67e5d0; box-shadow: 0 0 12px #67e5d0; }
+.panel { position: fixed; top: 104px; width: 188px; padding: 15px; background: #071015c7; border: 1px solid #ffffff1c; backdrop-filter: blur(12px); }
+.left-panel { left: 22px; border-top: 2px solid #57bfff; }
+.right-panel { right: 22px; border-top: 2px solid #ff705f; }
+.eyebrow { font: 10px "JetBrains Mono"; letter-spacing: .12em; margin-bottom: 13px; }
+.eyebrow.blue { color: #57bfff; } .eyebrow.red { color: #ff705f; }
+.big-number { display: flex; align-items: baseline; gap: 6px; margin-bottom: 13px; }
+.big-number span { font: 600 37px "JetBrains Mono"; letter-spacing: -.08em; }
+.big-number small { color: #819295; font: 9px "JetBrains Mono"; }
+.metric-row { display: flex; justify-content: space-between; margin: 7px 0; color: #87999c; font: 10px "JetBrains Mono"; }
+.metric-row b { color: #e3eeeb; font-weight: 400; }
+.divider { height: 1px; background: #ffffff17; margin: 14px 0; }
+label { display: block; color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .1em; }
+select, button { border: 1px solid #ffffff25; color: #dce7e4; background: #111b1f; font: 10px "JetBrains Mono"; letter-spacing: .05em; }
+select { width: 100%; margin-top: 7px; padding: 8px; }
+button { padding: 9px 12px; cursor: pointer; }
+button:hover { border-color: #67e5d0; color: #67e5d0; }
+.right-panel button { width: 100%; margin-top: 12px; }
+.keymap { margin-top: 12px; color: #647478; font: 9px/1.7 "JetBrains Mono"; }
+.reticle { position: fixed; left: 50%; top: 50%; display: flex; align-items: center; gap: 8px; transform: translate(-50%, -50%); opacity: .55; pointer-events: none; }
+.reticle span { width: 11px; height: 11px; border: 1px solid #e9fff9; border-radius: 50%; }
+.reticle i { width: 28px; height: 1px; background: #e9fff9; }
+.controls { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; padding: 7px; background: #071015d9; border: 1px solid #ffffff1c; backdrop-filter: blur(12px); }
+.controls #event { min-width: 210px; padding: 0 10px; color: #67e5d0; font: 9px "JetBrains Mono"; letter-spacing: .08em; text-align: right; }
+@media (max-width: 760px) { .panel { top: 86px; transform: scale(.82); } .left-panel { transform-origin: top left; left: 10px; } .right-panel { transform-origin: top right; right: 10px; } .controls #event { display: none; } }
