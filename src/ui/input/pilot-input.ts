@@ -258,8 +258,15 @@ export class PilotInput {
         event.preventDefault();
       }
     };
+    /**
+     * The wheel is the camera, whatever is flying the aeroplane.
+     *
+     * It used to be read only while flying with the mouse, because the orbit
+     * controls handled it otherwise. They are switched off in every view that
+     * places itself, so scrolling in a chase view did nothing at all, on a
+     * control that every other three-dimensional thing on the internet zooms.
+     */
     const wheel = (event: WheelEvent) => {
-      if (this.scheme !== "mouse") return;
       if (!this.locked && !(event.target instanceof Node && target.contains(event.target))) return;
       event.preventDefault();
       this.viewDelta.zoom += event.deltaY;

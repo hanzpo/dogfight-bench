@@ -156,6 +156,7 @@ export function LivePage() {
           app.dataset["subjectMaxX"] = framing.maxX.toFixed(4);
           app.dataset["subjectMinY"] = framing.minY.toFixed(4);
           app.dataset["subjectMaxY"] = framing.maxY.toFixed(4);
+          app.dataset["subjectDistance"] = framing.distanceM.toFixed(1);
         }
       }
       frame = requestAnimationFrame(publish);

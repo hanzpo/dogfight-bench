@@ -93,6 +93,37 @@ const LAYOUT_PROBE = `(() => {
   };
 })()`;
 
+/**
+ * Where the overlay has put the bandit, and whether it is on screen.
+ *
+ * This is the only handle the checks have on where the camera actually is:
+ * the target box is drawn at the bandit's projected position, so the box moving
+ * is the camera moving. Nothing is exported from the viewer for testing, which
+ * is deliberate -- what the page draws is what a person sees.
+ */
+const BANDIT_PROBE = `(() => {
+  const el = document.querySelector('.tactical .target-box');
+  const shown = el && el.getAttribute('visibility') !== 'hidden';
+  const r = el ? el.getBoundingClientRect() : null;
+  return {
+    shown: Boolean(shown),
+    x: r ? r.x + r.width / 2 : null,
+    y: r ? r.y + r.height / 2 : null,
+    viewW: window.innerWidth,
+    viewH: window.innerHeight,
+  };
+})()`;
+
+/** Where the camera is, how far off it stands, and how big that makes the jet. */
+const SHOT_PROBE = `(() => {
+  const d = document.querySelector('#app').dataset;
+  return {
+    camera: (d.camera || '0,0,0').split(',').map(Number),
+    subjectW: Number(d.subjectMaxX) - Number(d.subjectMinX),
+    standoffM: Number(d.subjectDistance),
+  };
+})()`;
+
 const OVERLAY_SIZE_PROBE = `(() => {
   const t = document.querySelector('.tactical').getBoundingClientRect();
   const d = document.querySelector('.flight-display').getBoundingClientRect();
@@ -590,6 +621,68 @@ check(
 const ladderRungs = await page.locator(".conformal line").count();
 check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
+
+console.log("cameras");
+/**
+ * Each view is a different place to stand, and it stands there while flying.
+ *
+ * Measured from the camera's own position rather than from what is on screen,
+ * because the bandit can legitimately be out of frame and a null reading would
+ * then pass every comparison by accident -- which is how the first version of
+ * this check reported two identical views as different.
+ */
+type Shot = { camera: number[]; subjectW: number; standoffM: number };
+const cameraIn = async (view: string): Promise<Shot> => {
+  await page.selectOption("#view", view);
+  // Long enough for a camera that eases into place to have arrived.
+  await page.waitForTimeout(2_000);
+  await page.screenshot({ path: `${OUT}/view-${view}-${engine.name}.png` });
+  return (await page.evaluate(SHOT_PROBE)) as Shot;
+};
+const apart = (a: Shot, b: Shot): number =>
+  Math.hypot(a.camera[0]! - b.camera[0]!, a.camera[1]! - b.camera[1]!, a.camera[2]! - b.camera[2]!);
+
+const track = await cameraIn("track");
+const trackBandit = (await page.evaluate(BANDIT_PROBE)) as {
+  shown: boolean;
+  x: number | null;
+  viewW: number;
+};
+check(
+  trackBandit.shown && Math.abs(trackBandit.x! - trackBandit.viewW / 2) < trackBandit.viewW * 0.1,
+  `target track puts the bandit on the centre line (${Math.round(trackBandit.x ?? -1)} of ${trackBandit.viewW})`,
+);
+
+const arena = await cameraIn("arena");
+check(apart(arena, track) > 100, `arena stands somewhere else entirely (${apart(arena, track).toFixed(0)} m)`);
+check(arena.subjectW > 0.002, `arena keeps the aircraft bigger than a pixel (${(arena.subjectW * 100).toFixed(1)}% of the width)`);
+
+const chase = await cameraIn("chase");
+check(apart(chase, arena) > 50, `chase stands somewhere else again (${apart(chase, arena).toFixed(0)} m)`);
+/**
+ * The chase camera does not fall behind.
+ *
+ * It used to ease its world position, which lags a moving target by speed over
+ * rate -- forty metres at a quarter of a kilometre a second -- so the faster
+ * the jet flew the smaller it got. Measured while flying, against the size the
+ * same offset gives when nothing is moving.
+ */
+check(
+  chase.standoffM > 30 && chase.standoffM < 90,
+  `chase holds its distance while the jet is moving (${chase.standoffM.toFixed(0)} m)`,
+);
+
+// The wheel changes how far off a self-placing view stands, rather than doing
+// nothing because the camera is about to be repositioned anyway.
+await page.mouse.move(600, 400);
+await page.mouse.wheel(0, -600);
+await page.waitForTimeout(1_200);
+const dollied = (await page.evaluate(SHOT_PROBE)) as Shot;
+check(
+  dollied.standoffM < chase.standoffM * 0.9,
+  `the wheel pulls a self-placing view in (${chase.standoffM.toFixed(0)} m to ${dollied.standoffM.toFixed(0)} m)`,
+);
+
 await page.selectOption("#view", "chase");
 await page.waitForTimeout(1_500);
 

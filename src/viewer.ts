@@ -227,6 +227,16 @@ const BODY_FORWARD = new THREE.Vector3(0, 0, 1);
 const BODY_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
+/** How high the chase camera rides above the aircraft, against its stand-off. */
+const CHASE_RISE = 0.2;
+/**
+ * How far above the aircraft the chase camera aims, against its stand-off.
+ *
+ * This is what drops the jet below the middle of the frame: the aircraft sits
+ * `atan` of this below the view axis, so 0.05 is about three degrees low.
+ */
+const CHASE_AIM_ABOVE = 0.05;
+
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
@@ -299,6 +309,8 @@ export class DogfightViewer {
   private framing = 1;
   /** Real seconds at the previous frame, for the camera's own smoothing. */
   private lastFrameMs = 0;
+  /** Where the camera stands relative to what it is watching. */
+  private readonly cameraOffset = new THREE.Vector3();
   private readonly tracerMaterial = new THREE.LineBasicMaterial({
     color: 0xffd06a,
     transparent: true,
@@ -396,7 +408,9 @@ export class DogfightViewer {
     this.controls.minPolarAngle = 0.08;
     this.controls.maxPolarAngle = Math.PI - 0.08;
     this.controls.rotateSpeed = 0.65;
-    this.controls.zoomSpeed = 0.9;
+    // The wheel is handled by hand, for every view rather than only this one,
+    // so the controls must not also act on it.
+    this.controls.enableZoom = false;
 
     this.scene.fog = new THREE.FogExp2(0x9fbdd0, 0.0000195);
     this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x6b5a3a, 1.6));
@@ -1003,28 +1017,33 @@ export class DogfightViewer {
   }
 
   /**
-   * Eases the camera towards where a view wants it.
+   * Places the camera at an offset from something, easing the offset.
    *
-   * A camera snapped exactly onto a moving aircraft every frame reads as
-   * rigid: the jet cannot move relative to it, so there is nothing to see it
-   * move against. A first-order lag lets the airframe lead and settle, which is
-   * what makes a chase view feel like a camera rather than a bracket. The rate
-   * is per second and resolved against real elapsed time, so it is the same lag
-   * at thirty frames a second as at a hundred and twenty.
+   * The offset is what is smoothed, not the world position. Smoothing the
+   * position makes the camera lag by speed divided by the rate -- forty metres
+   * at a quarter of a kilometre a second -- so the faster the aircraft flies
+   * the further away it appears, which is both wrong and worst exactly when the
+   * view matters. Easing the offset instead leaves translation exact and
+   * smooths only what actually changes: the direction the camera stands in as
+   * the aircraft rolls and turns.
    *
-   * On the first frame of a view there is nothing to ease from, so it cuts.
+   * On the first frame of a view there is no previous offset to ease from.
    */
-  private easeTo(eye: THREE.Vector3, lookAt: THREE.Vector3, perSecond: number): void {
+  private place(anchor: THREE.Vector3, offset: THREE.Vector3, lookAt: THREE.Vector3, perSecond: number): void {
     const now = performance.now();
     const elapsedS = this.lastFrameMs > 0 ? Math.min((now - this.lastFrameMs) / 1000, 0.1) : 0;
     this.lastFrameMs = now;
 
     if (!this.cameraInitialized) {
-      this.camera.position.copy(eye);
+      this.cameraOffset.copy(offset);
       this.cameraInitialized = true;
+    } else if (Number.isFinite(perSecond)) {
+      this.cameraOffset.lerp(offset, 1 - Math.exp(-perSecond * elapsedS));
     } else {
-      this.camera.position.lerp(eye, Number.isFinite(perSecond) ? 1 - Math.exp(-perSecond * elapsedS) : 1);
+      this.cameraOffset.copy(offset);
     }
+
+    this.camera.position.copy(anchor).add(this.cameraOffset);
     this.camera.up.copy(WORLD_UP);
     this.camera.lookAt(lookAt);
     this.controls.target.copy(lookAt);
@@ -1051,14 +1070,15 @@ export class DogfightViewer {
       .normalize();
 
     const distance = 62 * this.framing;
-    const eye = centre
-      .clone()
-      .addScaledVector(forward, -distance)
-      .addScaledVector(up, distance * 0.22);
-    // Aim a little above the aircraft rather than at it, so the jet sits below
+    // Aimed above the aircraft rather than at it, so the jet sits a little below
     // the middle of the frame and most of the screen is the air it is flying
     // into -- which is where everything worth seeing happens.
-    this.easeTo(eye, centre.clone().addScaledVector(up, distance * 0.10), 6);
+    this.place(
+      centre,
+      forward.clone().multiplyScalar(-distance).addScaledVector(up, distance * CHASE_RISE),
+      centre.clone().addScaledVector(up, distance * CHASE_AIM_ABOVE),
+      6,
+    );
   }
 
   /**
@@ -1087,12 +1107,16 @@ export class DogfightViewer {
     if (lift.lengthSq() < 1e-6) lift.copy(BODY_UP);
     lift.normalize();
 
-    const eye = centre.clone().addScaledVector(axis, distance).addScaledVector(lift, distance * 0.10);
     // Look at the bandit: your own aircraft is then between you and it, in the
     // foreground, which is the whole point of the view. Placed exactly rather
     // than eased, because a camera that lags a hard turn by even a tenth of a
     // second is no longer on the line, and being on the line is the view.
-    this.easeTo(eye, bandit, Number.POSITIVE_INFINITY);
+    this.place(
+      centre,
+      axis.clone().multiplyScalar(distance).addScaledVector(lift, distance * 0.1),
+      bandit,
+      Number.POSITIVE_INFINITY,
+    );
   }
 
   /**
@@ -1140,15 +1164,16 @@ export class DogfightViewer {
     broadside.normalize();
 
     const elevation = THREE.MathUtils.degToRad(26);
-    const eye = lookAt
+    const offset = broadside
       .clone()
-      .addScaledVector(broadside, distance * Math.cos(elevation))
+      .multiplyScalar(distance * Math.cos(elevation))
       .addScaledVector(WORLD_UP, distance * Math.sin(elevation));
     // Never underground: the view is useless from inside a hill.
-    eye.y = Math.max(eye.y, terrainHeight(eye.x, eye.z) + 60);
+    const floor = terrainHeight(lookAt.x + offset.x, lookAt.z + offset.z) + 60;
+    offset.y = Math.max(offset.y, floor - lookAt.y);
     // Slow: this camera is a vantage point, and a vantage point that chases
     // every twitch of the separation is worse than one that lags it.
-    this.easeTo(eye, lookAt, 1.6);
+    this.place(lookAt, offset, lookAt, 1.6);
   }
 
   /**
@@ -1186,7 +1211,9 @@ export class DogfightViewer {
     };
   }
 
-  getFollowFraming(): { x: number; y: number; minX: number; maxX: number; minY: number; maxY: number } | undefined {
+  getFollowFraming():
+    | { x: number; y: number; minX: number; maxX: number; minY: number; maxY: number; distanceM: number }
+    | undefined {
     const mesh = this.aircraftMeshes.get(this.followId);
     if (!mesh) return undefined;
     mesh.updateMatrixWorld(true);
@@ -1212,6 +1239,10 @@ export class DogfightViewer {
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     return {
+      // How far the camera stands off, which is what a view decides. The
+      // projected size does not answer that on its own: a jet seen edge-on
+      // through a hard turn is narrow at any distance.
+      distanceM: this.camera.position.distanceTo(mesh.position),
       x: (centerX + 1) / 2,
       y: (1 - centerY) / 2,
       minX: (minX + 1) / 2,

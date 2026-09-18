@@ -318,7 +318,9 @@ describe("jev provider", () => {
    *
    * The manoeuvre is a choice because it is one of thirteen named things. The
    * two control axes are scores, and a score between rungs has to survive as a
-   * number: 3.4 out of 4 is 7.8 g, which no menu of detents could have said.
+   * number: 3.4 of 4 lands between "very hard" and "on the limiter", which no
+   * menu of detents could have said. The scale is not evenly spaced, so this
+   * also pins the interpolation between the rungs.
    */
   it("flies a manoeuvre, a continuous load factor and a continuous throttle", async () => {
     respond(
@@ -334,10 +336,11 @@ describe("jev provider", () => {
     expect(decision.action).toEqual({
       schema: "tactical",
       maneuver: "lead_pursuit",
-      targetG: 1 + (3.4 / 4) * 8,
+      // 3.4 of 4: four tenths of the way from 8.2 g to 9 g.
+      targetG: 8.2 + 0.4 * (9 - 8.2),
       // The fraction is what is flown; the detent is only the nearest name for it.
-      throttle: "mil",
-      throttleFraction: 0.875,
+      throttle: "ab",
+      throttleFraction: 0.85 + 0.5 * (1 - 0.85),
       fire: true,
     });
     expect(decision.usage?.costUsd).toBeCloseTo(0.0002, 9);
@@ -382,7 +385,7 @@ describe("jev provider", () => {
       "fire",
     ]);
     const commitment = decision.distributions?.find((entry) => entry.question === "commitment");
-    expect(commitment?.choice).toBe("Everything");
+    expect(commitment?.choice).toBe("On the limiter");
     expect(commitment?.options).toHaveLength(5);
     const fire = decision.distributions?.find((entry) => entry.question === "fire");
     expect(fire?.options).toEqual([

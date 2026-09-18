@@ -41,25 +41,48 @@ import type { ModelProvider, ProviderOptions } from "./types";
  * capability the situation is worth spending right now.
  */
 const COMMITMENT = [
-  "Unload, about 1 g. Speed is the problem, or the bandit is far enough away that pointing costs nothing.",
-  "About 3 g. A gentle correction: the picture is nearly right and does not need forcing.",
-  "About 5 g, the sustained rate. As hard as this jet can turn without going backwards on energy.",
-  "About 7 g. Harder than it can sustain, accepting the speed loss, because the angles are worth more.",
-  "9 g, on the limiter. Maximum instantaneous turn -- a guns defence, or the last few degrees to a shot.",
+  "Unload. Stop turning: speed is the problem, or the bandit is far enough away that pointing costs nothing.",
+  "A working turn the jet can hold all day, giving up nothing on energy.",
+  "Hard. More than it can sustain, trading speed for the nose coming round.",
+  "Very hard. Nearly everything, because the angles decide this and the speed does not.",
+  "On the limiter. Maximum instantaneous turn -- a guns defence, or the last few degrees to a shot.",
 ] as const;
+
+/**
+ * What each rung of that rubric is worth, in g.
+ *
+ * Not evenly spaced, because the rungs are not evenly spaced either: four of
+ * the five describe a jet that is turning, and only one describes a jet that is
+ * not. A rubric's levels are meaningful states rather than equally spaced
+ * numbers, so the scale interpolates between what each level is worth.
+ *
+ * Getting this wrong is not a rounding error. A score is a probability-weighted
+ * mean, so an uncertain answer lands near the middle of whatever scale it is
+ * mapped onto; against 1..9 evenly spaced, every uncertain answer became a 4 g
+ * turn, and a 4 g turn in a 9 g aeroplane cannot stay inside anybody. Measured
+ * over a match, that alone was the difference between fighting and drifting
+ * apart to ten kilometres and merging again.
+ */
+const COMMITMENT_G = [1, 5, 6.8, 8.2, 9] as const;
 
 /** How much thrust the situation is asking for, judged from the state alone. */
 const POWER = [
   "Idle. Closing far too fast, or about to overshoot, and the closure has to stop.",
-  "Around a third. A little fast for the turn being flown; less power settles it.",
-  "About half -- enough to hold the current speed and spend nothing extra.",
+  "Back off. A little fast for the turn being flown; less power settles it.",
+  "Enough to hold the current speed and spend nothing extra.",
   "Military power, full dry thrust, because speed is needed or is being lost.",
   "Afterburner, everything the engine has, to run, to climb, or to hold a hard turn.",
 ] as const;
 
-/** Load factor the ends of the commitment rubric mean. */
-const MIN_G = 1;
-const MAX_G = 9;
+/** The same, for throttle: nothing here is a reason to fly at half power. */
+const POWER_FRACTION = [0, 0.35, 0.62, 0.85, 1] as const;
+
+/** Reads a continuous score off a scale whose rungs are not evenly spaced. */
+function alongScale(scale: readonly number[], score: number): number {
+  const low = Math.max(0, Math.min(scale.length - 1, Math.floor(score)));
+  const high = Math.min(low + 1, scale.length - 1);
+  return scale[low]! + (scale[high]! - scale[low]!) * (score - low);
+}
 
 interface ChoiceAnswer {
   type?: string;
@@ -207,7 +230,7 @@ export class JevProvider implements ModelProvider {
       name: `jev/${this.model}`,
       provider: "jev",
       model: this.model,
-      policyVersion: "primitives-1",
+      policyVersion: "primitives-2",
       schema: "tactical",
     };
   }
@@ -245,10 +268,19 @@ export class JevProvider implements ModelProvider {
           },
           fire: {
             type: "noul",
-            instructions: "Would a burst fired right now hit the bandit?",
+            instructions: "Would a burst fired this instant hit the bandit?",
+            /**
+             * Named against the number the state already reports.
+             *
+             * Asked in the abstract -- "is the aim good?" -- this returned
+             * fifteen per cent on shots that would pass two kilometres wide and
+             * thirty-eight on ones that would hit, which is not a trigger. The
+             * predicted miss distance is in the briefing with the threshold
+             * beside it, so the question may as well point at it.
+             */
             criteria: {
-              true: "The nose is on the lead point, the bandit is inside lethal range, and the predicted miss is small.",
-              false: "The aim is off, the bandit is out of range, or the rounds would arrive where it no longer is.",
+              true: "The predicted miss distance is under fifteen metres and the rounds are still lethal at that range. The burst arrives where the bandit will be.",
+              false: "The predicted miss distance is tens of metres or more, or the bandit is beyond lethal range. The burst arrives where the bandit is not.",
             },
           },
         },
@@ -268,8 +300,8 @@ export class JevProvider implements ModelProvider {
     const flying = (committed ? maneuver.choice : this.lastManeuver) as Maneuver;
     this.lastManeuver = flying;
 
-    const targetG = MIN_G + (commitment.score / (COMMITMENT.length - 1)) * (MAX_G - MIN_G);
-    const throttleFraction = power.score / (POWER.length - 1);
+    const targetG = alongScale(COMMITMENT_G, commitment.score);
+    const throttleFraction = alongScale(POWER_FRACTION, power.score);
 
     return {
       distributions: distributionsOf(maneuver, commitment, power, fire),
