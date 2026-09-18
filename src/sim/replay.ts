@@ -66,7 +66,10 @@ export interface ReplayFile {
 }
 
 export interface RecorderOptions {
-  /** Capture one frame every N ticks. 4 at 120 Hz is 30 frames a second. */
+  /**
+   * Capture one frame every N ticks while rounds are in the air, and half as
+   * often otherwise. 4 at 120 Hz is 30 frames a second.
+   */
   everyTicks?: number;
   includeProjectiles?: boolean;
 }
@@ -104,16 +107,25 @@ export class ReplayRecorder {
       this.replay.events.push(...state.events.slice(this.capturedEvents));
       this.capturedEvents = state.events.length;
     }
-    if (state.tick % this.everyTicks !== 0 && !state.finished) return;
+    /**
+     * Aircraft frames are most of a replay's size, and playback interpolates
+     * between them, so half the rate costs almost nothing to watch. Tracers do
+     * not interpolate: each frame draws a short streak along the round's path,
+     * and at fifteen frames a second a burst arrives as dots with gaps between
+     * them. So the rate halves only while there is nothing in the air.
+     */
+    const interval = state.projectiles.length ? this.everyTicks : this.everyTicks * 2;
+    if (state.tick % interval !== 0 && !state.finished) return;
 
     const frame: ReplayFrame = {
       tick: state.tick,
       t: Number(state.time.toFixed(4)),
       aircraft: state.aircraft.map((aircraft) => ({
         id: aircraft.id,
-        p: round(aircraft.position.toArray() as [number, number, number], 2),
+        // A tenth of a metre, on an aircraft fifteen metres long.
+        p: round(aircraft.position.toArray() as [number, number, number], 1),
         q: round(aircraft.orientation.toArray() as [number, number, number, number], 5),
-        v: round(aircraft.velocity.toArray() as [number, number, number], 2),
+        v: round(aircraft.velocity.toArray() as [number, number, number], 1),
         ammo: aircraft.ammo,
         health: Number(aircraft.damage.integrity.toFixed(3)),
         alive: aircraft.alive,
