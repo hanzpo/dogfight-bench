@@ -7,18 +7,11 @@ import { heightAboveGround } from "./terrain";
 export interface TrimSolution {
   alphaRad: number;
   throttle: number;
-  /** True when level flight is actually achievable at this speed and altitude. */
   feasible: boolean;
   thrustRequiredN: number;
   thrustAvailableN: number;
 }
 
-/**
- * Solves straight-and-level trim.
- *
- * Scenarios start from this rather than from a guess, so a match begins with
- * both jets genuinely in equilibrium instead of pitching in the first second.
- */
 export function trimLevelFlight(altitudeM: number, speedMps: number, massKg: number): TrimSolution {
   const air = atmosphere(altitudeM);
   const qbar = 0.5 * air.densityKgM3 * speedMps * speedMps;
@@ -26,7 +19,6 @@ export function trimLevelFlight(altitudeM: number, speedMps: number, massKg: num
   const weight = massKg * GRAVITY_MPS2;
   const clRequired = weight / (qbar * GEOMETRY.wingAreaM2);
 
-  // Invert the lift curve by bisection; it is monotonic below the stall.
   let low = -0.2;
   let high = 0.47;
   for (let i = 0; i < 60; i += 1) {
@@ -41,7 +33,6 @@ export function trimLevelFlight(altitudeM: number, speedMps: number, massKg: num
   const thrustRequiredN = qbar * GEOMETRY.wingAreaM2 * cd;
   const thrustAvailableN = thrustAtPower(2, altitudeM, mach);
 
-  // Invert the thrust-vs-power curve the same way.
   let lowPower = 0;
   let highPower = 2;
   for (let i = 0; i < 60; i += 1) {
@@ -62,7 +53,6 @@ export function trimLevelFlight(altitudeM: number, speedMps: number, massKg: num
   };
 }
 
-/** Engine power level that a trim throttle corresponds to, for state seeding. */
 export function trimPower(throttle: number): number {
   return commandedPower(throttle);
 }

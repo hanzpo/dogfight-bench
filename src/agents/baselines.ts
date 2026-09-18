@@ -2,19 +2,6 @@ import type { AgentObservation } from "../sim/telemetry";
 import { SCRIPTED_INFO, type AgentAdapter, type AgentDecision, type AgentInfo } from "./agent";
 import type { Maneuver, ThrottleDetent } from "./action";
 
-/**
- * Scripted opponents.
- *
- * These exist to give the benchmark a fixed reference point. A model that
- * cannot beat `EnergyFighterAgent` has not learned basic air combat, and a
- * model that loses to `BasicPursuitAgent` is not flying at all.
- */
-
-/**
- * The floor. Points the nose at the opponent and fires when it is close and
- * roughly aligned. It has no concept of energy, so it will happily fly itself
- * into a slow-speed fight it cannot win.
- */
 export class BasicPursuitAgent implements AgentAdapter {
   readonly info: AgentInfo;
 
@@ -37,20 +24,8 @@ export class BasicPursuitAgent implements AgentAdapter {
   }
 }
 
-/**
- * A competent reference opponent.
- *
- * The thing that makes it fly like a fighter rather than a guided missile is
- * energy. Turn performance peaks at corner speed and falls away hard on both
- * sides of it, so this agent spends g and throttle to hold the corner, and
- * treats maximum g as something you buy a shot with rather than the default.
- *
- * It is a rule-based pilot, not a good one. It exists to be the floor a model
- * has to clear.
- */
 export class EnergyFighterAgent implements AgentAdapter {
   readonly info: AgentInfo;
-  /** The side of the last break, so the jet does not thrash left and right. */
   private breakDirection: "break_left" | "break_right" = "break_left";
   private breakHeldUntilS = 0;
 
@@ -63,11 +38,6 @@ export class EnergyFighterAgent implements AgentAdapter {
     this.breakHeldUntilS = 0;
   }
 
-  /**
-   * Picks a break direction and commits to it for a few seconds. Reversing
-   * every time the bearing crosses zero rolls the jet back and forth and loses
-   * several thousand feet doing it.
-   */
   private chooseBreak(observation: AgentObservation): "break_left" | "break_right" {
     if (observation.simTimeS < this.breakHeldUntilS) return this.breakDirection;
     this.breakDirection = observation.relative.bearingDeg >= 0 ? "break_right" : "break_left";
@@ -83,8 +53,6 @@ export class EnergyFighterAgent implements AgentAdapter {
     const corner = own.cornerSpeedMps;
     const sustained = Math.max(own.sustainedLoadFactorG, 2);
     const maximum = Math.min(own.availableLoadFactorG, 9);
-    // Terrain awareness, not just altitude: the clearance the current flight
-    // path would leave is what says whether there is a hill in the way.
     const terrain = own.terrain;
     const veryLow = own.altitudeAglM < 900 || terrain.minimumClearanceAheadM < 700;
     const behindThem = relative.angleOffTailDeg < 70;
@@ -94,13 +62,9 @@ export class EnergyFighterAgent implements AgentAdapter {
     let maneuver: Maneuver;
     let rationale: string;
     let disengaging = false;
-    /** True when the fight is worth spending energy on, rather than saving it. */
     let committed = false;
 
     if (terrain.warning === "pull-up") {
-      // Nothing in the fight is worth the ground. The automatic recovery will
-      // already be pulling; committing the manoeuvre to it stops the agent
-      // fighting its own GCAS.
       maneuver = "climb";
       committed = true;
       rationale = "Terrain: recovery does not fit, pulling up";
@@ -120,8 +84,6 @@ export class EnergyFighterAgent implements AgentAdapter {
       maneuver = "climb";
       rationale = "Climbing off the deck";
     } else if (terrain.warning === "caution" && !behindThem) {
-      // High ground ahead with no shot to give up for it: go over the top
-      // rather than press on and be forced into a recovery later.
       maneuver = "climb";
       rationale = "Terrain: climbing over high ground ahead";
     } else if (nearArenaEdge) {
@@ -147,17 +109,6 @@ export class EnergyFighterAgent implements AgentAdapter {
       rationale = "Turning into the fight";
     }
 
-    /**
-     * Energy policy: fly the corner.
-     *
-     * Above corner speed, pull harder and come out of afterburner -- the excess
-     * speed is worth more as angles than as speed. Below it, stop pulling and
-     * light the burner, because a jet under corner speed can neither turn nor
-     * run. Getting this wrong in either direction is what makes an agent look
-     * stupid: too much g and it spirals down to a hundred and forty metres a
-     * second and sits there; too little and it sails past the fight at twice
-     * corner with a two-kilometre turn radius.
-     */
     const ratio = own.speedMps / Math.max(corner, 1);
     let targetG: number;
     let throttle: ThrottleDetent;
@@ -186,8 +137,6 @@ export class EnergyFighterAgent implements AgentAdapter {
         maneuver,
         targetG,
         throttle,
-        // The trigger is gated on the live gun solution, so this is an intent
-        // to shoot when the pipper is on rather than a blind squeeze.
         fire: own.ammoRemaining > 0 && gunSolution.inLethalRange && relative.rangeM < 2_000,
       },
       rationale,

@@ -1,30 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/**
- * Two visual languages, on purpose.
- *
- * Everything a pilot looks at -- the head-up display, the attitude indicator,
- * the gunsight -- is drawn the way those instruments are actually drawn:
- * phosphor green, condensed type, stroked symbology. That is not decoration,
- * it is the subject.
- *
- * Everything else is a research tool that happens to contain a flight
- * simulator, and it is set like one: neutral greys, one restrained accent,
- * sentence case, generous spacing, type that is meant to be read rather than
- * to look futuristic. Mixing the two is what makes an interface feel like a
- * costume, so the tokens below are kept deliberately separate.
- */
-
 :root {
-  /* Surfaces, darkest to lightest. */
-  --bg: #0c0d0f;
+    --bg: #0c0d0f;
   --surface: #141618;
   --surface-raised: #1b1e21;
   --line: #ffffff14;
   --line-strong: #ffffff24;
 
-  /* Text, by how much it matters. */
-  --text: #ececee;
+    --text: #ececee;
   --text-muted: #9a9ca1;
   --text-faint: #6d7076;
 
@@ -48,8 +31,6 @@
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 #viewport { position: fixed; inset: 0; }
-/* Belt and braces with the renderer's own sizing: whatever the backing store
-   is, the element must never be larger than its container. */
 canvas { display: block; cursor: grab; width: 100%; height: 100%; }
 canvas:active { cursor: grabbing; }
 code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
@@ -57,15 +38,11 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 ::selection { background: #7dd3c033; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 
-/* ---------- Chrome ---------- */
-
 .topbar {
   position: fixed;
   inset: 0 0 auto 0;
   height: 56px;
-  /* Above the details panel, which shares the top right corner and would
-     otherwise swallow every click meant for the account menu below it. */
-  z-index: 6;
+    z-index: 6;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -103,19 +80,10 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 }
 .account-menu p { margin: 0; font-size: 12px; line-height: 1.55; }
 .account-menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 0; }
-/* Justified left, so the labels line up under each other rather than the
-   icons drifting with the text width. */
 .account-actions { display: grid; gap: 8px; }
 .account-actions button { justify-content: flex-start; }
 .account-error { color: var(--danger); }
 
-/**
- * How to move the camera, said once.
- *
- * It is an instruction for somebody who has just arrived, and after that it is
- * a permanent caption on a flight simulator. It fades itself out rather than
- * sitting under the compass forever.
- */
 .orbit-help {
   position: fixed; top: 176px; left: 50%; transform: translateX(-50%);
   color: #d8e5e099; font: 11px/1 "JetBrains Mono"; pointer-events: none; z-index: 2;
@@ -126,7 +94,6 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
   to { opacity: 0; visibility: hidden; }
 }
 
-/* Mouse-flying status. Deliberately not a modal: it sits over a live match. */
 .pointer-hint {
   position: fixed; top: 170px; left: 50%; transform: translateX(-50%); z-index: 3;
   display: flex; align-items: center; gap: 10px;
@@ -134,8 +101,6 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 .pointer-hint span {
   font: 11px/1 "JetBrains Mono"; color: #d8e5e0aa; text-shadow: 0 1px 3px #000c;
 }
-
-/* ---------- Controls ---------- */
 
 select, button, input {
   font-family: inherit; font-size: 13px; color: var(--text);
@@ -154,14 +119,6 @@ button:active:not(:disabled) { background: #101214; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 select:hover { border-color: #ffffff3a; }
 
-/**
- * A button that is only an icon.
- *
- * Square, so a row of them reads as a row of controls rather than as boxes of
- * different widths. Every one carries an `aria-label` and a `title`: the icon
- * is the shorthand for people who already know it, not a replacement for the
- * name.
- */
 button.icon {
   display: inline-grid; place-items: center;
   width: 34px; min-height: 34px; padding: 0;
@@ -178,20 +135,10 @@ button.ghost.danger:hover:not(:disabled) { color: var(--danger); }
 input { width: 100%; }
 input::placeholder { color: var(--text-faint); }
 
-/* A control's label sits above it, in the same small muted voice everywhere. */
 label { color: var(--text-muted); font-size: 11px; }
 
-/**
- * Centred with auto margins, not with `left: 50%`.
- *
- * A fixed element with `left: 50%` and no right edge has only half the viewport
- * available to it, so a shrink-to-fit box can never be wider than 50vw however
- * much room is on screen. This bar was therefore wrapping into three stacked
- * rows on a widescreen monitor with half the width unused.
- */
 .controls {
-  /* Clear of the status strip along the very bottom edge. */
-  position: fixed; left: 0; right: 0; bottom: 36px; z-index: 3;
+    position: fixed; left: 0; right: 0; bottom: 36px; z-index: 3;
   width: fit-content; margin-inline: auto;
   display: flex; align-items: flex-end; gap: 0; flex-wrap: wrap; justify-content: center;
   padding: 10px 4px;
@@ -199,27 +146,18 @@ label { color: var(--text-muted); font-size: 11px; }
   box-shadow: 0 8px 28px #00000055;
   max-width: calc(100vw - 32px);
 }
-/* A hairline between groups rather than a gap, so the bar stays one object. */
 .control-group {
   display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
   padding: 0 12px;
 }
 .control-group + .control-group { border-left: 1px solid var(--line); }
 .controls label { display: grid; gap: 4px; }
-/* A select is as wide as its longest option, and "openai-compatible/gpt-4.1-mini
-   - needs a key" is very long, which pushed the whole bar into stacked rows. */
 .controls select { max-width: 200px; text-overflow: ellipsis; }
 .control-group > button { align-self: end; }
-/* A 5px track and a line of text sit with the button's centre, not its floor. */
 .controls .scrubber, .controls .timecode { align-self: center; }
-/* The segmented control sits where a select would, under its own label, and
-   has to end up exactly as tall or its label drifts off the shared baseline:
-   2px padding and 1px border each side means a 26px button makes 32. */
 .controls .segmented { padding: 2px; }
 .controls .segmented button { min-height: 26px; }
 
-/* One status line along the bottom edge. The keyboard hints used to be a
-   separate fixed element sitting directly on top of it. */
 .flight-strip {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
   display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
@@ -229,22 +167,15 @@ label { color: var(--text-muted); font-size: 11px; }
   pointer-events: none;
 }
 #event { color: var(--accent); }
-/* Anchored just above the bar it describes, and out of its layout: a full-width
-   child would have stretched a bar that is deliberately only as wide as its
-   contents across the whole window. */
 .keymap {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 9px);
   text-align: center; color: var(--text-muted);
   font: 11px/1 "JetBrains Mono";
-  /* It sits over the sky, which is pale, so it needs its own backing. */
-  text-shadow: 0 1px 5px #0c0d0f, 0 0 12px #0c0d0fcc;
+    text-shadow: 0 1px 5px #0c0d0f, 0 0 12px #0c0d0fcc;
 }
 
-/* Whether this match is going anywhere, said before it is flown rather than
-   after, so nobody discovers their best fight was not recorded. */
 .recording {
-  /* Top left: the top right belongs to the details panel. */
-  position: fixed; top: 68px; left: 16px; z-index: 5;
+    position: fixed; top: 68px; left: 16px; z-index: 5;
   display: flex; align-items: center; gap: 8px;
   padding: 7px 12px;
   background: var(--surface-raised); border: 1px solid var(--line); border-radius: 999px;
@@ -260,7 +191,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .recording-failed .recording-dot { background: var(--danger); }
 .recording-failed { border-color: #e08a8655; }
 
-/* Something went wrong with a model, said where the pilot can act on it. */
 .decision-error {
   position: fixed; top: 68px; left: 0; right: 0; z-index: 5;
   width: fit-content; margin-inline: auto;
@@ -272,8 +202,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 }
 .decision-error strong { color: var(--danger); font-size: 11px; font-weight: 600; }
 .decision-error span { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ---------- Sheets ---------- */
 
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 10;
@@ -306,14 +234,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .scope input { width: auto; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); }
 .scope span span { display: block; font-size: 11px; }
 
-/* ---------- Flight display ----------
-   Everything a pilot could actually read: head-up display green, phosphor
-   glow, and laid out where a fighter HUD puts it. Nothing about the opponent
-   belongs in here. */
-
-/* Full-viewport, exactly like the canvas it overlays. Conformal symbology is
-   projected in viewport coordinates, so an inset here would shift the pitch
-   ladder off the real horizon. Content is padded away from the chrome instead. */
 .flight-display {
   position: fixed; inset: 0; width: 100%; height: 100%;
   z-index: 2; pointer-events: none;
@@ -325,15 +245,7 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .flight-display text { fill: var(--hud); font: 11px "JetBrains Mono"; letter-spacing: .06em; }
 .flight-display line, .flight-display path, .flight-display rect, .flight-display circle { vector-effect: non-scaling-stroke; }
 
-/* A HUD is a projection on glass, so everything it draws glows a little. */
 .flight-display > g { filter: drop-shadow(0 0 3px #0b3d1f) drop-shadow(0 0 1px #000c); }
-
-/* Group positions are set in JavaScript from the measured viewport.
-   Percentage values in a CSS transform on an SVG element resolve against
-   different boxes in different engines -- Chromium against the view box,
-   WebKit against the element's own -- which silently parked half the head-up
-   display in the top-left corner on Safari. Pixels from a measurement are the
-   only portable answer. */
 
 .tape-ticks line { stroke: var(--hud); stroke-width: 1.2; opacity: .75; }
 .tape-ticks text { font-size: 10px; opacity: .85; }
@@ -347,26 +259,18 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .throttle-track { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
 .throttle-fill { opacity: .8; }
 
-/* Control position: where the stick and pedals actually are, whoever is flying. */
 .control-box { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
 .control-cross { stroke: var(--hud); stroke-width: .8; opacity: .35; }
 .control-dot { fill: var(--hud); }
 .control-rudder { fill: var(--hud); opacity: .85; }
 .stores-value { font: 600 19px "Barlow Condensed"; letter-spacing: .05em; fill: #eafff1; }
 
-/* --- conformal symbology, cockpit view only --- */
 .conformal line { stroke: var(--hud); stroke-width: 1.6; }
 .conformal .horizon { stroke-width: 2.1; }
 .conformal .rung-label { font-size: 10px; }
 .fpm circle { fill: none; stroke: var(--hud); stroke-width: 2; }
 .fpm line { stroke-width: 2; }
 .aoa-bracket path { fill: none; stroke: var(--ab); stroke-width: 2.2; }
-
-/* ---------- Tactical overlay ----------
-   Gun symbology, which genuinely is something the pilot sees, so it keeps the
-   head-up display's treatment. Full viewport: the overlay projects in viewport
-   coordinates, and without an explicit size the SVG falls back to its intrinsic
-   300x150 and folds the whole thing into the top-left corner. */
 
 .tactical {
   position: fixed; inset: 0; width: 100%; height: 100%;
@@ -384,7 +288,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
 .target-box text { fill: #ffd98a; }
 
-/* Dashed, so it reads as a correction to close rather than a solid object. */
 .lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
 
 .bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
@@ -394,25 +297,11 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
   paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
   text-anchor: middle;
 }
-/**
- * The shoot cue pulses.
- *
- * It referenced this animation without it ever having been defined, so the cue
- * appeared and then sat perfectly still -- which is the one thing a "fire now"
- * prompt must not do, because a static caption reads as a label rather than as
- * something happening right this second.
- */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .35; }
 }
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
-
-
-/* ---------- Details panel ----------
-
-   Deliberately not a HUD. This is the benchmark's omniscient view, so it reads
-   as data: plain monospace, no glow, one block, one place. */
 
 .details {
   position: fixed; top: 68px; right: 16px; z-index: 3; width: 286px;
@@ -434,9 +323,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 }
 .details-toggle:hover { background: #ffffff0f; border-color: transparent; color: var(--text); }
 
-/* Collapsed it becomes a tab on the edge of the screen, rather than a small
-   floating box with a button loose inside it. */
-/* Clear of the navigation above it, which owns the same corner. */
 .details.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 84px; right: 0; }
 .details.collapsed header, .details.collapsed section { display: none; }
 .details.collapsed .details-toggle {
@@ -464,8 +350,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
   color: var(--text-muted); font-style: italic;
 }
 
-/* A calibrated model reports how sure it was of every alternative, not just
-   which one won. A bar chart is the only honest way to show that. */
 .distribution { margin-top: 11px; }
 .distribution-head {
   display: flex; justify-content: space-between; margin-bottom: 4px;
@@ -480,14 +364,10 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .distribution-row.chosen .distribution-value { color: var(--text); }
 .distribution-row.chosen .distribution-bar span { background: var(--accent); }
 
-/* ---------- Data pages ---------- */
-
 .page {
   position: fixed; inset: 56px 0 0 0; z-index: 4; overflow: auto;
   padding: 32px 32px 72px; background: var(--bg);
 }
-/* Content stops well short of a wide monitor's edge. A table stretched across
-   3000 pixels puts the number you are reading a foot away from its label. */
 .page > * { max-width: 1280px; margin-inline: auto; }
 .page > .page-head { width: 100%; }
 .page.overlay-page { background: #0c0d0fe8; backdrop-filter: blur(8px); }
@@ -528,7 +408,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .badge-anthropic, .badge-openai, .badge-jev { color: var(--accent); background: #7dd3c01f; }
 .badge-human { color: var(--warn); background: #e8a87c1f; }
 
-/* Win rate reads faster as a bar than as a number. */
 .meter { display: inline-block; width: 46px; height: 4px; margin-right: 8px; background: #ffffff16; border-radius: 2px; vertical-align: middle; }
 .meter-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
@@ -550,8 +429,6 @@ table.data .warn { color: var(--warn); }
 table.data a { color: var(--accent); text-decoration: none; }
 table.data a:hover { text-decoration: underline; }
 
-/* ---------- Replay ---------- */
-
 .replay-meta {
   position: fixed; top: 68px; left: 16px; z-index: 3; display: grid; gap: 5px;
   padding: 12px 14px; background: #16181bf2; border: 1px solid var(--line); border-radius: var(--radius);
@@ -560,14 +437,6 @@ table.data a:hover { text-decoration: underline; }
 }
 .replay-meta .muted { color: var(--text-faint); }
 .replay-meta .rationale { color: var(--accent); font-style: italic; }
-/**
- * The replay scrubber.
- *
- * A range input left alone renders as a bright white bar that shouts over
- * everything beside it, and gives no way to colour the part already played --
- * so the track is a gradient driven by `--played`, set from the playback
- * position.
- */
 .scrubber {
   appearance: none; -webkit-appearance: none;
   width: min(380px, 38vw); height: 5px; min-height: 0; padding: 0; border: none;
@@ -592,14 +461,11 @@ table.data a:hover { text-decoration: underline; }
   .details { width: min(286px, calc(100vw - 24px)); max-height: calc(100vh - 260px); }
   .page { padding: 22px 16px 72px; }
   table.data { font-size: 11px; }
-  /* A table of twelve numeric columns cannot be made to fit; let it scroll
-     rather than crushing every column into illegibility. */
-  .page > table.data { display: block; overflow-x: auto; white-space: nowrap; }
+    .page > table.data { display: block; overflow-x: auto; white-space: nowrap; }
 }
 
 @media (max-width: 560px) {
-  /* The wordmark wraps to two lines and pushes the navigation into the page. */
-  .brand div { display: none; }
+    .brand div { display: none; }
   .topbar { padding: 0 12px; }
   .nav { gap: 0; font-size: 12px; }
   .nav a { padding: 6px 8px; }

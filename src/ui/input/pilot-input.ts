@@ -1,39 +1,12 @@
 import type { ControlInput } from "../../sim/types";
-
-/**
- * Human control, from whatever the person is actually holding.
- *
- * Three schemes share one path into the simulation, because the aircraft has
- * exactly one set of controls and the flight model must not be able to tell
- * which device moved them. Keyboard input is always live and additive, so a
- * mouse or pad pilot can still reach for the rudder keys without switching
- * modes.
- */
+import { clamp } from "../../math";
 
 export type ControlScheme = "keyboard" | "mouse" | "gamepad";
 
-/**
- * How the mouse is being read.
- *
- * `relative` needs the pointer captured: movement accumulates into a stick that
- * stays where it is put, the mouse cannot leave the window, and it is the
- * better of the two by a distance. `absolute` is the fallback, deflecting the
- * stick by how far the visible cursor sits from the centre of the viewport. It
- * needs no permission and no focused window, which matters because pointer lock
- * is refused outright in embedded frames, in some kiosk contexts, and in every
- * automated browser -- so this is also the only mode the tests can exercise.
- */
 export type MouseMode = "relative" | "absolute";
 
 export const CONTROL_SCHEMES: readonly ControlScheme[] = ["keyboard", "mouse", "gamepad"];
 
-/**
- * Keyboard axes, as pairs of [positive, negative].
- *
- * Pitch follows the stick, not the camera: W is forward on the stick and puts
- * the nose down, S is back and pulls. The control input is a load-factor
- * command where positive pulls, so W maps to the negative end.
- */
 const KEY_AXES = {
   pitch: ["KeyS", "KeyW"],
   roll: ["KeyD", "KeyA"],
@@ -41,29 +14,12 @@ const KEY_AXES = {
   throttle: ["KeyR", "KeyF"],
 } as const;
 
-/** Keys the page must not hand to the browser while someone is flying. */
 const SWALLOWED_KEYS = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 export interface PilotInputSettings {
-  /**
-   * Pixels of mouse movement for full stick deflection. Lower is twitchier.
-   *
-   * A real stick is about 100 mm of travel; this is the screen-space
-   * equivalent, and the default is deliberately long because a gun solution is
-   * won by small corrections.
-   */
   mousePixelsForFullDeflection: number;
-  /** Moving the mouse forward pushes the nose down, as a stick does. */
   invertMousePitch: boolean;
-  /**
-   * How fast the virtual stick returns to centre, in deflections per second.
-   *
-   * Zero leaves it where it was put, which is what a real stick does and what
-   * makes a sustained turn possible without holding the mouse at the edge of
-   * the mat. A little spring helps people who expect a mouse to recentre.
-   */
   mouseSpringPerSecond: number;
-  /** Fraction of a gamepad stick's travel ignored around centre. */
   gamepadDeadzone: number;
 }
 
@@ -94,17 +50,7 @@ export function saveSettings(settings: PilotInputSettings): void {
   }
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
-/**
- * Deadzone plus a squared response.
- *
- * A linear pad stick makes fine tracking nearly impossible: half deflection is
- * half the g, and the last two degrees of aim need a tenth of that. Squaring
- * keeps the full range while putting most of the resolution near centre.
- */
 function padCurve(value: number, deadzone: number): number {
   const magnitude = Math.abs(value);
   if (magnitude <= deadzone) return 0;
@@ -114,7 +60,6 @@ function padCurve(value: number, deadzone: number): number {
 
 export interface PilotInputStatus {
   scheme: ControlScheme;
-  /** Virtual stick deflection, -1..1 on each axis, for the control indicator. */
   stick: { x: number; y: number };
   rudder: number;
   pointerLocked: boolean;
@@ -122,13 +67,6 @@ export interface PilotInputStatus {
   gamepadName: string | undefined;
 }
 
-/**
- * Reads every attached device and produces one set of controls per frame.
- *
- * Deliberately not a React hook. It is sampled from the simulation's animation
- * loop at frame rate, and anything that re-rendered the page to report a stick
- * position would cost more than the simulation it is steering.
- */
 export class PilotInput {
   settings: PilotInputSettings;
   scheme: ControlScheme = "keyboard";
@@ -141,11 +79,9 @@ export class PilotInput {
   private captureRefused = false;
   private target: HTMLElement | undefined;
   private padIndex: number | undefined;
-  /** Camera movement asked for with the right button and the wheel. */
   private readonly viewDelta = { orbitX: 0, orbitY: 0, zoom: 0 };
   private orbiting = false;
   private readonly lastClient = { x: Number.NaN, y: Number.NaN };
-  /** Last cursor position in client pixels, for the uncaptured mouse mode. */
   private readonly pointer = { x: Number.NaN, y: Number.NaN };
 
   constructor(settings: PilotInputSettings = loadSettings()) {
@@ -168,23 +104,14 @@ export class PilotInput {
     return this.locked ? "relative" : "absolute";
   }
 
-  /** True when the pointer could be captured but has not been. */
   get canCapturePointer(): boolean {
     return this.scheme === "mouse" && !this.locked && !this.captureRefused;
   }
 
-  /** True when the browser refused to hand over the pointer. */
   get captureUnavailable(): boolean {
     return this.captureRefused;
   }
 
-  /**
-   * Binds every listener and returns the function that removes them all.
-   *
-   * Keyboard and gamepad listen on the window so that flying does not depend on
-   * what happens to have focus; the pointer is captured on the element the
-   * person clicked, which must be the viewport.
-   */
   attach(target: HTMLElement): () => void {
     this.target = target;
 
@@ -193,15 +120,12 @@ export class PilotInput {
       this.keys.add(event.code);
     };
     const up = (event: KeyboardEvent) => this.keys.delete(event.code);
-    // A lost window takes every held key with it, otherwise the aircraft flies
-    // away with the stick pinned.
     const blur = () => {
       this.keys.clear();
       this.mouseFiring = false;
     };
 
     const move = (event: MouseEvent) => {
-      // Pointer lock can deliver a very large delta after a window switch.
       const dx = this.locked
         ? clamp(event.movementX, -200, 200)
         : Number.isNaN(this.lastClient.x)
@@ -217,7 +141,6 @@ export class PilotInput {
       this.pointer.x = event.clientX;
       this.pointer.y = event.clientY;
 
-      // Holding the right button looks at the aircraft instead of flying it.
       if (this.orbiting) {
         this.viewDelta.orbitX += dx;
         this.viewDelta.orbitY += dy;
@@ -231,16 +154,12 @@ export class PilotInput {
     };
 
     const mouseDown = (event: MouseEvent) => {
-      // Uncaptured, the buttons still work, but only over the viewport: the
-      // rest of the page has selects and buttons that must stay clickable.
       if (!this.locked && !(event.target instanceof Node && target.contains(event.target))) return;
       if (event.button === 0) this.mouseFiring = true;
       if (event.button === 2) {
         this.orbiting = true;
         event.preventDefault();
       }
-      // The middle button recentres the stick: the virtual equivalent of
-      // letting go, and the only way back to neutral when there is no spring.
       if (event.button === 1) {
         this.stick.x = 0;
         this.stick.y = 0;
@@ -252,20 +171,10 @@ export class PilotInput {
       if (event.button === 2) this.orbiting = false;
     };
     const contextMenu = (event: MouseEvent) => {
-      // Right-drag is the camera while flying with the mouse, so the menu that
-      // would otherwise appear on release has to be suppressed.
       if (this.scheme === "mouse" && event.target instanceof Node && target.contains(event.target)) {
         event.preventDefault();
       }
     };
-    /**
-     * The wheel is the camera, whatever is flying the aeroplane.
-     *
-     * It used to be read only while flying with the mouse, because the orbit
-     * controls handled it otherwise. They are switched off in every view that
-     * places itself, so scrolling in a chase view did nothing at all, on a
-     * control that every other three-dimensional thing on the internet zooms.
-     */
     const wheel = (event: WheelEvent) => {
       if (!this.locked && !(event.target instanceof Node && target.contains(event.target))) return;
       event.preventDefault();
@@ -275,16 +184,12 @@ export class PilotInput {
     const lockChanged = () => {
       const wasLocked = this.locked;
       this.locked = document.pointerLockElement === target;
-      // Take the stick at neutral. Without this it starts wherever the cursor
-      // happened to be relative to centre, which is a hard turn as often as not.
       if (this.locked && !wasLocked) {
         this.stick.x = 0;
         this.stick.y = 0;
       }
       if (!this.locked) {
         this.mouseFiring = false;
-        // Releasing the pointer should not leave the aircraft in a turn nobody
-        // is holding any more.
         if (wasLocked) {
           this.stick.x = 0;
           this.stick.y = 0;
@@ -332,12 +237,6 @@ export class PilotInput {
     };
   }
 
-  /**
-   * Captures the pointer, which the mouse scheme cannot work without.
-   *
-   * Must be called from a user gesture. Older WebKit returns undefined rather
-   * than a promise, so the result is normalised before anything awaits it.
-   */
   async requestPointerLock(): Promise<boolean> {
     if (!this.target || this.locked) return this.locked;
     try {
@@ -345,8 +244,6 @@ export class PilotInput {
       this.captureRefused = false;
       return true;
     } catch {
-      // Refused: stay in the uncaptured mode rather than leaving the pilot with
-      // no mouse control at all.
       this.captureRefused = true;
       return false;
     }
@@ -356,7 +253,6 @@ export class PilotInput {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
-  /** Discards any held stick, so a restart does not inherit the last turn. */
   reset(): void {
     this.stick.x = 0;
     this.stick.y = 0;
@@ -368,12 +264,6 @@ export class PilotInput {
     this.viewDelta.zoom = 0;
   }
 
-  /**
-   * Camera movement requested since the last call, then cleared.
-   *
-   * Drained by the renderer's own loop rather than pushed, so a burst of mouse
-   * events between two frames becomes one camera movement instead of several.
-   */
   consumeViewDelta(): { orbitX: number; orbitY: number; zoom: number } {
     const delta = { ...this.viewDelta };
     this.viewDelta.orbitX = 0;
@@ -382,17 +272,10 @@ export class PilotInput {
     return delta;
   }
 
-  /** True while the right button is held and the camera is being swung. */
   get isOrbiting(): boolean {
     return this.orbiting;
   }
 
-  /**
-   * Stick deflection from where the visible cursor is.
-   *
-   * Measured against the centre of the element being flown rather than the
-   * window, so the fight's centre and the stick's centre are the same point.
-   */
   private readAbsolutePointer(): void {
     if (!this.target || Number.isNaN(this.pointer.x)) return;
     const box = this.target.getBoundingClientRect();
@@ -423,14 +306,6 @@ export class PilotInput {
     return (this.keys.has(pair[0]) ? 1 : 0) - (this.keys.has(pair[1]) ? 1 : 0);
   }
 
-  /**
-   * The controls for this frame.
-   *
-   * Axes from the different devices are summed and then clamped rather than
-   * having one win, so a pad pilot nudging the rudder keys gets both. Throttle
-   * is a position, not an axis: every device moves it at a rate, exactly like
-   * the real quadrant.
-   */
   sample(dt: number): ControlInput {
     const pad = this.scheme === "gamepad" ? this.gamepad() : undefined;
     const deadzone = this.settings.gamepadDeadzone;
@@ -464,13 +339,10 @@ export class PilotInput {
       const trigger = (index: number) => pad.buttons[index]?.value ?? 0;
       throttleRate += trigger(7) - trigger(6);
       fire ||= (pad.buttons[5]?.pressed ?? false) || (pad.buttons[0]?.pressed ?? false);
-      // Report the pad's stick on the same indicator the mouse uses.
       this.stick.x = clamp(axis(2), -1, 1);
       this.stick.y = clamp(axis(3), -1, 1);
     }
 
-    // Idle to full in about two and a half seconds, which is roughly the real
-    // throttle's travel and slow enough to hold a setting.
     this.throttle = clamp(this.throttle + throttleRate * dt * 0.4, 0, 1);
 
     const controls: ControlInput = {

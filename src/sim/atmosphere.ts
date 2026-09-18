@@ -1,10 +1,3 @@
-/**
- * 1976 U.S. Standard Atmosphere, troposphere plus lower stratosphere.
- *
- * Dogfights in this benchmark stay below 20 km, so the two-layer model is
- * exact enough and avoids the exponential approximation's ~8% density error
- * around the tropopause.
- */
 
 export const SEA_LEVEL_DENSITY = 1.225;
 export const SEA_LEVEL_PRESSURE = 101_325;
@@ -56,12 +49,10 @@ export function speedOfSound(altitudeM: number): number {
   return atmosphere(altitudeM).speedOfSoundMps;
 }
 
-/** Density ratio against sea level; drives thrust lapse and equivalent airspeed. */
 export function densityRatio(altitudeM: number): number {
   return airDensity(altitudeM) / SEA_LEVEL_DENSITY;
 }
 
-/** Calibrated airspeed is what a pilot flies and what the FLCS gain-schedules on. */
 export function equivalentAirspeed(trueAirspeedMps: number, altitudeM: number): number {
   return trueAirspeedMps * Math.sqrt(densityRatio(altitudeM));
 }

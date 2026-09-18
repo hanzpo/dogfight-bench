@@ -7,6 +7,7 @@ import { atmosphere } from "../../src/sim/atmosphere";
 import { stepAircraft } from "../../src/sim/flight-model";
 import { trimLevelFlight, trimPower } from "../../src/sim/trim";
 import type { AircraftState, ControlInput } from "../../src/sim/types";
+import { degrees } from "../../src/math";
 
 export const DT = 1 / 120;
 
@@ -18,7 +19,6 @@ export interface TestAircraftOptions {
   headingRad?: number;
 }
 
-/** Builds a single trimmed aircraft outside of any scenario, for envelope probes. */
 export function makeTestAircraft(options: TestAircraftOptions): AircraftState {
   const fuelKg = MASS.internalFuelKg * (options.fuelFraction ?? MASS.startFuelFraction);
   const massKg = MASS.emptyKg + fuelKg;
@@ -84,7 +84,6 @@ export function fly(aircraft: AircraftState, seconds: number, controls: Partial<
   }
 }
 
-/** Compass turn rate of the velocity vector, deg/s; positive is a right turn. */
 export function turnRateDegS(aircraft: AircraftState): number {
   const before = Math.atan2(aircraft.velocity.x, aircraft.velocity.z);
   const probe = cloneAircraft(aircraft);
@@ -93,11 +92,9 @@ export function turnRateDegS(aircraft: AircraftState): number {
   let delta = after - before;
   while (delta > Math.PI) delta -= 2 * Math.PI;
   while (delta < -Math.PI) delta += 2 * Math.PI;
-  // +z is south, so a rising atan2(x, z) is a decreasing compass heading.
   return (-delta / DT) * (180 / Math.PI);
 }
 
-/** Bank angle, radians; positive is right wing down. */
 export function currentBank(aircraft: AircraftState): number {
   const up = new Vector3(0, 1, 0).applyQuaternion(aircraft.orientation);
   const nose = new Vector3(0, 0, 1).applyQuaternion(aircraft.orientation);
@@ -113,10 +110,6 @@ export interface TurnResult {
   alphaDeg: number;
 }
 
-/**
- * Holds a maximum-performance level turn until it settles, which is the
- * definition of the sustained turn point on an energy-manoeuvrability diagram.
- */
 export function sustainedTurn(altitudeM: number, entrySpeedMps: number, seconds = 120): TurnResult {
   const aircraft = makeTestAircraft({ altitudeM, speedMps: entrySpeedMps });
   for (let i = 0; i < Math.round(seconds / DT); i += 1) {
@@ -138,11 +131,10 @@ export function sustainedTurn(altitudeM: number, entrySpeedMps: number, seconds 
     turnRateDegS: Math.abs(turnRateDegS(aircraft)),
     loadFactor: aircraft.loadFactor,
     altitudeM: aircraft.position.y,
-    alphaDeg: (aircraft.aoaRad * 180) / Math.PI,
+    alphaDeg: degrees(aircraft.aoaRad),
   };
 }
 
-/** Peak turn rate available for a few seconds, ignoring the energy cost. */
 export function instantaneousTurn(altitudeM: number, speedMps: number): TurnResult {
   const aircraft = makeTestAircraft({ altitudeM, speedMps });
   let peak = 0;
@@ -169,6 +161,6 @@ export function instantaneousTurn(altitudeM: number, speedMps: number): TurnResu
     turnRateDegS: peak,
     loadFactor: peakState.loadFactor,
     altitudeM: peakState.position.y,
-    alphaDeg: (peakState.aoaRad * 180) / Math.PI,
+    alphaDeg: degrees(peakState.aoaRad),
   };
 }

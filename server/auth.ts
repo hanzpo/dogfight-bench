@@ -1,23 +1,8 @@
 import { env } from "./env";
 
-/**
- * Who is calling.
- *
- * The browser signs in against Supabase directly and sends the resulting access
- * token here. This verifies it by asking Supabase who the token belongs to,
- * rather than by decoding it locally: local verification needs the project's
- * signing secret, which is one more credential to hold and to rotate, and gets
- * subtly wrong when a project moves to asymmetric keys.
- *
- * The round trip is cheap because it is not on the hot path -- a match is
- * authenticated when it starts and when its result is reported, not on every
- * decision -- and answers are cached briefly anyway.
- */
-
 export interface Account {
   id: string;
   displayName: string;
-  /** True for a guest session: rated, but kept off the visible board. */
   anonymous: boolean;
 }
 
@@ -34,13 +19,6 @@ function bearer(header: string | undefined): string | undefined {
   return token && token.length > 20 ? token : undefined;
 }
 
-/**
- * A display name that is safe to put on a public leaderboard.
- *
- * Preference order is what the person chose, then their provider's name, then
- * the local part of their email -- never the address itself, which they did not
- * agree to publish by signing in.
- */
 function displayNameFor(user: Record<string, unknown>): string {
   const metadata = (user["user_metadata"] ?? {}) as Record<string, unknown>;
   for (const key of ["display_name", "name", "full_name", "user_name", "preferred_username"]) {
@@ -83,7 +61,6 @@ export async function accountFor(authorization: string | undefined): Promise<Acc
   return account;
 }
 
-/** Forgets a cached account, so signing out takes effect immediately. */
 export function forgetAccount(authorization: string | undefined): void {
   const token = bearer(authorization);
   if (token) cache.delete(token);

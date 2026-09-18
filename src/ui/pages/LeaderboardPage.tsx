@@ -3,20 +3,18 @@ import { api, ServerUnavailableError, type LeaderboardEntry } from "../api";
 
 type Board = "models" | "humans" | "everyone";
 
+const BOARD_LABELS: Record<Board, string> = {
+  models: "Models",
+  humans: "People",
+  everyone: "Everyone",
+};
+
 const KINDS: Record<Board, string[]> = {
   models: ["model", "scripted"],
   humans: ["human"],
   everyone: ["model", "scripted", "human"],
 };
 
-/**
- * The leaderboard.
- *
- * Models by default, because "which model flies best" is the question the
- * benchmark exists to answer. People are ranked on the same Elo scale against
- * the same opponents, so the boards are comparable, but they are a different
- * question and are asked for rather than mixed in.
- */
 export function LeaderboardPage() {
   const [board, setBoard] = useState<Board>("models");
   const [rows, setRows] = useState<LeaderboardEntry[]>();
@@ -43,7 +41,7 @@ export function LeaderboardPage() {
     <div className="segmented" role="group" aria-label="Which leaderboard">
       {(["models", "humans", "everyone"] as const).map((option) => (
         <button key={option} aria-pressed={board === option} onClick={() => setBoard(option)}>
-          {option === "models" ? "Models" : option === "humans" ? "People" : "Everyone"}
+          {BOARD_LABELS[option]}
         </button>
       ))}
     </div>

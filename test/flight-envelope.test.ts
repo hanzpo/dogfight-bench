@@ -12,18 +12,7 @@ import {
 } from "../src/sim/performance";
 import { trimLevelFlight } from "../src/sim/trim";
 import { DT, currentBank, fly, makeTestAircraft, turnRateDegS } from "./helpers/envelope";
-
-/**
- * Envelope validation.
- *
- * Every band below is a published F-16C figure with tolerance, not a snapshot
- * of whatever the model happened to produce. If a change to the aerodynamics
- * moves the jet outside these bands, the jet stopped being an F-16.
- *
- * Sources are the usual public performance summaries: ~9 g limit, ~26 deg/s
- * instantaneous and ~18 deg/s sustained turn rate at low altitude, Mach 2 class
- * top speed, and 700-900 ft/s specific excess power at 1 g and Mach 0.9.
- */
+import { degrees } from "../src/math";
 
 const COMBAT_MASS = MASS.emptyKg + MASS.internalFuelKg * MASS.startFuelFraction;
 
@@ -35,7 +24,6 @@ describe("atmosphere", () => {
     expect(atmosphere(5_000).temperatureK).toBeCloseTo(255.65, 1);
     expect(atmosphere(11_000).densityKgM3).toBeCloseTo(0.3639, 3);
     expect(atmosphere(11_000).pressurePa).toBeCloseTo(22_632, -2);
-    // Isothermal above the tropopause.
     expect(atmosphere(15_000).temperatureK).toBeCloseTo(216.65, 2);
   });
 });
@@ -99,7 +87,6 @@ describe("energy manoeuvrability", () => {
     expect(corner.turnRateDegS).toBeGreaterThan(24);
     expect(corner.turnRateDegS).toBeLessThan(31);
     expect(corner.loadFactor).toBeCloseTo(FLCS.maxLoadFactor, 1);
-    // Corner speed sits in the high-300s knots for a clean jet.
     expect(corner.speedMps).toBeGreaterThan(160);
     expect(corner.speedMps).toBeLessThan(215);
   });
@@ -113,11 +100,9 @@ describe("energy manoeuvrability", () => {
   });
 
   it("produces published specific excess power at 1 g", () => {
-    // 700-900 ft/s is the usual quoted band at sea level and Mach 0.9.
     const ps = specificExcessPower(0, 306, 1, COMBAT_MASS);
     expect(ps).toBeGreaterThan(200);
     expect(ps).toBeLessThan(290);
-    // Hard turning must cost energy.
     expect(specificExcessPower(4_500, 250, 9, COMBAT_MASS)).toBeLessThan(0);
     expect(sustainedLoadFactor(4_500, 250, COMBAT_MASS)).toBeGreaterThan(3);
     expect(sustainedLoadFactor(4_500, 250, COMBAT_MASS)).toBeLessThan(7);
@@ -152,8 +137,6 @@ describe("energy manoeuvrability", () => {
         stepAircraft(aircraft, DT);
       }
       expect(aircraft.loadFactor).toBeGreaterThan(target.loadFactor * 0.85);
-      // The probe cannot settle exactly on the analytic point in two seconds, so
-      // this checks the turn has consumed the excess power, not that it is zero.
       expect(Math.abs(aircraft.specificExcessPowerMps)).toBeLessThan(60);
       expect(Math.abs(aircraft.specificExcessPowerMps)).toBeLessThan(
         specificExcessPower(altitude, target.speedMps, 1, COMBAT_MASS) * 0.5,
@@ -204,7 +187,7 @@ describe("flight control system", () => {
   it("rolls at the commanded rate and stops when the stick centres", () => {
     const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 300 });
     fly(aircraft, 0.6, { roll: 1, throttle: 0.9 });
-    const rollRate = (aircraft.angularVelocity.x * 180) / Math.PI;
+    const rollRate = degrees(aircraft.angularVelocity.x);
     expect(rollRate).toBeGreaterThan(270);
     expect(rollRate).toBeLessThan(340);
     fly(aircraft, 1, { roll: 0, throttle: 0.9 });
@@ -229,7 +212,6 @@ describe("flight control system", () => {
   it("commands sideslip when the pedals are used", () => {
     const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 250 });
     fly(aircraft, 3, { yaw: 1, throttle: 0.9 });
-    // Right pedal yaws the nose right, putting the relative wind on the left.
     expect(aircraft.sideslipRad).toBeLessThan(-0.05);
     expect(aircraft.sideslipRad).toBeGreaterThan(-0.3);
   });

@@ -9,14 +9,6 @@ import { costUsd } from "../pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../prompt";
 import type { ModelProvider, ProviderOptions } from "./types";
 
-/**
- * Claude as a fighter pilot.
- *
- * The action is requested as a structured output rather than parsed out of
- * prose, so a malformed decision is a provider error rather than a silent
- * misflown manoeuvre. Effort defaults to low because the decision loop runs
- * about once a second; raise it and raise `DECISION_INTERVAL_S` to match.
- */
 const DecisionSchema = z.object({
   reasoning: z.string().describe("One sentence: the tactical picture and why this manoeuvre."),
   maneuver: z.enum(MANEUVERS),

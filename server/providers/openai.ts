@@ -6,13 +6,6 @@ import { costUsd } from "../pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../prompt";
 import type { ModelProvider, ProviderOptions } from "./types";
 
-/**
- * Any endpoint that speaks the OpenAI chat-completions shape.
- *
- * Pointing `OPENAI_BASE_URL` at OpenAI, Groq, OpenRouter, Together, vLLM or a
- * local Ollama is the whole configuration, so the benchmark is not limited to
- * the providers that happen to have a first-party SDK here.
- */
 const JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -46,7 +39,6 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   }
 
   available(): boolean {
-    // A local endpoint such as Ollama needs no key.
     return Boolean(this.apiKey) || !this.baseUrl.includes("api.openai.com");
   }
 

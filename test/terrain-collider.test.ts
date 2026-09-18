@@ -8,20 +8,6 @@ import {
   terrainHeight,
 } from "../src/sim/terrain";
 
-/**
- * The ground you hit must be the ground you can see.
- *
- * The renderer can only draw triangles. If the simulation collided with the
- * underlying noise function instead, the two would disagree wherever the real
- * surface bulges above the flat triangle spanning it -- by up to 183 metres on
- * a steep ridge, measured before this was fixed. A pilot judges clearance by
- * what is on the screen, so they would fly visibly clear of a ridge and hit
- * nothing at all.
- *
- * This builds the ground exactly as the viewer does and shoots rays at it,
- * because the only convincing check is against the real geometry rather than
- * against a second implementation of what it ought to be.
- */
 function buildGround(chunks: Array<[number, number]>): THREE.Object3D[] {
   const chunkExtent = TERRAIN_EXTENT_M / TERRAIN_CHUNKS;
   return chunks.map(([row, column]) => {
@@ -47,7 +33,6 @@ function buildGround(chunks: Array<[number, number]>): THREE.Object3D[] {
 
 describe("the terrain collider", () => {
   it("collides with exactly the surface the viewer draws", () => {
-    // Four chunks around the arena centre, which is where the fight happens.
     const ground = buildGround([
       [3, 3],
       [3, 4],
@@ -61,7 +46,6 @@ describe("the terrain collider", () => {
     let worst = 0;
     let checked = 0;
     for (let sample = 0; sample < 4_000; sample += 1) {
-      // Inside the four chunks built above, away from their outer edges.
       const x = (random() * 2 - 1) * 9_000;
       const z = (random() * 2 - 1) * 9_000;
       raycaster.set(new THREE.Vector3(x, 12_000, z), down);
@@ -72,7 +56,6 @@ describe("the terrain collider", () => {
     }
 
     expect(checked).toBeGreaterThan(3_500);
-    // Floating point, not geometry.
     expect(worst).toBeLessThan(0.01);
   });
 
@@ -87,7 +70,6 @@ describe("the terrain collider", () => {
   });
 });
 
-/** A small deterministic generator, so the sampled points are reproducible. */
 function mulberry(seed: number): () => number {
   let state = seed;
   return () => {

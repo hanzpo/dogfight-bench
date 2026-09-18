@@ -34,7 +34,6 @@ describe("replays", () => {
     expect(frame.aircraft).toHaveLength(2);
     expect(frame.aircraft[0]!.q).toHaveLength(4);
     expect(frame.t).toBeGreaterThan(0);
-    // Instrument state, so a replay can drive the same display as live flight.
     expect(frame.aircraft[0]!.s).toHaveLength(7);
     expect(frame.aircraft[0]!.s[2]).toBeGreaterThan(0);
   });
@@ -77,7 +76,6 @@ describe("replayed tracers", () => {
       "red-1": SCRIPTED_INFO("target"),
     });
     await sim.runHeadless((state) => {
-      // Hold the trigger down so there are rounds in the air to record.
       state.aircraft[0]!.controls.fire = true;
       recorder.capture(state);
     });
@@ -90,11 +88,7 @@ describe("replayed tracers", () => {
         expect(segment).toHaveLength(6);
         const [ax, ay, az, bx, by, bz] = segment;
         const length = Math.hypot(bx! - ax!, by! - ay!, bz! - az!);
-        // A streak is a short piece of the round's path, not a stub and not a
-        // vertical stroke invented by the viewer.
         expect(length).toBeLessThan(40);
-        // Rounds travel far faster horizontally than they fall, so a tracer is
-        // never close to vertical.
         expect(Math.abs(by! - ay!)).toBeLessThan(length * 0.9);
       }
     }

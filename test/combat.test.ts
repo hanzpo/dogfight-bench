@@ -34,7 +34,6 @@ describe("trigger response", () => {
         break;
       }
     }
-    // A tenth of a second of dead trigger is the most a player will forgive.
     expect(firstRoundAt).toBeLessThan(0.1);
   });
 
@@ -51,7 +50,6 @@ describe("trigger response", () => {
     const settled = count(0.25);
     expect(firstQuarter).toBeGreaterThan(0);
     expect(firstQuarter).toBeLessThan(settled);
-    // Settled cadence is the rated rate.
     expect(settled).toBeGreaterThanOrEqual(GUN.ratePerSecond * 0.25 - 1);
   });
 
@@ -63,16 +61,12 @@ describe("trigger response", () => {
       aircraft.controls.fire = false;
       for (let i = 0; i < 0.3 / DT; i += 1) fireGun(state, aircraft, DT, rng, nextId);
     }
-    // The rotor coasts between taps, so every tap produces rounds.
     expect(GUN.ammunition - aircraft.ammo).toBeGreaterThan(20);
   });
 });
 
 describe("standing orders", () => {
   it("keeps flying a tactical command between decisions", async () => {
-    // One decision per second: if the command were resolved once and held, the
-    // stick would be frozen for a full second at a time and would change on
-    // only about one tick in a hundred and twenty.
     const sim = new DogfightSimulation({ ...neutralMerge, maxTime: 8 }, { decisionIntervalS: 1 });
     sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
 
@@ -88,7 +82,6 @@ describe("standing orders", () => {
     });
 
     expect(ticks).toBeGreaterThan(500);
-    // Eight decisions over eight seconds; the stick must move far more often.
     expect(changes).toBeGreaterThan(ticks * 0.5);
   }, 30_000);
 
@@ -102,8 +95,6 @@ describe("standing orders", () => {
       }),
     });
     await sim.runHeadless();
-    // A raw agent firing into empty sky still expends ammunition; the autopilot
-    // does not get to second-guess it.
     expect(sim.state.aircraft[0]!.ammo).toBeLessThan(GUN.ammunition);
   }, 30_000);
 });
@@ -128,8 +119,6 @@ describe("the energy fighter", () => {
 
     const late = ratios.slice(Math.floor(ratios.length / 3));
     const mean = late.reduce((sum, value) => sum + value, 0) / Math.max(late.length, 1);
-    // Between about corner and half again: fast enough to turn, not so fast
-    // that the turn radius makes conversion impossible.
     expect(mean).toBeGreaterThan(0.85);
     expect(mean).toBeLessThan(1.75);
   }, 60_000);
@@ -143,7 +132,6 @@ describe("the energy fighter", () => {
     let basicHits = 0;
 
     for (const scenario of scenarioSet(4, { ...neutralMerge, maxTime: 110 })) {
-      // Both sides of every scenario, so a side advantage cannot decide it.
       for (const energyIsBlue of [true, false]) {
         const sim = new DogfightSimulation(scenario, { recordDecisions: false });
         sim.attachAgent("blue-1", energyIsBlue ? new EnergyFighterAgent("blue-1") : new BasicPursuitAgent("blue-1"));
@@ -164,7 +152,6 @@ describe("the energy fighter", () => {
     }
 
     expect(energyWins).toBeGreaterThan(basicWins * 2);
-    // And it does not merely survive: it lands hits at a much better rate.
     const energyAccuracy = energyRounds ? energyHits / energyRounds : 0;
     const basicAccuracy = basicRounds ? basicHits / basicRounds : 0;
     expect(energyHits).toBeGreaterThan(0);
@@ -178,7 +165,6 @@ describe("the shoot cue", () => {
     const [shooter, bandit] = state.aircraft;
     const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
 
-    // Directly ahead, matching speed: a shot that should connect.
     bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 600));
     bandit!.velocity.copy(shooter!.velocity);
     bandit!.orientation.copy(shooter!.orientation);
@@ -192,7 +178,6 @@ describe("the shoot cue", () => {
     expect(aligned.inLethalRange).toBe(true);
     expect(aligned.predictedMissM).toBeLessThan(hitThresholdM(aligned.leadRangeM));
 
-    // Same range, displaced well outside the burst: no cue.
     const right = new Vector3(0, 1, 0).cross(nose).normalize();
     bandit!.position.addScaledVector(right, 60);
     const displaced = solveGunsight({
@@ -207,7 +192,6 @@ describe("the shoot cue", () => {
 
   it("widens the threshold with range, because the dispersion cone spreads", () => {
     expect(hitThresholdM(2_000)).toBeGreaterThan(hitThresholdM(200));
-    // But never so wide that it authorises spraying.
     expect(hitThresholdM(2_000)).toBeLessThan(30);
   });
 });
@@ -218,9 +202,6 @@ describe("gun tracking limits", () => {
     const [shooter, bandit] = state.aircraft;
     const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
 
-    // Perfectly aligned but two and a half kilometres away, and stationary so the
-    // aim is exactly right: the rounds still carry lethal energy, yet they
-    // take seconds to arrive.
     bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 2_500));
     bandit!.velocity.set(0, 0, 0);
     const distant = solveGunsight({
@@ -236,7 +217,6 @@ describe("gun tracking limits", () => {
 
     expect(distant.inLethalRange).toBe(true);
 
-    // The same alignment inside gun range is a shot.
     bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 500));
     const close = solveGunsight({
       position: shooter!.position,

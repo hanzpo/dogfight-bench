@@ -47,7 +47,6 @@ describe("dogfight simulation", () => {
     expect(blue!.fuelKg).toBeGreaterThan(0);
     expect(Object.keys(blue!.subsystems)).toHaveLength(6);
 
-    // Both jets see the same range, from opposite sides.
     const mirrored = observationFor(sim.state, "red-1", neutralMerge, 0);
     expect(mirrored.relative.rangeM).toBeCloseTo(observation.relative.rangeM, 6);
     expect(mirrored.relative.energyAdvantageM).toBeCloseTo(-observation.relative.energyAdvantageM, 6);
@@ -71,7 +70,6 @@ describe("dogfight simulation", () => {
       sim.step();
     }
     const fired = GUN.ammunition - sim.state.aircraft[0]!.ammo;
-    // Two seconds of trigger, minus the barrel spin-up.
     expect(fired).toBeGreaterThan(150);
     expect(fired).toBeLessThan(200);
     expect(sim.state.projectiles.length).toBeGreaterThan(90);
@@ -150,7 +148,6 @@ describe("gun solution reporting", () => {
     for (const id of ["blue-1", "red-1"]) {
       const solution = observationFor(sim.state, id, neutralMerge, 0).relative;
       expect(Number.isFinite(solution.gunSolution.predictedMissM)).toBe(true);
-      // A miss can never be further away than the target is.
       expect(solution.gunSolution.predictedMissM).toBeLessThanOrEqual(solution.gunSolution.leadRangeM + 1);
     }
   });
@@ -160,16 +157,13 @@ describe("relative geometry", () => {
   it("reports 180 degrees off the tail at a head-on merge", () => {
     const sim = new DogfightSimulation(neutralMerge);
     const relative = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
-    // Nose to nose: as far from their six o'clock as it is possible to be.
     expect(relative.angleOffTailDeg).toBeGreaterThan(175);
-    // And they are directly in front of us.
     expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
   });
 
   it("reports 0 degrees off the tail from directly behind", () => {
     const sim = new DogfightSimulation(neutralMerge);
     const [blue, red] = sim.state.aircraft;
-    // Put blue on red's tail, both pointing the same way.
     red!.orientation.copy(blue!.orientation);
     red!.velocity.copy(blue!.velocity);
     red!.position.copy(blue!.position).addScaledVector(blue!.velocity.clone().normalize(), 600);
@@ -178,7 +172,6 @@ describe("relative geometry", () => {
     expect(relative.angleOffTailDeg).toBeLessThan(5);
     expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
 
-    // And the mirror: red sees blue at its six, far off its own tail angle.
     expect(observationFor(sim.state, "red-1", neutralMerge, 0).relative.angleOffTailDeg).toBeGreaterThan(175);
   });
 });
@@ -204,16 +197,12 @@ describe("terrain", () => {
     expect(coverage).toBeGreaterThan(0.1);
     expect(coverage).toBeLessThan(0.6);
 
-    // Both jets must start over land, or the hard deck and terrain collision
-    // stop meaning anything at the merge.
     for (const aircraft of createNeutralMerge().aircraft) {
       expect(isWater(aircraft.position.x, aircraft.position.z)).toBe(false);
     }
   });
 
   it("treats the sea surface as the floor rather than a hole", () => {
-    // Somewhere under water, the collision height is sea level even though the
-    // sea floor is well below it.
     let found = false;
     for (let x = -40_000; x <= 40_000 && !found; x += 500) {
       for (let z = -40_000; z <= 40_000 && !found; z += 500) {
@@ -229,7 +218,6 @@ describe("terrain", () => {
 
   it("is deterministic and continuous", () => {
     expect(terrainElevation(1_234, -5_678)).toBe(terrainElevation(1_234, -5_678));
-    // No cliffs: a metre sideways is never a large step in height.
     for (let x = -20_000; x <= 20_000; x += 3_331) {
       const step = Math.abs(terrainElevation(x, 4_000) - terrainElevation(x + 1, 4_000));
       expect(step).toBeLessThan(5);

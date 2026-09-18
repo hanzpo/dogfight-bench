@@ -6,16 +6,7 @@ import { bodyAxes } from "./flight-model";
 import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
 import { terrainAwareness, type TerrainAwareness } from "./terrain-awareness";
 import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
-
-/**
- * Perfect-information telemetry.
- *
- * Both agents see the complete state of both aircraft. The point of the
- * benchmark is decision quality, not sensor modelling, so anything a pilot
- * could compute is computed here rather than left for the model to derive --
- * including the energy state and the gun solution, which is what air combat
- * actually turns on.
- */
+import { degrees, radians } from "../math";
 
 export interface AircraftTelemetry {
   id: string;
@@ -26,23 +17,18 @@ export interface AircraftTelemetry {
   longitudeDeg: number;
   altitudeM: number;
   altitudeAglM: number;
-  /** World position, metres: [east, up, south]. */
   positionM: [number, number, number];
   velocityMps: [number, number, number];
   accelerationMps2: [number, number, number];
-  /** Body-to-world rotation as [x, y, z, w]. */
   orientationQuaternion: [number, number, number, number];
 
   speedMps: number;
   equivalentAirspeedMps: number;
   mach: number;
-  /** Compass heading of the nose, degrees. */
   headingDeg: number;
-  /** Compass heading of the velocity vector, degrees. */
   trackDeg: number;
   pitchDeg: number;
   rollDeg: number;
-  /** Climb angle of the velocity vector, degrees. */
   flightPathAngleDeg: number;
   verticalSpeedMps: number;
 
@@ -55,14 +41,11 @@ export interface AircraftTelemetry {
   loadFactorG: number;
   availableLoadFactorG: number;
   sustainedLoadFactorG: number;
-  /** Turn radius the current load factor produces, metres. */
   turnRadiusM: number;
   turnRateDegS: number;
 
-  /** Specific energy, metres: altitude plus the altitude the speed is worth. */
   specificEnergyM: number;
   specificExcessPowerMps: number;
-  /** Ps if the jet were pulling its maximum sustained turn instead. */
   cornerSpeedMps: number;
 
   throttle: number;
@@ -73,7 +56,6 @@ export interface AircraftTelemetry {
 
   ammoRemaining: number;
   roundsThisBurst: number;
-  /** 0..1; the gun does not fire until this reaches 1. */
   gunSpin: number;
 
   health: number;
@@ -81,39 +63,18 @@ export interface AircraftTelemetry {
   subsystems: Record<Subsystem, number>;
   limiterActive: boolean;
   departed: boolean;
-  /** Where the ground is and whether there is room to recover from it. */
   terrain: TerrainAwareness;
-  /** What the aircraft is currently being commanded to do. */
   controls: { pitch: number; roll: number; yaw: number; throttle: number; fire: boolean };
 }
 
 export interface GunSolution {
-  /** Time a round would take to reach the target's predicted position, seconds. */
   timeOfFlightS: number;
-  /** Angle between the gun line and the required lead, degrees. Zero is a kill. */
   aimErrorDeg: number;
-  /**
-   * How far the burst would pass from the target, metres.
-   *
-   * This is the number that decides whether a shot connects. An aim error of a
-   * couple of degrees sounds tight and is a forty-metre miss at a kilometre, so
-   * gating on the angle alone produces agents that fire constantly and never
-   * hit anything.
-   *
-   * It is the perpendicular distance from the target to the line of fire, which
-   * stays finite at every angle. Using the tangent instead reports billions of
-   * metres as the aim error approaches a right angle, which is true but useless
-   * and looks like a bug to anything reading it.
-   */
   predictedMissM: number;
-  /** Range to the predicted intercept point, metres. */
   leadRangeM: number;
-  /** Where the nose has to point, as bearing and elevation from the nose. */
   leadBearingDeg: number;
   leadElevationDeg: number;
-  /** True when rounds would still be lethal at that range. */
   inLethalRange: boolean;
-  /** True when the solution is tight enough that firing is worthwhile. */
   trackingSolution: boolean;
 }
 
@@ -121,27 +82,14 @@ export interface RelativeTelemetry {
   opponentId: string;
   rangeM: number;
   closureRateMps: number;
-  /** Where the opponent is, relative to our nose. */
   bearingDeg: number;
   elevationDeg: number;
-  /**
-   * Angle off the opponent's tail: 0 means we are at their six o'clock, 180
-   * means we are nose to nose.
-   *
-   * This is the angle between where their nose points and the direction from
-   * them to us -- not the reverse, which inverts the whole measurement and
-   * tells an agent it is winning at the merge.
-   */
   angleOffTailDeg: number;
-  /** Angle between our nose and the opponent: 0 is pointing straight at them. */
   antennaTrainAngleDeg: number;
-  /** How fast the line of sight is rotating, deg/s. High means an overshoot. */
   lineOfSightRateDegS: number;
-  /** Difference in specific energy; positive means we have the advantage. */
   energyAdvantageM: number;
   altitudeAdvantageM: number;
   gunSolution: GunSolution;
-  /** True when the opponent has a gun solution on us. */
   threatened: boolean;
 }
 
@@ -152,22 +100,18 @@ export interface AgentObservation {
   simTimeS: number;
   timeRemainingS: number;
   decisionSequence: number;
-  /** Simulated seconds since this agent last received an observation. */
   secondsSinceLastDecisionS: number;
   aircraft: AircraftTelemetry[];
   relative: RelativeTelemetry;
-  /** Events since the previous observation, newest last. */
   recentEvents: SimEvent[];
   arena: {
     hardDeckAglM: number;
     radiusM: number;
-    /** Distance from the arena centre, metres. */
     distanceFromCentreM: number;
   };
 }
 
 function compassHeading(east: number, south: number): number {
-  // +z is south, so north is -z and the heading runs clockwise from there.
   return (((Math.atan2(east, -south) * 180) / Math.PI) + 360) % 360;
 }
 
@@ -176,11 +120,10 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
   const speed = aircraft.velocity.length();
   const air = atmosphere(aircraft.position.y);
 
-  // +z is south, so latitude falls as z rises.
   const latitudeDeg = config.originLatitudeDeg - ((aircraft.position.z / EARTH_RADIUS_M) * 180) / Math.PI;
   const longitudeDeg =
     config.originLongitudeDeg +
-    ((aircraft.position.x / (EARTH_RADIUS_M * Math.cos((config.originLatitudeDeg * Math.PI) / 180))) * 180) /
+    ((aircraft.position.x / (EARTH_RADIUS_M * Math.cos(radians(config.originLatitudeDeg)))) * 180) /
       Math.PI;
 
   const flightPathAngleDeg = speed > 1e-3 ? (Math.asin(aircraft.velocity.y / speed) * 180) / Math.PI : 0;
@@ -210,25 +153,24 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     headingDeg: compassHeading(axes.nose.x, axes.nose.z),
     trackDeg: compassHeading(aircraft.velocity.x, aircraft.velocity.z),
     pitchDeg: (Math.asin(Math.max(-1, Math.min(1, axes.nose.y))) * 180) / Math.PI,
-    rollDeg: (bank * 180) / Math.PI,
+    rollDeg: degrees(bank),
     flightPathAngleDeg,
     verticalSpeedMps: aircraft.velocity.y,
 
-    angleOfAttackDeg: (aircraft.aoaRad * 180) / Math.PI,
-    sideslipDeg: (aircraft.sideslipRad * 180) / Math.PI,
-    rollRateDegS: (aircraft.angularVelocity.x * 180) / Math.PI,
-    pitchRateDegS: (aircraft.angularVelocity.y * 180) / Math.PI,
-    yawRateDegS: (aircraft.angularVelocity.z * 180) / Math.PI,
+    angleOfAttackDeg: degrees(aircraft.aoaRad),
+    sideslipDeg: degrees(aircraft.sideslipRad),
+    rollRateDegS: degrees(aircraft.angularVelocity.x),
+    pitchRateDegS: degrees(aircraft.angularVelocity.y),
+    yawRateDegS: degrees(aircraft.angularVelocity.z),
 
     loadFactorG: aircraft.loadFactor,
     availableLoadFactorG: availableG,
     sustainedLoadFactorG: sustainedLoadFactor(aircraft.position.y, speed, aircraft.massKg),
     turnRadiusM: turnRateRadS > 1e-6 ? speed / turnRateRadS : Infinity,
-    turnRateDegS: (turnRateRadS * 180) / Math.PI,
+    turnRateDegS: degrees(turnRateRadS),
 
     specificEnergyM: aircraft.position.y + (speed * speed) / (2 * GRAVITY_MPS2),
     specificExcessPowerMps: aircraft.specificExcessPowerMps,
-    // Slowest speed at which the structural limit is still reachable here.
     cornerSpeedMps: Math.sqrt(
       (2 * FLCS.maxLoadFactor * aircraft.massKg * GRAVITY_MPS2) /
         (air.densityKgM3 * GEOMETRY.wingAreaM2 * LIMITER_CL),
@@ -277,13 +219,12 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
   );
   return {
     timeOfFlightS: solution.timeOfFlightS,
-    aimErrorDeg: (solution.aimErrorRad * 180) / Math.PI,
+    aimErrorDeg: degrees(solution.aimErrorRad),
     predictedMissM: solution.predictedMissM,
     leadRangeM: solution.leadRangeM,
     leadBearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
     inLethalRange: solution.inLethalRange,
-    /** True when the burst would actually connect, not merely be close. */
     trackingSolution: wouldConnect(solution),
   };
 }
@@ -298,8 +239,6 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
   const local = new Vector3(delta.dot(axes.right), delta.dot(axes.up), delta.dot(axes.nose));
   const opponentNose = bodyAxes(opponent.orientation).nose;
 
-  // Line-of-sight rate is the component of relative velocity across the line of
-  // sight, divided by range: the classic overshoot cue.
   const across = relativeVelocity.clone().addScaledVector(lineOfSight, -relativeVelocity.dot(lineOfSight));
   const lineOfSightRate = range > 1e-3 ? across.length() / range : 0;
 
@@ -317,7 +256,7 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     elevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
     angleOffTailDeg: (Math.acos(Math.max(-1, Math.min(1, opponentNose.dot(lineOfSight)))) * 180) / Math.PI,
     antennaTrainAngleDeg: (Math.acos(Math.max(-1, Math.min(1, axes.nose.dot(lineOfSight)))) * 180) / Math.PI,
-    lineOfSightRateDegS: (lineOfSightRate * 180) / Math.PI,
+    lineOfSightRateDegS: degrees(lineOfSightRate),
     energyAdvantageM: ownEnergy - opponentEnergy,
     altitudeAdvantageM: own.position.y - opponent.position.y,
     gunSolution,

@@ -1,12 +1,6 @@
 import { SEA_LEVEL_DENSITY } from "./atmosphere";
 import { GUN } from "./config";
 
-/**
- * G1 standard-projectile drag curve. Small-arms and cannon ballistics are
- * published as a ballistic coefficient against this curve, so using it (rather
- * than a single constant Cd) is what makes the 20 mm time-of-flight and
- * velocity decay match the real gun.
- */
 const G1_MACH = [
   0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.825, 0.85, 0.875, 0.9, 0.925, 0.95, 0.975, 1.0, 1.025, 1.05,
   1.075, 1.1, 1.125, 1.15, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 3.0, 3.6, 4.0, 5.0,
@@ -31,12 +25,6 @@ export function g1DragCoefficient(mach: number): number {
 
 export const PROJECTILE_AREA_M2 = Math.PI * (GUN.projectileDiameterM / 2) ** 2;
 
-/**
- * Form factor relating this round to the G1 standard.
- *
- * BC = m / (i d^2); the published coefficient is in lb/in^2, so it is converted
- * to kg/m^2 before being compared with the round's sectional density.
- */
 export const FORM_FACTOR =
   GUN.projectileMassKg / GUN.projectileDiameterM ** 2 / (GUN.ballisticCoefficientG1 * 703.069);
 
@@ -44,30 +32,15 @@ export function projectileDragCoefficient(mach: number): number {
   return g1DragCoefficient(mach) * FORM_FACTOR;
 }
 
-/** Deceleration magnitude, m/s^2, for a round at `speed` in air of `density`. */
 export function projectileDeceleration(speed: number, density: number, speedOfSoundMps: number): number {
   const cd = projectileDragCoefficient(speed / speedOfSoundMps);
   return (0.5 * density * speed * speed * cd * PROJECTILE_AREA_M2) / GUN.projectileMassKg;
 }
 
-/** Air density ratio, exposed so tests can reason about altitude effects. */
 export function densityRatioForBallistics(density: number): number {
   return density / SEA_LEVEL_DENSITY;
 }
 
-/**
- * Closed-form time of flight to a range, and the speed left on arrival.
- *
- * With drag proportional to v^2 the ballistic equation integrates exactly:
- * v(t) = v0 / (1 + k v0 t) and s(t) = ln(1 + k v0 t) / k. This replaces a
- * six-hundred-step numerical march, which matters because the gun solution is
- * now evaluated every tick rather than a few times a second.
- *
- * The drag constant is evaluated twice. Taking it at the muzzle alone is wrong
- * by fifteen percent on impact speed, because the G1 drag coefficient *rises*
- * as the round decelerates toward Mach 1.2, so a second pass at the mean speed
- * of the flight is needed.
- */
 export function timeOfFlight(
   rangeM: number,
   muzzleSpeedMps: number,

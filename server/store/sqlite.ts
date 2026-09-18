@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { env } from "../env";
+import { eloScore, leaderboardRow, matchResult } from "./types";
 import type {
   Competitor,
   CompetitorKind,
@@ -11,16 +12,6 @@ import type {
   RecordedMatch,
   ResultsStore,
 } from "./types";
-
-/**
- * Results in a file.
- *
- * Node's built-in SQLite keeps the benchmark a single `npm install` with no
- * native build step, and a file on disk means a leaderboard can be inspected,
- * copied and diffed without a service behind it. This is what the tests and
- * the command line benchmark use, and what a deployment falls back to when no
- * Supabase credentials are configured.
- */
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS competitors (
@@ -95,7 +86,6 @@ CREATE INDEX IF NOT EXISTS participants_competitor ON participants(competitor_id
 CREATE INDEX IF NOT EXISTS matches_created ON matches(created_at DESC);
 `;
 
-/** UTC calendar day, so the cap resets at a time nobody has to reason about. */
 function utcDay(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -111,20 +101,6 @@ export class SqliteStore implements ResultsStore {
     this.db.exec(SCHEMA);
   }
 
-  /**
-   * Carries an older database forward.
-   *
-   * The first version of this schema called competitors "agents", because
-   * everything that flew was a model. People can now hold a rating too, so the
-   * table was renamed and gained a kind -- and somebody's existing benchmark
-   * results should survive that rather than being silently replaced by an empty
-   * leaderboard, or worse, a crash on startup.
-   *
-   * Driven by which columns exist rather than which tables do, so it is
-   * idempotent and can finish a migration that was interrupted half way: a
-   * failed start leaves some of the new tables already created, and a check for
-   * "has the new table" would then skip the rest of the work forever.
-   */
   private migrateFromAgents(): void {
     const names = (table: string): Set<string> => {
       try {
@@ -168,9 +144,6 @@ export class SqliteStore implements ResultsStore {
 
     if (!tables.has("agents")) return;
 
-    // Move the old rows across, then retire the table. Copied rather than
-    // renamed because a previous interrupted start may already have created an
-    // empty `competitors`.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS competitors (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'model', name TEXT NOT NULL,
@@ -212,20 +185,9 @@ export class SqliteStore implements ResultsStore {
       );
   }
 
-  /**
-   * Records a finished match and updates ratings.
-   *
-   * Rating is plain Elo. It is not a strong statistical claim, but it handles
-   * the thing a raw win rate cannot: a competitor that only ever fought the
-   * weakest opponent should not outrank one that beat a strong field. It is
-   * also what makes a crowdsourced board work -- two people beating the same
-   * model must cost that model twice, which only happens because the model is
-   * one row rather than one row per opponent.
-   */
   async recordMatch(match: RecordedMatch): Promise<void> {
     const { id, summary, competitors, origin, verified, replayJson, submittedBy } = match;
 
-    // Recording the same match twice must not move ratings twice.
     const existing = this.db.prepare("SELECT id FROM matches WHERE id = ?").get(id);
     if (existing) return;
 
@@ -257,7 +219,7 @@ export class SqliteStore implements ResultsStore {
       const competitor = competitors[aircraft.id];
       if (!competitor) continue;
       const stats = summary.agents[aircraft.id];
-      const result = summary.winnerId ? (summary.winnerId === aircraft.id ? "win" : "loss") : "draw";
+      const result = matchResult(summary.winnerId, aircraft.id);
       this.db
         .prepare(
           `INSERT OR REPLACE INTO participants
@@ -306,7 +268,7 @@ export class SqliteStore implements ResultsStore {
     const ratingA = ratingOf(a);
     const ratingB = ratingOf(b);
     const expectedA = 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
-    const scoreA = summary.winnerId === first.id ? 1 : summary.winnerId === second.id ? 0 : 0.5;
+    const scoreA = eloScore(summary.winnerId, first.id, second.id);
     const k = 24;
 
     const update = this.db.prepare("UPDATE competitors SET rating = ? WHERE id = ?");
@@ -346,40 +308,37 @@ export class SqliteStore implements ResultsStore {
       )
       .all(...wanted) as Array<Record<string, number | string | null>>;
 
-    return rows.map((row) => {
-      const matches = Number(row["matches"] ?? 0);
-      const rounds = Number(row["roundsFired"] ?? 0);
-      const decisions = Number(row["decisions"] ?? 0);
-      const failures = Number(row["failures"] ?? 0);
-      const costUsd = Number(row["costUsd"] ?? 0);
-      return {
-        competitorId: String(row["competitorId"]),
-        kind: String(row["kind"]) as CompetitorKind,
-        name: String(row["name"]),
-        provider: String(row["provider"]),
-        model: String(row["model"]),
-        policyVersion: String(row["policyVersion"]),
-        schema: (String(row["schema"] ?? "tactical") === "raw" ? "raw" : "tactical") as "raw" | "tactical",
-        provisional: Number(row["provisional"] ?? 0) === 1,
-        rating: Number(row["rating"] ?? 1500),
-        matches,
-        wins: Number(row["wins"] ?? 0),
-        losses: Number(row["losses"] ?? 0),
-        draws: Number(row["draws"] ?? 0),
-        winRate: matches ? Number(row["wins"] ?? 0) / matches : 0,
-        hitsScored: Number(row["hitsScored"] ?? 0),
-        hitsTaken: Number(row["hitsTaken"] ?? 0),
-        roundsFired: rounds,
-        accuracy: rounds ? Number(row["hitsScored"] ?? 0) / rounds : 0,
-        timeOnTargetS: Number(row["timeOnTargetS"] ?? 0),
-        survivalRate: matches ? Number(row["survivals"] ?? 0) / matches : 0,
-        decisions,
-        failureRate: decisions + failures > 0 ? failures / (decisions + failures) : 0,
-        avgLatencyMs: Number(row["avgLatencyMs"] ?? 0),
-        costUsd,
-        costPerMatchUsd: matches ? costUsd / matches : 0,
-      };
-    });
+    const number = (row: Record<string, number | string | null>, key: string) => Number(row[key] ?? 0);
+    return rows.map((row) =>
+      leaderboardRow(
+        {
+          competitorId: String(row["competitorId"]),
+          kind: String(row["kind"]) as CompetitorKind,
+          name: String(row["name"]),
+          provider: String(row["provider"]),
+          model: String(row["model"]),
+          policyVersion: String(row["policyVersion"]),
+          schema: String(row["schema"] ?? "tactical") === "raw" ? "raw" : "tactical",
+          provisional: number(row, "provisional") === 1,
+          rating: Number(row["rating"] ?? 1500),
+        },
+        {
+          matches: number(row, "matches"),
+          wins: number(row, "wins"),
+          losses: number(row, "losses"),
+          draws: number(row, "draws"),
+          survivals: number(row, "survivals"),
+          hitsScored: number(row, "hitsScored"),
+          hitsTaken: number(row, "hitsTaken"),
+          roundsFired: number(row, "roundsFired"),
+          timeOnTargetS: number(row, "timeOnTargetS"),
+          decisions: number(row, "decisions"),
+          failures: number(row, "failures"),
+          avgLatencyMs: number(row, "avgLatencyMs"),
+          costUsd: number(row, "costUsd"),
+        },
+      ),
+    );
   }
 
   async listMatches(options: { limit: number; userId?: string | undefined }): Promise<MatchRow[]> {
@@ -465,9 +424,6 @@ export class SqliteStore implements ResultsStore {
   }
 
   async settleLiveMatch(id: string): Promise<LiveTicket | undefined> {
-    // Only an unsettled ticket may be claimed, or reporting the same match
-    // twice would answer "counted" twice -- which is a lie even though the
-    // recording itself is idempotent.
     const row = this.db.prepare("SELECT * FROM live_matches WHERE id = ? AND settled = 0").get(id) as
       | Record<string, unknown>
       | undefined;

@@ -2,16 +2,7 @@ import { alphaForLiftCoefficient, dragFromLiftCoefficient, liftCoefficient } fro
 import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
 import { AERO, FLCS, GEOMETRY } from "./config";
 import { thrustAtPower } from "./engine";
-
-/**
- * Closed-form energy-manoeuvrability queries.
- *
- * These are the numbers an air-combat benchmark is actually judged on, so they
- * are computed directly from the aerodynamic model rather than inferred from a
- * control loop. `test/flight-envelope.test.ts` pins them against published
- * F-16 performance, and the telemetry layer hands them to agents so a model can
- * reason about energy instead of guessing.
- */
+import { degrees } from "../math";
 
 export interface TurnPoint {
   speedMps: number;
@@ -24,13 +15,6 @@ function turnRate(loadFactor: number, speedMps: number): number {
   return (GRAVITY_MPS2 * Math.sqrt(Math.max(loadFactor * loadFactor - 1, 0))) / speedMps;
 }
 
-/**
- * Load factor the wing can generate right now, before any structural limit.
- *
- * This uses the lift available at the FLCS angle-of-attack limit rather than
- * the aerodynamic CL_max, because the limiter is what the jet will actually
- * let a pilot have.
- */
 export const LIMITER_CL = liftCoefficient(FLCS.alphaLimitRad);
 
 export function liftLimitedLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
@@ -39,12 +23,10 @@ export function liftLimitedLoadFactor(altitudeM: number, speedMps: number, massK
   return (qbar * GEOMETRY.wingAreaM2 * LIMITER_CL) / (massKg * GRAVITY_MPS2);
 }
 
-/** What the jet can actually pull: the lower of lift limit and structural limit. */
 export function availableLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
   return Math.min(FLCS.maxLoadFactor, liftLimitedLoadFactor(altitudeM, speedMps, massKg));
 }
 
-/** Specific excess power, m/s, at a given flight condition and load factor. */
 export function specificExcessPower(
   altitudeM: number,
   speedMps: number,
@@ -64,10 +46,6 @@ export function specificExcessPower(
 
 export { alphaForLiftCoefficient };
 
-/**
- * Sustained load factor at a fixed speed: the load factor at which full
- * afterburner exactly balances drag, so Ps is zero.
- */
 export function sustainedLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
   const ceiling = availableLoadFactor(altitudeM, speedMps, massKg);
   if (specificExcessPower(altitudeM, speedMps, 1, massKg) < 0) return 0;
@@ -91,34 +69,28 @@ function scanSpeeds(altitudeM: number, score: (speed: number) => number): { spee
   return best;
 }
 
-/** Best sustained turn the jet can hold at this altitude, across all speeds. */
 export function bestSustainedTurn(altitudeM: number, massKg: number): TurnPoint {
   const best = scanSpeeds(altitudeM, (speed) => turnRate(sustainedLoadFactor(altitudeM, speed, massKg), speed));
   const loadFactor = sustainedLoadFactor(altitudeM, best.speedMps, massKg);
   return {
     speedMps: best.speedMps,
     loadFactor,
-    turnRateDegS: (best.value * 180) / Math.PI,
+    turnRateDegS: degrees(best.value),
     turnRadiusM: best.speedMps / Math.max(best.value, 1e-6),
   };
 }
 
-/**
- * Corner velocity: the slowest speed at which the structural limit is
- * reachable, and therefore the highest instantaneous turn rate available.
- */
 export function cornerSpeed(altitudeM: number, massKg: number): TurnPoint {
   const best = scanSpeeds(altitudeM, (speed) => turnRate(availableLoadFactor(altitudeM, speed, massKg), speed));
   const loadFactor = availableLoadFactor(altitudeM, best.speedMps, massKg);
   return {
     speedMps: best.speedMps,
     loadFactor,
-    turnRateDegS: (best.value * 180) / Math.PI,
+    turnRateDegS: degrees(best.value),
     turnRadiusM: best.speedMps / Math.max(best.value, 1e-6),
   };
 }
 
-/** Fastest level speed at this altitude, where Ps at 1 g falls to zero. */
 export function maximumLevelSpeed(altitudeM: number): number {
   const air = atmosphere(altitudeM);
   const mass = 11_105;
@@ -129,7 +101,6 @@ export function maximumLevelSpeed(altitudeM: number): number {
   return fastest;
 }
 
-/** Stall speed in level flight. */
 export function stallSpeed(altitudeM: number, massKg: number): number {
   const air = atmosphere(altitudeM);
   return Math.sqrt((2 * massKg * GRAVITY_MPS2) / (air.densityKgM3 * GEOMETRY.wingAreaM2 * LIMITER_CL));

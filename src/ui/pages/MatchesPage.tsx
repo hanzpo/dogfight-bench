@@ -7,14 +7,6 @@ import { useAccount } from "../hooks/useAccount";
 
 type Scope = "all" | "mine";
 
-/**
- * Match history, and the replay browser.
- *
- * Two views of the same list: everything this deployment has recorded, and the
- * signed-in player's own matches. The second is the point of keeping replays at
- * all -- a benchmark you can only read the score of is much less useful than
- * one you can go back and watch.
- */
 export function MatchesPage() {
   const account = useAccount();
   const navigate = useNavigate();
@@ -37,7 +29,6 @@ export function MatchesPage() {
     void load();
   }, [load, account.user?.id]);
 
-  // Signing out while looking at your own matches should not leave them on screen.
   useEffect(() => {
     if (scope === "mine" && !account.loading && !account.user) setScope("all");
   }, [scope, account.loading, account.user]);

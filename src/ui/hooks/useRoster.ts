@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type AgentRow, type FreeBudget } from "../api";
 
-/**
- * Who this deployment can field, and what the free allowance has left.
- *
- * Fetched rather than hard-coded, because which providers exist and which are
- * free is a property of the deployment: the same build runs locally with every
- * key present and in public with one free model and the rest needing your own.
- */
 export interface Roster {
   agents: AgentRow[];
   freeBudget: FreeBudget[];
@@ -36,8 +29,6 @@ export function useRoster(): Roster {
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        // A missing server is not an error worth shouting about here: the
-        // scripted opponents still fly, so the page stays useful.
         setError(cause instanceof Error ? cause.message : String(cause));
       })
       .finally(() => {

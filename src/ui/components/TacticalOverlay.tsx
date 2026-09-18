@@ -2,25 +2,8 @@ import { useEffect, useRef, type RefObject } from "react";
 import { bulletImpactPoint, hitThresholdM, solveGunsight, wouldConnect } from "../../sim/gunsight";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
+import { radians } from "../../math";
 
-/**
- * The part of the display that tells you where to shoot.
- *
- * Without it the viewer is a guns-only game with no gunsight and no way to see
- * the opponent unless they happen to be in frame. It draws three things:
- *
- * - the reticle, marking where rounds fired now would be at the bandit's range,
- *   drop included, so it is the shot rather than the direction of the nose;
- * - the target box, with a lead line to the reticle, so the correction needed
- *   is a visible distance rather than a number to be interpreted;
- * - an arrow when the bandit is off screen or behind, because a dogfight is
- *   mostly spent looking for someone who is not in front of you.
- *
- * It updates by mutating SVG attributes inside its own frame loop. Routing
- * sixty updates a second through React state re-renders the whole page for
- * every frame, which is the mistake that once drove this app past React's
- * maximum update depth.
- */
 export function TacticalOverlay({
   stateRef,
   viewerRef,
@@ -75,7 +58,6 @@ export function TacticalOverlay({
         targetAcceleration: bandit.acceleration,
       });
 
-      // --- Reticle: where the rounds will be at the bandit's range ----------
       const impact = bulletImpactPoint(own.position, own.velocity, own.orientation, range);
       const aim = viewer.project(impact);
       const aimX = aim.x * width;
@@ -85,15 +67,12 @@ export function TacticalOverlay({
       } else {
         show(reticle.current);
         reticle.current?.setAttribute("transform", `translate(${aimX.toFixed(1)} ${aimY.toFixed(1)})`);
-        // The ring is the dispersion cone at this range, so a target inside it
-        // is a target the burst covers.
         const spreadRadians = Math.atan2(hitThresholdM(range), Math.max(range, 1));
-        const fieldOfView = (viewer.camera.fov * Math.PI) / 180;
+        const fieldOfView = radians(viewer.camera.fov);
         const radius = Math.max(6, Math.min(140, (spreadRadians / fieldOfView) * height));
         reticleRing.current?.setAttribute("r", radius.toFixed(1));
       }
 
-      // --- Target box -------------------------------------------------------
       const target = viewer.project(bandit.position);
       const onScreen = !target.behind && target.x > 0 && target.x < 1 && target.y > 0 && target.y < 1;
       const targetX = target.x * width;
@@ -102,10 +81,8 @@ export function TacticalOverlay({
       if (onScreen) {
         show(targetBox.current);
         hide(arrow.current);
-        // Box tracks apparent size, with a floor so a distant bandit stays
-        // findable rather than shrinking into a pixel.
         const apparent = Math.atan2(16, Math.max(range, 1));
-        const fieldOfView = (viewer.camera.fov * Math.PI) / 180;
+        const fieldOfView = radians(viewer.camera.fov);
         const half = Math.max(11, Math.min(220, (apparent / fieldOfView) * height));
         boxRect.current?.setAttribute("x", (-half).toFixed(1));
         boxRect.current?.setAttribute("y", (-half).toFixed(1));
@@ -118,7 +95,6 @@ export function TacticalOverlay({
             range >= 1_000 ? `${(range / 1_000).toFixed(1)} KM` : `${Math.round(range)} M`;
         }
 
-        // Lead line: the correction, drawn as a distance to close.
         if (!aim.behind) {
           show(leadLine.current);
           leadLine.current?.setAttribute("x1", aimX.toFixed(1));
@@ -132,25 +108,18 @@ export function TacticalOverlay({
         hide(targetBox.current);
         hide(leadLine.current);
         show(arrow.current);
-        // Point from the centre of the screen toward the bandit. A point behind
-        // the camera projects mirrored, so its direction must be flipped.
         const dx = (target.x - 0.5) * (target.behind ? -1 : 1);
         const dy = (target.y - 0.5) * (target.behind ? -1 : 1);
         const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
         const radius = Math.min(width, height) * 0.36;
-        const cx = width / 2 + Math.cos((angle * Math.PI) / 180) * radius;
-        const cy = height / 2 + Math.sin((angle * Math.PI) / 180) * radius;
+        const cx = width / 2 + Math.cos(radians(angle)) * radius;
+        const cy = height / 2 + Math.sin(radians(angle)) * radius;
         arrow.current?.setAttribute("transform", `translate(${cx.toFixed(1)} ${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`);
       }
 
-      // --- Shoot cue --------------------------------------------------------
       const canHit = wouldConnect(solution) && own.ammo > 0;
       if (canHit) {
         show(shootCue.current);
-        // Anchored to the reticle when the reticle is on screen, so the cue
-        // reads as a property of the shot. When it is not -- which is most of
-        // the time in an orbiting external view -- it falls back to a fixed
-        // place, because a cue drawn off the edge of the screen is no cue.
         const onScreenAim =
           !aim.behind && aimX > 30 && aimX < width - 30 && aimY > 70 && aimY < height - 130;
         const cueX = onScreenAim ? aimX : width / 2;

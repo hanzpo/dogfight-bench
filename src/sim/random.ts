@@ -1,4 +1,3 @@
-/** Small deterministic PRNG; simulation results depend only on scenario seed/actions. */
 export class Random {
   private state: number;
 

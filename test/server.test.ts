@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-/**
- * Provider credentials are read once, when the server's env module is first
- * imported, so they have to be in place before any import below runs -- which
- * is what `vi.hoisted` is for. Fixed fakes rather than whatever happens to be
- * exported in the shell: these tests stub `fetch` and must pass or fail the
- * same way on a machine that has real keys and one that does not.
- */
 vi.hoisted(() => {
   process.env["TYPESAFE_API_KEY"] = "test-typesafe-key";
   process.env["OPENAI_API_KEY"] = "test-openai-key";
@@ -39,7 +32,6 @@ describe("model briefing", () => {
     expect(briefing).toMatch(/specific energy|energy \d/i);
     expect(briefing).toContain("predicted miss distance");
     expect(briefing).toContain("lead_pursuit");
-    // It has to stay small enough to send once a second.
     expect(briefing.length).toBeLessThan(6_000);
     expect(SYSTEM_PROMPT).toContain("Corner speed");
   });
@@ -123,13 +115,6 @@ describe("match store", () => {
     store.close();
   });
 
-  /**
-   * The point of a shared identity for a model.
-   *
-   * Two different people beating the same model must cost it twice. That only
-   * works because the model is one row rather than one row per opponent, and it
-   * is the whole reason a crowdsourced board is worth keeping.
-   */
   it("charges a model for every human that beats it", async () => {
     const store = new SqliteStore(":memory:");
     const model = competitorFor({
@@ -163,7 +148,6 @@ describe("match store", () => {
     expect(afterFirst).toBeLessThan(1500);
     expect(afterSecond).toBeLessThan(afterFirst);
 
-    // And reporting the same match again must not move anything at all.
     await store.recordMatch({
       id: "two",
       summary: summaryFor("blue-1"),
@@ -199,7 +183,6 @@ describe("match store", () => {
     const challenger = competitorFor(SCRIPTED_INFO("challenger"));
     const headless = { origin: "headless" as const, verified: true };
 
-    // Build a strong opponent first by letting it win several matches.
     for (let i = 0; i < 5; i += 1) {
       await beatStrong.recordMatch({
         id: `warm${i}`,
@@ -296,7 +279,6 @@ describe("jev provider", () => {
     probabilities: uniform(ids, winner, 0.7),
   });
 
-  /** A score's answer: a position on the rubric, not one of its rungs. */
   const score = (value: number, confidence = 0.8, levels = 5) => ({
     type: "score",
     score: value,
@@ -313,15 +295,6 @@ describe("jev provider", () => {
   const respond = (answers: Record<string, unknown>, usage?: Record<string, number>) =>
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ answers, usage }), { status: 200 }));
 
-  /**
-   * The point of the three primitives together.
-   *
-   * The manoeuvre is a choice because it is one of thirteen named things. The
-   * two control axes are scores, and a score between rungs has to survive as a
-   * number: 3.4 of 4 lands between "very hard" and "on the limiter", which no
-   * menu of detents could have said. The scale is not evenly spaced, so this
-   * also pins the interpolation between the rungs.
-   */
   it("flies a manoeuvre, a continuous load factor and a continuous throttle", async () => {
     respond(
       {
@@ -336,9 +309,7 @@ describe("jev provider", () => {
     expect(decision.action).toEqual({
       schema: "tactical",
       maneuver: "lead_pursuit",
-      // 3.4 of 4: four tenths of the way from 8.2 g to 9 g.
       targetG: 8.2 + 0.4 * (9 - 8.2),
-      // The fraction is what is flown; the detent is only the nearest name for it.
       throttle: "ab",
       throttleFraction: 0.85 + 0.5 * (1 - 0.85),
       fire: true,
@@ -346,14 +317,6 @@ describe("jev provider", () => {
     expect(decision.usage?.costUsd).toBeCloseTo(0.0002, 9);
   });
 
-  /**
-   * The trigger is asked strictly and answered generously, in that order.
-   *
-   * The question describes a shot worth firing, so the threshold sits below a
-   * half: there are five hundred rounds aboard and a gun solution lasts about a
-   * second. Demanding more than this fired seventy per cent less and hit
-   * nothing at all.
-   */
   it("fires on a plausible solution and holds on a hopeless one", async () => {
     const shot = { maneuver: choice("lag_pursuit"), commitment: score(2), power: score(3) };
     respond({ ...shot, fire: noul(0.52) });
@@ -365,12 +328,6 @@ describe("jev provider", () => {
     expect(held.action.schema === "tactical" && held.action.fire).toBe(false);
   });
 
-  /**
-   * Confidence is an answer in its own right.
-   *
-   * A manoeuvre the model is unsure of is not a reason to abandon one it was
-   * already flying; changing plan every second is worse than committing to one.
-   */
   it("keeps flying the last manoeuvre when the new one is a guess", async () => {
     const provider = new JevProvider();
     respond({ maneuver: choice("high_yoyo", 0.9), commitment: score(3), power: score(3), fire: noul(0.1) });
@@ -381,13 +338,11 @@ describe("jev provider", () => {
     expect(held.action).toMatchObject({ maneuver: "high_yoyo" });
     expect(held.rationale).toMatch(/held/);
 
-    // A fresh match must not inherit the previous one's plan.
     provider.reset();
     respond({ maneuver: choice("extend", 0.05), commitment: score(3), power: score(3), fire: noul(0.1) });
     expect((await provider.decide(sampleObservation())).action).toMatchObject({ maneuver: "extend" });
   });
 
-  /** Every question reports its own distribution, named the way a person reads it. */
   it("reports a distribution for all three kinds of question", async () => {
     respond({ maneuver: choice("break_left"), commitment: score(4), power: score(0), fire: noul(0.3) });
     const decision = await new JevProvider().decide(sampleObservation());

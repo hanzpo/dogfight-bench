@@ -4,43 +4,16 @@ import { atmosphere, equivalentAirspeed } from "../../sim/atmosphere";
 import { bodyAxes } from "../../sim/flight-model";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
-
-/**
- * The instruments a pilot actually has.
- *
- * Everything here is something the aircraft itself could tell you, laid out
- * where a fighter head-up display puts it: calibrated airspeed on the left,
- * altitude on the right, heading across the top, engine and stores along the
- * bottom. Nothing about the opponent appears here -- that is not a pilot's
- * instrument, it is the benchmark looking over their shoulder, and it lives in
- * its own plain-text panel.
- *
- * From the cockpit the pitch ladder, horizon and flight path marker are drawn
- * conformally: the ladder rung for ten degrees nose-up is projected where ten
- * degrees nose-up actually is in the world, so it lies along the real horizon
- * and banks with the aircraft. From an external view that would be a lie, so
- * the same information is shown as a compact attitude indicator instead.
- *
- * It updates by writing SVG attributes in its own frame loop. Pushing sixty
- * updates a second through React state re-renders the page every frame.
- */
+import { degrees, radians } from "../../math";
+import { clamp } from "../../math";
 
 const FEET = 3.28084;
 const KNOTS = 1.94384;
-/** How far ahead conformal symbology is projected, metres. */
 const HUD_RANGE = 1_000;
-/** Half-width of a pitch ladder rung, as an angle from the flight path. */
 const LADDER_HALF_ANGLE = 0.13;
-/** Fraction of a rung left open in the middle, so it does not cross the marker. */
 const LADDER_GAP = 0.34;
-/**
- * The combiner glass is about thirty degrees wide and twenty-four tall. A real
- * head-up display is a window, not a coat of paint over the whole canopy, and
- * clipping to it is most of what stops conformal symbology looking like a mess.
- */
 const HUD_FIELD_DEG = { horizontal: 30, vertical: 24 };
 
-/** Half-width of the stick-position box, in display units. */
 const CONTROL_BOX_HALF = 22;
 
 export function FlightDisplay({
@@ -68,14 +41,6 @@ export function FlightDisplay({
   const aoaBracket = useRef<SVGGElement>(null);
   const hudField = useRef<SVGEllipseElement>(null);
   const groups = useRef<Record<string, SVGGElement | null>>({});
-  /**
-   * Last content written into each generated group.
-   *
-   * Tapes and the ladder are built by parsing markup, which is far too
-   * expensive to redo sixty times a second for a readout that changes every few
-   * frames. Skipping the rebuild when the picture has not moved is most of the
-   * cost of this component.
-   */
   const rendered = useRef<Record<string, string>>({});
   const details = useRef(detailsOpen);
   details.current = detailsOpen;
@@ -109,7 +74,6 @@ export function FlightDisplay({
         if (node && node.textContent !== value) node.textContent = value;
       };
 
-      // --- numbers ---------------------------------------------------------
       set("cas", String(Math.round(equivalentAirspeed(speed, own.position.y) * KNOTS)));
       set("mach", `M ${(speed / air.speedOfSoundMps).toFixed(2)}`);
       set("g", `${own.loadFactor.toFixed(1)}G`);
@@ -117,11 +81,8 @@ export function FlightDisplay({
       set("agl", `R ${Math.round(own.heightAboveGroundM * FEET).toLocaleString()}`);
       set("vs", `${own.velocity.y >= 0 ? "+" : ""}${Math.round(own.velocity.y * FEET * 60).toLocaleString()}`);
       set("heading", String(Math.round(heading)).padStart(3, "0"));
-      // Where the aircraft is actually going, under the heading the nose is
-      // pointing. They differ whenever there is drift or sideslip, and the
-      // difference is the whole reason both are worth showing.
       set("track", `TRK ${String(Math.round(track)).padStart(3, "0")}`);
-      set("aoa", `${((own.aoaRad * 180) / Math.PI).toFixed(1)}° AOA`);
+      set("aoa", `${degrees(own.aoaRad).toFixed(1)}° AOA`);
       set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
       set("ammo", String(own.ammo));
       set(
@@ -131,17 +92,12 @@ export function FlightDisplay({
       throttleFill.current?.setAttribute("width", (Math.max(0, Math.min(1, own.controls.throttle)) * 84).toFixed(1));
       throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
 
-      // --- control position -------------------------------------------------
-      // Driven by what the aircraft is being commanded to do rather than by the
-      // device in the pilot's hand, so it reads the same whether a person, an
-      // autopilot or a model is flying -- which is what makes it worth showing.
       stickDot.current?.setAttribute("cx", (clamp(own.controls.roll, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
       stickDot.current?.setAttribute("cy", (-clamp(own.controls.pitch, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
       const rudder = clamp(own.controls.yaw, -1, 1) * CONTROL_BOX_HALF;
       rudderBar.current?.setAttribute("x", Math.min(0, rudder).toFixed(1));
       rudderBar.current?.setAttribute("width", Math.abs(rudder).toFixed(1));
 
-      // --- moving tapes ----------------------------------------------------
       renderTape(
         speedTicks.current,
         rendered.current,
@@ -155,23 +111,11 @@ export function FlightDisplay({
       renderTape(altTicks.current, rendered.current, "alt", own.position.y * FEET, 500, 2_000, height, true);
       renderHeadingTape(headingTicks.current, rendered.current, heading, width);
 
-      // --- attitude --------------------------------------------------------
-      /**
-       * Only the cockpit gets attitude symbology.
-       *
-       * There used to be a compact artificial horizon for the external views,
-       * which is a picture of the aircraft's attitude drawn next to a picture
-       * of the aircraft. The instrument exists on a real jet because the pilot
-       * cannot see the aeroplane they are sitting in; from outside it is
-       * duplicating what is already on screen, larger and better.
-       */
       if (cockpit) {
         conformal.current?.setAttribute("visibility", "visible");
         sizeHudField(hudField.current, viewer, width, height);
         drawLadder(ladder.current, rendered.current, own.position, axes.nose, viewer, width, height);
 
-        // Flight path marker: where the aircraft is actually going, which is
-        // not where the nose points whenever there is any angle of attack.
         if (speed > 1) {
           const marker = viewer.project(own.position.clone().addScaledVector(own.velocity.clone().normalize(), HUD_RANGE));
           if (!marker.behind) {
@@ -180,7 +124,6 @@ export function FlightDisplay({
               "transform",
               `translate(${(marker.x * width).toFixed(1)} ${(marker.y * height).toFixed(1)})`,
             );
-            // The AoA bracket sits beside the marker, as it does on the real jet.
             aoaBracket.current?.setAttribute("visibility", own.flcs.limiterActive ? "visible" : "hidden");
           } else {
             flightPath.current?.setAttribute("visibility", "hidden");
@@ -329,33 +272,14 @@ export function FlightDisplay({
 
 const UP = new Vector3(0, 1, 0);
 
-/**
- * Positions every instrument group from the measured viewport.
- *
- * Done here rather than in CSS because percentage transforms on SVG elements
- * are not portable between browser engines.
- */
 function layout(
   groups: Record<string, SVGGElement | null>,
   width: number,
   height: number,
   detailsOpen: boolean,
 ): void {
-  /**
-   * Instruments scale with the window; the conformal symbology never does.
-   *
-   * A panel instrument is a fixed size on a real jet and should look the same
-   * fraction of the screen whatever it is being viewed on -- drawn at one fixed
-   * pixel size it is oversized on a laptop and lost on a large monitor. The
-   * pitch ladder is the opposite case: it is projected into the world and its
-   * size *is* the geometry, so scaling it would be a lie.
-   */
   const scale = clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
   const margin = Math.min(Math.max(width * 0.05, 26), 92);
-  // The details panel owns the right edge when it is open, so the altitude
-  // tape and stores move inboard of it rather than hiding underneath.
-  // The panel is 286 wide and sits 16 from the edge, so the instruments stop
-  // clear of it rather than an inch under it.
   const rightEdge = width - (detailsOpen ? 318 : margin);
   const place = (key: string, x: number, y: number, scaled = true) =>
     groups[key]?.setAttribute(
@@ -368,12 +292,10 @@ function layout(
   place("alt", rightEdge, 0, false);
   place("altReadout", 0, height / 2);
   place("heading", width / 2, 86);
-  // Clear of the control bar, which is 72 tall and sits 36 from the bottom.
   place("engine", margin, height - 152);
   place("stores", rightEdge, height - 152);
 }
 
-/** Sizes the clip region to the combiner's field of view for this camera. */
 function sizeHudField(
   ellipse: SVGEllipseElement | null,
   viewer: DogfightViewer,
@@ -393,22 +315,11 @@ function sizeHudField(
   ellipse.setAttribute("ry", ry.toFixed(1));
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
-/** Compass bearing of a world direction. +z is south, so north is -z. */
 function compass(direction: Vector3): number {
   return (((Math.atan2(direction.x, -direction.z) * 180) / Math.PI) + 360) % 360;
 }
 
-/**
- * Swaps a group's contents only when they actually changed.
- *
- * Every renderer keeps its own slot. They used to share one, which meant none
- * of them ever got a cache hit and all three re-parsed their markup on every
- * animation frame.
- */
 function setMarkup(group: SVGGElement, cache: Record<string, string>, key: string, markup: string): void {
   const slot = `${key}:markup`;
   if (cache[slot] === markup) return;
@@ -416,10 +327,6 @@ function setMarkup(group: SVGGElement, cache: Record<string, string>, key: strin
   group.innerHTML = markup;
 }
 
-/**
- * Draws a vertical tape: ticks that slide past a fixed box, so rate of change
- * is visible as motion rather than only as a changing number.
- */
 function renderTape(
   group: SVGGElement | null,
   cache: Record<string, string>,
@@ -431,7 +338,6 @@ function renderTape(
   right: boolean,
 ): void {
   if (!group) return;
-  // Ticks only move in whole pixels; rebuilding for smaller changes is waste.
   const signature = `${Math.round(value)}|${Math.round(height)}`;
   if (cache[key] === signature) return;
   cache[key] = signature;
@@ -467,10 +373,6 @@ function renderHeadingTape(
   const signature = `${heading.toFixed(1)}|${Math.round(width)}`;
   if (cache["heading"] === signature) return;
   cache["heading"] = signature;
-  // The group this draws into is already translated to the top centre of the
-  // viewport, so every mark is placed relative to that origin. Adding half the
-  // width here as well -- which is what this used to do -- pushes the entire
-  // tape a further half-screen right, off the edge of the display.
   const pixelsPerDegree = Math.min(width * 0.32, 420) / 60;
   const marks: string[] = [];
   for (let offset = -35; offset <= 35; offset += 5) {
@@ -489,13 +391,6 @@ function renderHeadingTape(
   setMarkup(group, cache, "heading", marks.join(""));
 }
 
-/**
- * Conformal pitch ladder.
- *
- * Each rung is placed in the world at its own pitch angle and projected, so it
- * lands on the real horizon, banks with the aircraft and compresses toward the
- * vanishing point without any of that being faked in screen space.
- */
 function drawLadder(
   group: SVGGElement | null,
   cache: Record<string, string>,
@@ -514,15 +409,13 @@ function drawLadder(
   const marks: string[] = [];
 
   for (let pitch = -60; pitch <= 60; pitch += 5) {
-    const radians = (pitch * Math.PI) / 180;
+    const angle = radians(pitch);
     const centre = position
       .clone()
-      .addScaledVector(level, Math.cos(radians) * HUD_RANGE)
-      .addScaledVector(UP, Math.sin(radians) * HUD_RANGE);
+      .addScaledVector(level, Math.cos(angle) * HUD_RANGE)
+      .addScaledVector(UP, Math.sin(angle) * HUD_RANGE);
     const scale = pitch === 0 ? 1.8 : 1;
 
-    // Each rung is two segments with a gap in the middle, so the flight path
-    // marker is never drawn through.
     const offsets: Array<[number, number]> = [
       [-half * scale, -half * scale * LADDER_GAP],
       [half * scale * LADDER_GAP, half * scale],
@@ -554,16 +447,6 @@ function drawLadder(
       const x = outer.x * width;
       const y = outer.y * height;
       let angle = (Math.atan2(y - inner.y * height, x - inner.x * width) * 180) / Math.PI;
-      /**
-       * Numerals stay the right way up.
-       *
-       * The rung banks with the aircraft and the label is rotated to lie along
-       * it, which past ninety degrees of bank turns the text upside down: the
-       * ladder read "02" and "0E" through the top of a loop. Flipping the
-       * rotation and putting the label on the other end of the rung keeps it
-       * beside the same mark and readable, which is what an inverted pilot
-       * needs from it.
-       */
       let anchor = "start";
       let dx = 6;
       if (angle > 90 || angle < -90) {

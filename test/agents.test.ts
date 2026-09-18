@@ -72,7 +72,6 @@ describe("tactical autopilot", () => {
     const lineOfSight = new Vector3(...opponent.positionM).sub(new Vector3(...own.positionM)).normalize();
     const lead = goalDirection("lead_pursuit", contextFromObservation(observation));
     const lag = goalDirection("lag_pursuit", contextFromObservation(observation));
-    // Lead and lag sit on opposite sides of the line of sight.
     expect(lead.dot(lineOfSight)).toBeLessThan(1);
     expect(lead.distanceTo(lineOfSight)).toBeGreaterThan(0);
     expect(lag.distanceTo(lineOfSight)).toBeGreaterThan(0);
@@ -83,7 +82,6 @@ describe("tactical autopilot", () => {
     const own = observe(sim).aircraft[0]!;
     const nose = new Vector3(...own.velocityMps).normalize();
 
-    // A goal 60 degrees to the right should command right roll.
     const right = nose.clone().applyAxisAngle(new Vector3(0, 1, 0), -Math.PI / 3);
     const toRight = steerToward(right, 7, contextFromObservation(observe(sim)));
     expect(toRight.roll).toBeGreaterThan(0.5);
@@ -91,7 +89,6 @@ describe("tactical autopilot", () => {
     const left = nose.clone().applyAxisAngle(new Vector3(0, 1, 0), Math.PI / 3);
     expect(steerToward(left, 7, contextFromObservation(observe(sim))).roll).toBeLessThan(-0.5);
 
-    // A goal straight ahead needs neither.
     const ahead = steerToward(nose, 7, contextFromObservation(observe(sim)));
     expect(Math.abs(ahead.roll)).toBeLessThan(0.2);
     expect(ahead.pitch).toBeLessThan(0.1);
@@ -166,7 +163,6 @@ describe("tactical autopilot", () => {
         { schema: "tactical", maneuver: "lead_pursuit", targetG: 8, throttle: "ab", fire: false },
         observation,
       );
-      // Red flies straight so the test measures pursuit, not the fight.
       red.controls = { pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire: false };
       sim.step();
       if (observation.relative.rangeM < 2_500) {
@@ -256,26 +252,12 @@ describe("scripted baselines", () => {
       if (sim.state.winnerId === "blue-1") blueWins += 1;
       if (sim.state.winnerId === "red-1") redWins += 1;
     }
-    /**
-     * Identical agents from a symmetric merge: a large split would mean the
-     * scenario or the physics quietly favours one side.
-     *
-     * Ten matches, not six: over six, almost any split is consistent with a
-     * fair fight, so a tolerance tight enough to catch a real bias also fails
-     * at random.
-     *
-     * It is worth the seconds. This is the test that found the merge handing
-     * the entire crossing angle to one aircraft -- blue flew due north in every
-     * scenario while red did all the turning -- which showed up here as red
-     * taking nine of ten short matches and nowhere else at all.
-     */
     expect(Math.abs(blueWins - redWins)).toBeLessThanOrEqual(3);
   }, 120_000);
 
   it("converts a tight gun solution into hits", () => {
     const sim = new DogfightSimulation(neutralMerge, { recordDecisions: false });
     const [blue, red] = sim.state.aircraft;
-    // Park the target ahead and slightly slower, so pursuit can actually close.
     red!.position.copy(blue!.position).addScaledVector(blue!.velocity.clone().normalize(), 900);
     red!.velocity.copy(blue!.velocity).multiplyScalar(0.8);
     red!.orientation.copy(blue!.orientation);

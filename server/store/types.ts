@@ -1,30 +1,8 @@
 import type { AgentInfo } from "../../src/agents/agent";
 import type { MatchSummary } from "../../src/sim/simulation";
 
-/**
- * Where results live.
- *
- * Two implementations, because they answer different needs. SQLite is a file
- * on disk with no service behind it: it is what the tests, the command line
- * benchmark and a laptop use, and it works with no network at all. Supabase is
- * what a deployment uses, because a crowdsourced leaderboard needs accounts,
- * somewhere to put replays, and a rating that several processes can update
- * without racing each other.
- *
- * The interface is asynchronous throughout even though SQLite is not, because
- * the alternative is two shapes of every call site.
- */
-
 export type CompetitorKind = "human" | "model" | "scripted";
 
-/**
- * Anything that can hold a rating.
- *
- * A model's identity is provider, model and policy version together. The
- * policy version belongs in it: changing the prompt changes the player, and
- * folding the new one's results into the old one's rating would quietly make
- * the number mean nothing. A person's identity is their account.
- */
 export interface Competitor {
   id: string;
   kind: CompetitorKind;
@@ -32,24 +10,8 @@ export interface Competitor {
   provider: string;
   model: string;
   policyVersion: string;
-  /**
-   * Which interface it flies through.
-   *
-   * The same model at two interfaces is two pilots, and the difference is worth
-   * seeing on the board: `tactical` names a manoeuvre and an autopilot flies it;
-   * `raw` moves the stick directly and nothing interprets it.
-   */
   schema: "raw" | "tactical";
-  /** Set for humans, so an account can find its own matches. */
   userId?: string | undefined;
-  /**
-   * True for a guest who has not attached an account.
-   *
-   * They are rated, and their wins still cost their opponent, because refusing
-   * that would let a model farm guests for free. They are left off the visible
-   * board, because otherwise one person with a fresh guest session each time is
-   * the whole leaderboard.
-   */
   provisional?: boolean | undefined;
 }
 
@@ -77,7 +39,6 @@ export function humanCompetitor(userId: string, displayName: string, provisional
     provider: "human",
     model: "human",
     policyVersion: "1",
-    // A person moves the stick; nothing interprets it for them.
     schema: "raw",
     userId,
     provisional,
@@ -87,15 +48,8 @@ export function humanCompetitor(userId: string, displayName: string, provisional
 export interface RecordedMatch {
   id: string;
   summary: MatchSummary;
-  /** Who flew each aircraft, keyed by aircraft id. */
   competitors: Record<string, Competitor>;
-  /**
-   * `headless` matches were run by the server and reproduce exactly from their
-   * decision log. `live` matches were flown in a browser and do not: a live
-   * decision is applied whenever the network returns it.
-   */
   origin: "headless" | "live";
-  /** True when the server served every decision, so the result is not invented. */
   verified: boolean;
   replayJson?: string | undefined;
   submittedBy?: string | undefined;
@@ -129,6 +83,58 @@ export interface LeaderboardRow {
   costPerMatchUsd: number;
 }
 
+/** Everything a leaderboard row is counted from, before the ratios are taken. */
+export interface CompetitorTotals {
+  matches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  survivals: number;
+  hitsScored: number;
+  hitsTaken: number;
+  roundsFired: number;
+  timeOnTargetS: number;
+  decisions: number;
+  failures: number;
+  avgLatencyMs: number;
+  costUsd: number;
+}
+
+type Identity = Pick<
+  LeaderboardRow,
+  "competitorId" | "kind" | "name" | "provider" | "model" | "policyVersion" | "schema" | "provisional" | "rating"
+>;
+
+/**
+ * Turns one competitor's totals into a leaderboard row.
+ *
+ * Both stores count differently -- one in SQL, one over fetched rows -- but
+ * every rate is the same ratio of the same totals, so they agree here or the
+ * two deployments quietly disagree about what accuracy means.
+ */
+export function leaderboardRow(identity: Identity, totals: CompetitorTotals): LeaderboardRow {
+  const { matches, decisions, failures, roundsFired, costUsd } = totals;
+  return {
+    ...identity,
+    matches,
+    wins: totals.wins,
+    losses: totals.losses,
+    draws: totals.draws,
+    winRate: matches ? totals.wins / matches : 0,
+    hitsScored: totals.hitsScored,
+    hitsTaken: totals.hitsTaken,
+    roundsFired,
+    accuracy: roundsFired ? totals.hitsScored / roundsFired : 0,
+    timeOnTargetS: totals.timeOnTargetS,
+    survivalRate: matches ? totals.survivals / matches : 0,
+    decisions,
+    failureRate: decisions + failures > 0 ? failures / (decisions + failures) : 0,
+    avgLatencyMs: totals.avgLatencyMs,
+    costUsd,
+    costPerMatchUsd: matches ? costUsd / matches : 0,
+  };
+}
+
 export interface MatchRow {
   id: string;
   scenarioId: string;
@@ -149,7 +155,6 @@ export interface MatchRow {
   }>;
 }
 
-/** A live match the server issued, and what it has actually served for it. */
 export interface LiveTicket {
   id: string;
   userId?: string | undefined;
@@ -162,14 +167,6 @@ export interface LiveTicket {
 
 export interface ResultsStore {
   recordMatch(match: RecordedMatch): Promise<void>;
-  /**
-   * Ranked competitors of the requested kinds.
-   *
-   * Provisional guests are excluded unless asked for: their wins still cost
-   * their opponent, because refusing that would let a model farm guests for
-   * free, but listing them means one person with a fresh guest session each
-   * time is the whole board.
-   */
   leaderboard(kinds: CompetitorKind[], options?: { includeProvisional?: boolean }): Promise<LeaderboardRow[]>;
   listMatches(options: { limit: number; userId?: string | undefined }): Promise<MatchRow[]>;
   getMatch(id: string): Promise<Record<string, unknown> | undefined>;
@@ -180,8 +177,21 @@ export interface ResultsStore {
 
   openLiveMatch(ticket: { id: string; userId?: string | undefined; opponentKind: string }): Promise<void>;
   noteLiveDecision(id: string, costUsd: number): Promise<void>;
-  /** Reads a ticket and marks it settled, so a result can only be reported once. */
   settleLiveMatch(id: string): Promise<LiveTicket | undefined>;
 
   close(): void;
+}
+
+export type MatchResult = "win" | "loss" | "draw";
+
+export function matchResult(winnerId: string | undefined, aircraftId: string): MatchResult {
+  if (!winnerId) return "draw";
+  return winnerId === aircraftId ? "win" : "loss";
+}
+
+/** The first competitor's Elo score for a match: 1 a win, 0 a loss, 0.5 a draw. */
+export function eloScore(winnerId: string | undefined, first: string, second: string): number {
+  if (winnerId === first) return 1;
+  if (winnerId === second) return 0;
+  return 0.5;
 }

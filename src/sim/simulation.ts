@@ -11,9 +11,7 @@ import { terrainHeight } from "./terrain";
 import { observationFor } from "./telemetry";
 import type { AircraftState, MatchState, ScenarioConfig } from "./types";
 
-/** Seconds outside the arena or below the floor before the match is forfeit. */
 const BOUNDARY_GRACE_S = 5;
-/** Fuel below which a bingo call is emitted once, kilograms. */
 const BINGO_FUEL_KG = 450;
 
 interface AgentSlot {
@@ -33,7 +31,6 @@ interface AgentSlot {
   outputTokens: number;
 }
 
-/** One model decision, kept so a replay can reproduce and explain a match. */
 export interface DecisionRecord {
   tick: number;
   time: number;
@@ -43,23 +40,14 @@ export interface DecisionRecord {
   rationale?: string;
   latencyMs: number;
   usage?: DecisionUsage;
-  /** Calibrated probabilities, for models that report them. */
   distributions?: ChoiceDistribution[];
   error?: string;
 }
 
 export interface SimulationOptions {
-  /** Simulated seconds between decisions for every agent. */
   decisionIntervalS?: number;
-  /**
-   * Wall-clock deadline for a single decision. A model that misses it holds its
-   * previous command, which is the same thing that happens to a pilot who
-   * hesitates.
-   */
   decisionTimeoutMs?: number;
-  /** Match is abandoned if an agent spends more than this on inference. */
   inferenceBudgetUsd?: number;
-  /** Set false to stop retaining every decision, for long headless sweeps. */
   recordDecisions?: boolean;
 }
 
@@ -86,9 +74,7 @@ export interface MatchSummary {
     roundsFired: number;
     ammoRemaining: number;
     fuelRemainingKg: number;
-    /** Seconds spent with a valid gun solution on the opponent. */
     timeOnTargetS: number;
-    /** Seconds spent inside the opponent's rear quarter inside 2 km. */
     timeInControlZoneS: number;
     destroyedBy?: string;
     destroyedReason?: string;
@@ -190,9 +176,6 @@ export class DogfightSimulation {
           const target = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
           if (target?.alive) {
             if (decision.action.schema === "tactical") {
-              // Hold it as a standing order, flown continuously below, rather
-              // than freezing the stick where it happened to be when the model
-              // answered.
               this.standingOrders.set(aircraftId, decision.action);
             } else {
               this.standingOrders.delete(aircraftId);
@@ -216,8 +199,6 @@ export class DogfightSimulation {
           });
         })
         .catch((error: unknown) => {
-          // Hold the last valid command. A model that fails does not get to
-          // freeze the match, but the failure is recorded against it.
           slot.failures += 1;
           if (error instanceof AgentTimeoutError) slot.timeouts += 1;
           this.record({
@@ -246,14 +227,6 @@ export class DogfightSimulation {
     if (this.recordDecisions) this.decisions.push(decision);
   }
 
-  /**
-   * The most recent decision for one aircraft.
-   *
-   * Kept separately from the decision log because the live display wants it
-   * every frame and the log is appended to for the whole match; scanning
-   * backwards through a thousand records sixty times a second to find the last
-   * one is not a reasonable way to draw a panel.
-   */
   latestDecision(aircraftId: string): DecisionRecord | undefined {
     return this.lastDecisions.get(aircraftId);
   }
@@ -264,15 +237,6 @@ export class DogfightSimulation {
     return this.stepPhysics();
   }
 
-  /**
-   * Flies every standing order against live state.
-   *
-   * A tactical command is an order, not a stick position. Resolving it once per
-   * decision and holding the result for a quarter of a second is the difference
-   * between an autopilot and a stale snapshot of one -- with the snapshot, a
-   * gun solution can never converge, because the jet stops correcting the
-   * moment the geometry starts moving.
-   */
   private flyStandingOrders(): void {
     if (!this.standingOrders.size) return;
     for (const aircraft of this.state.aircraft) {
@@ -309,7 +273,6 @@ export class DogfightSimulation {
     return this.state;
   }
 
-  /** Terrain, arena bounds, fuel and departure bookkeeping for one aircraft. */
   private trackAircraft(aircraft: AircraftState, dt: number): void {
     if (!aircraft.alive) return;
     const book = this.bookkeeping.get(aircraft.id)!;
@@ -354,11 +317,6 @@ export class DogfightSimulation {
     aircraft.health = 0;
   }
 
-  /**
-   * Positional scoring. Time spent with a gun solution, and time spent in the
-   * opponent's rear quarter, decide a match that runs out of clock -- otherwise
-   * two passive models would draw every time.
-   */
   private trackPositionalScore(dt: number): void {
     const [first, second] = this.state.aircraft;
     if (!first || !second) return;
@@ -374,16 +332,6 @@ export class DogfightSimulation {
     }
   }
 
-  /**
-   * Runs without rendering or wall-clock pacing. At each decision boundary it
-   * waits for both models, so inference latency is measured but neither
-   * aircraft gets extra simulated time for being slow.
-   *
-   * This is also the reproducible mode. Because every decision is applied on
-   * the tick it was requested, a recorded decision log replays exactly. Real
-   * -time play cannot promise that: a model's answer lands whenever the network
-   * returns it, so the same log would be applied on different ticks.
-   */
   async runHeadless(onTick?: (state: MatchState) => void): Promise<MatchState> {
     while (!this.state.finished) {
       const decisions = this.requestDecisions();
@@ -424,7 +372,6 @@ export class DogfightSimulation {
     }
   }
 
-  /** Breaks a timed-out match on damage dealt, then gun time, then energy. */
   private decideOnPoints(): { winnerId?: string; reason: string } {
     const ranked = [...this.state.aircraft].sort((a, b) => this.points(b) - this.points(a));
     const [leader, trailer] = ranked;
@@ -469,7 +416,6 @@ export class DogfightSimulation {
     );
   }
 
-  /** True once any agent has spent more than the match's inference budget. */
   private overBudget(): string | undefined {
     for (const [aircraftId, slot] of this.slots) {
       if (slot.costUsd > this.inferenceBudgetUsd) return aircraftId;
@@ -477,7 +423,6 @@ export class DogfightSimulation {
     return undefined;
   }
 
-  /** Backwards-compatible alias. */
   latencyStats(): Record<string, { decisions: number; averageMs: number }> {
     return Object.fromEntries(
       Object.entries(this.agentStats()).map(([id, stats]) => [

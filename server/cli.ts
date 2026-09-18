@@ -2,11 +2,6 @@ import { createStore } from "./store";
 import { runSeries } from "./match-runner";
 import { providers, SCRIPTED_NAMES } from "./providers";
 
-/**
- * Runs a benchmark series from the command line and prints the leaderboard.
- *
- *   npm run bench -- --blue anthropic --red energy-fighter --rounds 3
- */
 function argument(name: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : fallback;
@@ -46,8 +41,6 @@ for (const error of result.errors) console.error(`  error: ${error}`);
 console.log("\nLeaderboard:");
 for (const row of await store.leaderboard(["model", "scripted", "human"])) {
   console.log(
-    // Name alone is ambiguous: the same model at two interfaces, or under two
-    // prompt versions, is several rows with the same name and different ratings.
     `  ${row.rating.toFixed(0).padStart(5)}  ${row.name.padEnd(24)} ` +
       `${(row.schema === "raw" ? "stick" : "manoeuvres").padEnd(11)}` +
       `${row.policyVersion.padEnd(18)}` +

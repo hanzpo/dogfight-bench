@@ -2,24 +2,6 @@ import { useState } from "react";
 import type { AgentRow } from "../api";
 import { clearKey, loadKey, maskKey, saveKey, type KeyScope } from "../keys";
 
-/**
- * Where someone puts their own provider key.
- *
- * The benchmark pays for one model so that anybody can fly without an account.
- * Every other model runs on the key entered here, which is the honest
- * arrangement: the person choosing to spend tokens on Claude or GPT is the
- * person whose account pays for them.
- *
- * The panel is deliberately explicit about where the key is kept. "This tab
- * only" is the default and the safe answer; remembering it is a convenience
- * with a real cost, stated plainly rather than buried.
- */
-/**
- * Providers written the way they write themselves.
- *
- * Capitalising the identifier turns "openai" into "Openai", which reads as a
- * misspelling of a company's name rather than as a label.
- */
 const DISPLAY_NAMES: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",

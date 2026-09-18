@@ -6,15 +6,13 @@ import { stepEngine } from "./engine";
 import { stepFlcs } from "./flcs";
 import { heightAboveGround } from "./terrain";
 import type { AircraftState, ControlInput } from "./types";
+import { clamp } from "../math";
 
 const BODY_X = new Vector3(1, 0, 0);
 const BODY_Y = new Vector3(0, 1, 0);
 const BODY_Z = new Vector3(0, 0, 1);
 const WORLD_DOWN = new Vector3(0, -1, 0);
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 export function sanitizeControls(input: ControlInput): ControlInput {
   const finite = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
@@ -29,16 +27,10 @@ export function sanitizeControls(input: ControlInput): ControlInput {
 
 export { airDensity, speedOfSound } from "./atmosphere";
 
-/** Current all-up mass: empty weight plus whatever fuel is still aboard. */
 export function currentMass(aircraft: AircraftState): number {
   return MASS.emptyKg + aircraft.engine.fuelKg;
 }
 
-/**
- * Body-axis inertia, scaled with fuel load. Ixz is the only significant
- * product of inertia on an F-16 and it drives the inertia coupling that makes
- * a rolling pull depart.
- */
 export function inertia(fuelKg: number): { ixx: number; iyy: number; izz: number; ixz: number } {
   const fill = clamp(fuelKg / MASS.internalFuelKg, 0, 1);
   const scale = 1 - MASS.fuelInertiaFraction * (1 - fill);
@@ -51,7 +43,6 @@ export function inertia(fuelKg: number): { ixx: number; iyy: number; izz: number
 }
 
 export interface BodyAxes {
-  /** Unit vectors expressed in world coordinates. */
   nose: Vector3;
   right: Vector3;
   down: Vector3;
@@ -65,17 +56,10 @@ export function bodyAxes(orientation: Quaternion): BodyAxes {
   return { nose, right: left.clone().negate(), down: up.clone().negate(), up };
 }
 
-/** Converts an aero body-rate triple (p, q, r) into a three.js rotation vector. */
 export function aeroRatesToRotationVector(p: number, q: number, r: number): Vector3 {
-  // omega = p * nose + q * right + r * down, expressed in the model basis.
   return new Vector3(-q, -r, p);
 }
 
-/**
- * Advances one aircraft by `dt` using six-degree-of-freedom rigid-body
- * dynamics: aerodynamic forces in wind axes rotated into the body, Euler's
- * equations with a full inertia tensor, and a quaternion attitude update.
- */
 export function stepAircraft(aircraft: AircraftState, dt: number): void {
   if (!aircraft.alive) return;
 
@@ -87,7 +71,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   aircraft.heightAboveGroundM = agl;
   const air = atmosphere(aircraft.position.y);
 
-  // --- Air data ------------------------------------------------------------
   const speed = aircraft.velocity.length();
   const vTrue = Math.max(speed, 1e-3);
   const u = aircraft.velocity.dot(axes.nose);
@@ -104,7 +87,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   const q = aircraft.angularVelocity.y;
   const r = aircraft.angularVelocity.z;
 
-  // --- Flight-control system ----------------------------------------------
   const controlHealth = clamp(
     0.35 + 0.65 * Math.min(aircraft.damage.subsystems.tail, aircraft.damage.subsystems["forward-fuselage"]),
     0.2,
@@ -130,13 +112,11 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
     dt,
   );
 
-  // --- Propulsion ----------------------------------------------------------
   stepEngine(aircraft.engine, controls.throttle, aircraft.position.y, aircraft.mach, dt);
   aircraft.engine.fuelKg = Math.max(0, aircraft.engine.fuelKg - aircraft.damage.fuelLeakKgS * dt);
   const thrustN = aircraft.engine.thrustN * aircraft.damage.subsystems.engine;
   aircraft.massKg = currentMass(aircraft);
 
-  // --- Aerodynamic forces --------------------------------------------------
   const wingHealth = 0.5 * (aircraft.damage.subsystems["left-wing"] + aircraft.damage.subsystems["right-wing"]);
   const aero = coefficients(alpha, beta, aircraft.mach, agl);
   const cl = aero.cl * (0.55 + 0.45 * wingHealth);
@@ -150,7 +130,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   const ca = Math.cos(alpha);
   const sb = Math.sin(beta);
   const cb = Math.cos(beta);
-  // Wind axes -> body axes.
   const forceNose = -drag * ca * cb - side * ca * sb + lift * sa;
   const forceRight = -drag * sb + side * cb;
   const forceDown = -drag * sa * cb - side * sa * sb - lift * ca;
@@ -164,13 +143,11 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   const specificForce = aeroForce.clone().add(thrustForce).multiplyScalar(1 / aircraft.massKg);
 
   aircraft.loadFactor = specificForce.dot(axes.up) / GRAVITY_MPS2;
-  // Ps = V (T - D) / W, the energy rate that decides every merge.
   aircraft.specificExcessPowerMps = (vTrue * (thrustN - drag)) / (aircraft.massKg * GRAVITY_MPS2);
 
   const acceleration = specificForce.clone().add(new Vector3(0, -GRAVITY_MPS2, 0));
   aircraft.acceleration.copy(acceleration);
 
-  // --- Moments and Euler's equations --------------------------------------
   const halfSpan = GEOMETRY.wingSpanM / (2 * vTrue);
   const halfChord = GEOMETRY.meanChordM / (2 * vTrue);
   const moments = momentCoefficients(
@@ -184,7 +161,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
     aircraft.flcs.yaw * controlHealth,
     aircraft.flcs.departed,
   );
-  // A shot-off wing pulls the jet toward the damaged side.
   const asymmetricRoll =
     (aircraft.damage.subsystems["right-wing"] - aircraft.damage.subsystems["left-wing"]) * 0.045;
 
@@ -202,7 +178,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
 
   aircraft.angularVelocity.set(p + pDot * dt, q + qDot * dt, r + rDot * dt);
 
-  // --- Integrate attitude, velocity and position --------------------------
   const omega = aeroRatesToRotationVector(
     aircraft.angularVelocity.x,
     aircraft.angularVelocity.y,
@@ -218,7 +193,6 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   aircraft.position.addScaledVector(aircraft.velocity, dt);
 }
 
-/** Rebuilds `alpha`, `beta`, mach and load factor without advancing time. */
 export function refreshAirData(aircraft: AircraftState): void {
   const axes = bodyAxes(aircraft.orientation);
   const air = atmosphere(aircraft.position.y);
@@ -229,7 +203,6 @@ export function refreshAirData(aircraft: AircraftState): void {
   aircraft.heightAboveGroundM = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);
 }
 
-/** Maximum instantaneous load factor available right now, for telemetry. */
 export function availableLoadFactor(aircraft: AircraftState): number {
   const air = atmosphere(aircraft.position.y);
   const qbar = 0.5 * air.densityKgM3 * aircraft.velocity.lengthSq();

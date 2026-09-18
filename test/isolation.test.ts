@@ -3,13 +3,6 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-/**
- * The browser bundle must never be able to reach a provider credential.
- *
- * This is the one property of the architecture that cannot be checked by
- * reading the code once and trusting it afterwards: a single stray import in
- * `src/` would ship an API key to every visitor. So it is a test.
- */
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     const path = join(directory, entry);
@@ -43,17 +36,6 @@ describe("credential isolation", () => {
     expect(offenders).toEqual([]);
   });
 
-  /**
-   * The repository is public, so a committed credential is a published one.
-   *
-   * `.gitignore` is the intent; this is the check. It reads what git actually
-   * tracks rather than what is on disk, because the failure being guarded
-   * against is exactly a file that should have been ignored and was not.
-   *
-   * The Supabase project URL and its publishable key are deliberately absent
-   * from this list: both are compiled into the browser bundle and served to
-   * everyone by design, and row level security is what protects the data.
-   */
   it("commits no credential to a public repository", () => {
     const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
     const shapes: Array<[string, RegExp]> = [
@@ -80,7 +62,6 @@ describe("credential isolation", () => {
     expect(offenders).toEqual([]);
   });
 
-  /** And nothing that holds one is tracked at all, whatever it contains today. */
   it("tracks no environment file but the template", () => {
     const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
     expect(tracked.filter((path) => /(^|\/)\.env/.test(path))).toEqual([".env.example"]);

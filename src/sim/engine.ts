@@ -1,15 +1,7 @@
 import { densityRatio } from "./atmosphere";
 import { ENGINE } from "./config";
 
-/**
- * F110-GE-129 model: commanded power lever -> spooled power -> installed thrust.
- *
- * Power is tracked on a 0..2 scale where 1.0 is military power and 2.0 is full
- * afterburner, which keeps the spool lag continuous across the burner light.
- */
-
 export interface EngineState {
-  /** Spooled power level, 0..2. */
   power: number;
   fuelKg: number;
   thrustN: number;
@@ -23,10 +15,6 @@ export function commandedPower(throttle: number): number {
   return 1 + (t - ENGINE.afterburnerThreshold) / (1 - ENGINE.afterburnerThreshold);
 }
 
-/**
- * Installed thrust lapse. Ram recovery raises thrust with Mach while density
- * lapse cuts it with altitude; the burner benefits more from ram than the core.
- */
 export function thrustAtPower(power: number, altitudeM: number, mach: number): number {
   const sigma = densityRatio(altitudeM);
   const dry = Math.min(power, 1);
@@ -53,7 +41,6 @@ export function stepEngine(engine: EngineState, throttle: number, altitudeM: num
   engine.afterburner = wetFraction > 0.02;
 
   if (engine.fuelKg <= 0) {
-    // Flameout: the engine windmills and produces nothing.
     engine.power = Math.max(0, engine.power - dt / ENGINE.spoolDownTau);
     engine.thrustN = 0;
     engine.fuelFlowKgS = 0;

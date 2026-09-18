@@ -1,28 +1,6 @@
 import { chromium, webkit, type Browser, type Page } from "playwright";
 import { mkdirSync } from "node:fs";
 
-/**
- * Deterministic browser check for the viewer.
- *
- * This exists because a camera regression once shipped after being "verified"
- * against a paused, narrow, non-default view: the aircraft ended up clipped
- * into the corner of a real widescreen window and only a user's screenshot
- * caught it. So this runs the *default* live state, at a widescreen size, after
- * the match has been running long enough for drift to show, and fails on
- * measured framing rather than on how a screenshot looks.
- *
- * It runs in Chromium *and* WebKit, and at device pixel ratio 2 as well as 1.
- * The first version of this check tested only Chromium at ratio 1 and passed
- * while the canvas was laying out at twice the viewport on every Retina
- * display -- the exact bug it was written to catch. Framing measured through
- * the camera agrees with itself no matter how wrong the canvas element is, so
- * the checks below also compare the canvas against the window.
- *
- *   npm run check:ui            (needs `npm run dev` and `npm run server`)
- */
-
-// Vite's default port. Override with UI_CHECK_URL when it picked another one
-// because 5173 was busy -- it prints the port it actually bound to.
 const BASE = process.env["UI_CHECK_URL"] ?? "http://localhost:5173";
 const OUT = "artifacts/ui-check";
 
@@ -35,12 +13,6 @@ interface Framing {
   maxY: number;
 }
 
-/**
- * Rows in a data table once it has loaded.
- *
- * Returns zero rather than throwing on timeout: a page that failed to load its
- * data is one failed check, and should not take the rest of the run with it.
- */
 async function countRows(page: Page): Promise<number> {
   try {
     await page.waitForSelector("table.data tbody tr", { timeout: 20_000 });
@@ -67,7 +39,6 @@ async function framing(page: Page): Promise<Framing> {
 }
 
 let engineLabel = "";
-/** Visibility of each overlay element, read straight off the SVG. */
 const OVERLAY_PROBE = `({
   reticle: document.querySelector('.reticle')?.getAttribute('visibility') !== 'hidden',
   box: document.querySelector('.target-box')?.getAttribute('visibility') !== 'hidden',
@@ -75,7 +46,6 @@ const OVERLAY_PROBE = `({
   arrow: document.querySelector('.bandit-arrow')?.getAttribute('visibility') !== 'hidden'
 })`;
 
-/** Centre of each instrument group, in CSS pixels. */
 const LAYOUT_PROBE = `(() => {
   const box = (sel) => {
     const el = document.querySelector(sel);
@@ -93,14 +63,6 @@ const LAYOUT_PROBE = `(() => {
   };
 })()`;
 
-/**
- * Where the overlay has put the bandit, and whether it is on screen.
- *
- * This is the only handle the checks have on where the camera actually is:
- * the target box is drawn at the bandit's projected position, so the box moving
- * is the camera moving. Nothing is exported from the viewer for testing, which
- * is deliberate -- what the page draws is what a person sees.
- */
 const BANDIT_PROBE = `(() => {
   const el = document.querySelector('.tactical .target-box');
   const shown = el && el.getAttribute('visibility') !== 'hidden';
@@ -114,7 +76,6 @@ const BANDIT_PROBE = `(() => {
   };
 })()`;
 
-/** Where the camera is, how far off it stands, and how big that makes the jet. */
 const SHOT_PROBE = `(() => {
   const d = document.querySelector('#app').dataset;
   return {
@@ -142,13 +103,6 @@ function check(condition: boolean, message: string): void {
   }
 }
 
-/**
- * The canvas element must match its container.
- *
- * Projected framing is computed through the camera, so it reports a perfectly
- * centred aircraft even when the canvas is twice the size of the window and
- * most of the render is off screen. Only measuring the element catches that.
- */
 async function checkCanvasFitsWindow(page: Page): Promise<void> {
   const measured = await page.evaluate(() => {
     const canvas = document.querySelector("canvas")!;
@@ -170,12 +124,6 @@ async function checkCanvasFitsWindow(page: Page): Promise<void> {
     Math.abs(measured.cssHeight - measured.innerHeight) <= 2,
     `canvas is the height of the window (${measured.cssHeight} vs ${measured.innerHeight})`,
   );
-  /**
-   * The backing store may legitimately be smaller than the device pixel ratio
-   * implies, because the renderer drops resolution when it cannot keep up. What
-   * must never happen is the canvas collapsing to a fraction of the window, so
-   * the floor is half the CSS size.
-   */
   check(
     measured.bufferWidth >= measured.innerWidth * 0.5 - 2,
     `backing store is a sane resolution (${measured.bufferWidth} for a ${measured.innerWidth} px window, dpr ${measured.ratio})`,
@@ -200,15 +148,6 @@ const ALL_ENGINES: Array<{ name: string; launch: () => Promise<Browser>; scale: 
   { name: "webkit@2x", launch: () => webkit.launch(), scale: 2 },
 ];
 
-/**
- * Which engines to run.
- *
- * All four by default, because the faults this catches are engine-specific and
- * pixel-ratio-specific often enough that checking one proves little. While
- * iterating, `UI_CHECK_ENGINES=webkit` narrows it to one -- useful for a tight
- * loop on a layout change, and not a substitute for the full run before a
- * commit.
- */
 const requested = (process.env["UI_CHECK_ENGINES"] ?? "")
   .split(",")
   .map((name) => name.trim())
@@ -233,9 +172,6 @@ const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
   if (message.type() !== "error") return;
-  // Headless WebKit runs software WebGL and drops the context under load. The
-  // application handles that and recovers, and the framing checks below only
-  // pass if rendering actually continued, so it is noise rather than a fault.
   if (/WebGL: context lost/i.test(message.text())) {
     console.log(`  note  ${engineLabel}WebGL context was lost and recovered`);
     return;
@@ -248,14 +184,6 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForFunction(() => document.querySelector("#app")?.getAttribute("data-subject-screen-x") !== null, {
   timeout: 20_000,
 });
-/**
- * Wait for simulated time rather than wall time.
- *
- * Headless rendering is software rasterised and can run well below real time,
- * so a fixed wall-clock wait turns a slow renderer into a failed assertion
- * about the simulation. Waiting on the clock the simulation reports keeps the
- * check about drift, which is what it is for.
- */
 await page.waitForFunction(() => Number(document.querySelector("#app")?.getAttribute("data-sim-time")) > 6, {
   timeout: 60_000,
 });
@@ -285,7 +213,6 @@ const state = await page.evaluate(() => ({ ...document.querySelector<HTMLElement
 check(state["timeScale"] === "4", `speed control applied (${state["timeScale"]})`);
 check(state["bluePilot"] === "basic", `pilot control applied (${state["bluePilot"]})`);
 check(state["follow"] === "red-1", `follow control applied (${state["follow"]})`);
-// Changing the pilot restarts the match, which resumes it; pause after that.
 await page.click("#pause");
 await page.waitForTimeout(500);
 check(
@@ -293,36 +220,18 @@ check(
   "pause control applied",
 );
 
-/**
- * Signing in, flying a ranked match, and finding it afterwards.
- *
- * The flow that broke twice while being built: the details panel covered the
- * account menu and ate its clicks, and signing in did not re-open the match
- * ticket, so every match a newly signed-in player flew was quietly unranked.
- * Neither was visible in any other check.
- *
- * Only at device pixel ratio 1, so one run creates two guest accounts rather
- * than four, and skipped entirely when the deployment has no accounts.
- */
 if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
   console.log("accounts and ranked matches");
   const signIn = page.getByRole("button", { name: "Sign in" });
   if ((await signIn.count()) === 0) {
     console.log("  note  accounts are not configured; skipping");
   } else {
-    // Earlier checks left the baseline flying and the match paused; a ranked
-    // match needs a person at the controls.
     await page.selectOption("#blue-pilot", "human");
     await page.waitForTimeout(500);
     if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused") {
       await page.click("#pause");
     }
 
-    /**
-     * The notice that says a match will not count is also the way to fix it.
-     * Telling somebody to sign in and then making them hunt the corner for the
-     * control is most of the reason nobody does.
-     */
     const notice = page.locator("button.recording");
     check((await notice.count()) === 1, "the 'not counted' notice is something you can act on");
     if (await notice.count()) {
@@ -339,12 +248,6 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
 
     await page.selectOption("#speed", "16");
     await page.waitForTimeout(1_500);
-    /**
-     * At sixteen times real time an unattended match can be over before this
-     * line runs, so the banner may already have moved on to the result. What
-     * must never appear is the prompt to sign in -- that is the regression this
-     * guards, and it survives the race.
-     */
     const banner = (await page.locator(".recording").textContent().catch(() => null))?.trim();
     check(
       Boolean(banner) && !banner!.includes("Sign in"),
@@ -368,8 +271,6 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
     await page.getByRole("link", { name: "Matches" }).click();
     await page.waitForTimeout(1_000);
     await page.getByRole("button", { name: "Mine" }).click();
-    // The list is refetched when the scope changes, so the old table is still
-    // on screen for a moment. Counting it would pass on somebody else's rows.
     await page.waitForFunction(() => !document.querySelector("table.data"), { timeout: 10_000 }).catch(() => {});
     const mine = await countRows(page);
     check(mine > 0, `the match appears under the player's own history (${mine})`);
@@ -379,28 +280,12 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
   }
 }
 
-/**
- * A calibrated model's probabilities, when this deployment can reach one.
- *
- * Skipped without a credential rather than failing, because the check has to
- * keep working on a machine with no keys -- but when a key is there, the whole
- * path from the provider's response to the bars on screen is exercised.
- */
 const roster = (await page.evaluate(`fetch('/api/agents').then((r) => r.json())`)) as {
   agents: Array<{ kind: string; free: boolean; available: boolean }>;
 };
 const calibrated = roster.agents.find((agent) => agent.kind === "jev" && agent.free && agent.available);
 if (calibrated && engine.scale === 1) {
   console.log("calibrated model");
-  /**
-   * Put the page in the state this actually needs, rather than inheriting it.
-   *
-   * Earlier sections pause the match and point the camera at red, and the
-   * section that undoes both is skippable. A paused match asks nobody for a
-   * decision, and the details panel reports the aircraft being followed -- so
-   * watching red while the model flies blue shows a scripted pilot's absent
-   * probabilities and looks exactly like a broken feature.
-   */
   if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused") {
     await page.click("#pause");
   }
@@ -416,13 +301,6 @@ if (calibrated && engine.scale === 1) {
 }
 
 console.log("render budget");
-/**
- * A standing budget, so a scene change cannot quietly double what every frame
- * costs. Triangles *submitted*, not triangles in the scene: the ground is
- * chunked precisely so that most of it is culled before it reaches the GPU, and
- * a regression that merges it back into one mesh would show up here as the
- * count tripling rather than as a vague report that the page feels slow.
- */
 const render = await page.evaluate(() => {
   const data = document.querySelector<HTMLElement>("#app")!.dataset;
   return {
@@ -442,18 +320,6 @@ check(
 );
 
 console.log("human controls");
-/**
- * Flying with the mouse, without pointer lock.
- *
- * Pointer lock needs a focused OS window, which an automated browser does not
- * have, so this exercises the uncaptured mode: stick deflection taken from how
- * far the cursor sits from the centre of the viewport. That is the fallback
- * real users hit in embedded frames and locked-down browsers, so it is the mode
- * most worth having a standing check on.
- */
-// The camera must be on the aircraft being flown. It was pointed at red above,
-// and the indicator honestly reports whichever aircraft is on screen -- which
-// is the right behaviour and the wrong test.
 await page.click("#follow-blue");
 await page.selectOption("#blue-pilot", "human");
 await page.selectOption("#control-scheme", "mouse");
@@ -471,20 +337,9 @@ const deflected = (await page.evaluate(controlDot)) as { x: number; y: number } 
 check(centred !== null && deflected !== null, "control position indicator is drawn");
 if (centred && deflected) {
   check(Math.abs(centred.x) < 2 && Math.abs(centred.y) < 2, "stick is centred when the cursor is centred");
-  // Cursor right and forward: stick right, stick forward. The indicator's y
-  // grows downward, and a stick pushed forward shows forward, so both are
-  // positive.
   check(deflected.x > 5, `cursor right deflects the stick right (${deflected.x})`);
   check(deflected.y > 3, `cursor forward pushes the stick forward (${deflected.y})`);
 }
-/**
- * Right-drag looks around while flying with the mouse.
- *
- * The left button is the trigger and movement is the stick, so the camera needs
- * a button of its own. It is driven by hand rather than by OrbitControls,
- * because a captured pointer reports movement but never changes its client
- * coordinates -- so this has to keep working in both mouse modes.
- */
 const cameraBefore = String(
   await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["camera"]),
 );
@@ -502,13 +357,6 @@ check(
   "right-drag does not open the browser context menu",
 );
 
-/**
- * Gamepad axes, through a synthetic pad.
- *
- * No browser lets a script inject real pad events, but the part worth testing
- * is the mapping from axes to controls, which is ours: which stick flies, which
- * way forward is, and that a thumb resting on a worn stick does nothing.
- */
 await page.evaluate(`(() => {
   window.__pad = {
     id: "Synthetic Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard",
@@ -547,18 +395,8 @@ await page.selectOption("#blue-pilot", "basic");
 await page.waitForTimeout(800);
 
 console.log("flight instruments");
-// Pilot instruments and omniscient benchmark data are deliberately separate
-// things in separate places; check both exist and that the cockpit view puts
-// conformal symbology on the screen.
 check((await page.locator(".flight-display .tape-box").count()) >= 3, "airspeed, altitude and heading are displayed");
 
-/**
- * Where the instruments actually landed.
- *
- * Existence checks passed while half the head-up display sat in the top-left
- * corner on WebKit, because percentage transforms on SVG elements resolve
- * against different boxes in different engines. Positions are measured now.
- */
 const placed = (await page.evaluate(LAYOUT_PROBE)) as Record<string, { x: number; y: number; w: number }>;
 const viewport = placed["viewport"]!;
 const speed = placed["speed"]!;
@@ -578,14 +416,6 @@ check(
   Math.abs(heading.x - viewport.w / 2) < viewport.w * 0.12 && heading.y < viewport.y * 0.25,
   `heading sits across the top centre (${Math.round(heading.x)}, ${Math.round(heading.y)})`,
 );
-/**
- * The scale, not just the box above it.
- *
- * These are separate elements and only the box was ever measured, so a version
- * shipped with the whole compass rose translated half a screen to the right and
- * every heading assertion still passed. Marks drawn inside an already-positioned
- * group are exactly the kind of thing that goes wrong twice.
- */
 check(
   Math.abs(headingTicks.x - viewport.w / 2) < viewport.w * 0.06,
   `heading scale is centred under its box (${Math.round(headingTicks.x)} vs ${Math.round(viewport.w / 2)})`,
@@ -600,13 +430,6 @@ check(
 );
 check(altitude.x > speed.x + 200, "airspeed and altitude are not stacked on each other");
 check((await page.locator(".details").count()) === 1, "the details panel is its own place");
-/**
- * Attitude symbology belongs to the cockpit alone.
- *
- * There was a small artificial horizon for the external views, which is a
- * picture of the aircraft's attitude drawn next to a picture of the aircraft.
- * From outside, the aeroplane itself is the better instrument.
- */
 check(
   (await page.locator(".conformal").getAttribute("visibility")) === "hidden",
   "external view leaves attitude to the aircraft itself",
@@ -623,18 +446,9 @@ check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
 
 console.log("cameras");
-/**
- * Each view is a different place to stand, and it stands there while flying.
- *
- * Measured from the camera's own position rather than from what is on screen,
- * because the bandit can legitimately be out of frame and a null reading would
- * then pass every comparison by accident -- which is how the first version of
- * this check reported two identical views as different.
- */
 type Shot = { camera: number[]; subjectW: number; standoffM: number };
 const cameraIn = async (view: string): Promise<Shot> => {
   await page.selectOption("#view", view);
-  // Long enough for a camera that eases into place to have arrived.
   await page.waitForTimeout(2_000);
   await page.screenshot({ path: `${OUT}/view-${view}-${engine.name}.png` });
   return (await page.evaluate(SHOT_PROBE)) as Shot;
@@ -659,21 +473,11 @@ check(arena.subjectW > 0.002, `arena keeps the aircraft bigger than a pixel (${(
 
 const chase = await cameraIn("chase");
 check(apart(chase, arena) > 50, `chase stands somewhere else again (${apart(chase, arena).toFixed(0)} m)`);
-/**
- * The chase camera does not fall behind.
- *
- * It used to ease its world position, which lags a moving target by speed over
- * rate -- forty metres at a quarter of a kilometre a second -- so the faster
- * the jet flew the smaller it got. Measured while flying, against the size the
- * same offset gives when nothing is moving.
- */
 check(
   chase.standoffM > 30 && chase.standoffM < 90,
   `chase holds its distance while the jet is moving (${chase.standoffM.toFixed(0)} m)`,
 );
 
-// The wheel changes how far off a self-placing view stands, rather than doing
-// nothing because the camera is about to be repositioned anyway.
 await page.mouse.move(600, 400);
 await page.mouse.wheel(0, -600);
 await page.waitForTimeout(1_200);
@@ -686,14 +490,6 @@ check(
 await page.selectOption("#view", "chase");
 await page.waitForTimeout(1_500);
 
-/**
- * Nothing sits on top of anything else.
- *
- * This is the fault that keeps coming back in different clothes: a panel over
- * the account menu eating its clicks, a recording banner under the details panel
- * panel, instruments behind the control bar. Each was found by a person looking
- * at a screenshot. Measuring the rectangles is cheaper.
- */
 const rectangles = (await page.evaluate(`(() => {
   const box = (name, sel) => {
     const el = document.querySelector(sel);
@@ -720,8 +516,6 @@ for (let i = 0; i < rectangles.length; i += 1) {
 }
 
 console.log("tactical overlay");
-// The gunsight is the whole point of a guns-only game: prove it draws, that it
-// tracks the bandit, and that the shoot cue is gated rather than always on.
 await page.selectOption("#blue-pilot", "basic");
 let sawReticle = false;
 let sawTarget = false;
@@ -734,14 +528,6 @@ for (let sample = 0; sample < 40; sample += 1) {
   sawArrowOrBox ||= overlay["box"] === true || overlay["arrow"] === true;
   if (sawReticle && sawTarget) break;
 }
-/**
- * Overlays must fill the viewport.
- *
- * An SVG with no CSS falls back to an intrinsic 300x150, which folds the entire
- * gun symbology into the top-left corner while every element still reports
- * itself visible. A stylesheet edit did exactly that once, and visibility
- * checks alone did not notice.
- */
 const overlaySize = (await page.evaluate(OVERLAY_SIZE_PROBE)) as Record<string, number>;
 check(
   overlaySize["tacticalW"]! >= overlaySize["viewW"]! - 2 && overlaySize["tacticalH"]! >= overlaySize["viewH"]! - 2,
@@ -753,14 +539,8 @@ check(
 );
 
 check(sawReticle, "gunsight reticle is drawn");
-// Whether the bandit happens to pass through frame during the sample window is
-// luck; that it is *always* indicated one way or the other is the property
-// worth asserting.
 check(sawArrowOrBox, "bandit is always indicated, on screen or off");
 if (!sawTarget) console.log(`  note  ${engineLabel}bandit stayed off screen during sampling`);
-// Whether a scripted fight produces a firing solution inside a twenty-second
-// window is luck, so the cue's gating is pinned by a unit test instead; here we
-// only confirm the element exists to be shown.
 check(
   (await page.locator(".shoot-cue").count()) === 1,
   "shoot cue exists to be shown when a burst would connect",
@@ -769,9 +549,6 @@ await page.screenshot({ path: `${OUT}/overlay-${engine.name}.png` });
 
 console.log("leaderboard");
 await page.getByRole("link", { name: "Leaderboard" }).click();
-// Wait for the data itself. Matching the loading notice as well resolves
-// immediately and then counts zero rows. A timeout here is a failed check, not
-// a reason to abandon every remaining check in the run.
 const leaderboardRows = await countRows(page);
 check(leaderboardRows > 0, `leaderboard shows ${leaderboardRows} agents`);
 await page.screenshot({ path: `${OUT}/leaderboard-${engine.name}.png` });
@@ -789,14 +566,6 @@ if (matchRows === 0) {
   continue;
 }
 await page.getByRole("link", { name: "Watch" }).first().click();
-/**
- * A replay that never starts must be one failed check, not a crashed run.
- *
- * Matches with no stored replay are a real case -- a result can be recorded
- * without one -- and the page reports that rather than playing. Letting the
- * wait throw takes every remaining check with it and hides whatever else was
- * wrong.
- */
 let replayTime: string | null = null;
 try {
   await page.waitForFunction(

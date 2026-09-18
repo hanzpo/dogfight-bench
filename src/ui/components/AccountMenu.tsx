@@ -3,23 +3,6 @@ import { useEffect, useState } from "react";
 import { signInAsGuest, signInWith } from "../auth";
 import { useAccount } from "../hooks/useAccount";
 
-/**
- * Signing in, and what it is for.
- *
- * Deliberately not a wall. Everything on this site works signed out: the
- * simulator, the baselines, the free model. An account buys two things and the
- * panel says so rather than demanding one and explaining nothing -- a result
- * that counts on the leaderboard, and replays that are kept and can be watched
- * again.
- */
-/**
- * Anything on the page can ask for this menu.
- *
- * The notice over a live match says a result will not count without an
- * account, which is useless if reading it then means hunting the corner for the
- * control. An event rather than lifted state, because one notice in one corner
- * does not justify threading a setter through the page.
- */
 export const OPEN_ACCOUNT_MENU = "dogfight:open-account-menu";
 
 export function AccountMenu() {

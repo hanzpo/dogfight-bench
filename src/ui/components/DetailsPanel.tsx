@@ -3,20 +3,8 @@ import { neutralMerge } from "../../sim/scenario";
 import type { DecisionRecord } from "../../sim/simulation";
 import { observationFor } from "../../sim/telemetry";
 import type { MatchState } from "../../sim/types";
+import { aspect } from "../../format";
 
-/**
- * What the benchmark knows and the pilot does not.
- *
- * Angle off the bandit's tail, their fuel and damage, the energy ledger between
- * the two aircraft, the predicted miss distance: none of this is on an
- * instrument in any cockpit. It is the perfect-information view the agents are
- * handed, so it is deliberately presented as data -- one plain monospace block
- * in one place, with none of the head-up display's styling -- rather than
- * dressed up as something the pilot is reading.
- *
- * Keeping the two apart is the whole point. Mixing them produces a display that
- * looks like a cockpit and lies about what a cockpit contains.
- */
 export function DetailsPanel({
   state,
   followId,
@@ -41,8 +29,6 @@ export function DetailsPanel({
   const gun = relative.gunSolution;
 
   const clock = `${String(Math.floor(state.time / 60)).padStart(2, "0")}:${(state.time % 60).toFixed(1).padStart(4, "0")}`;
-  const aspect =
-    relative.angleOffTailDeg < 70 ? "behind them" : relative.angleOffTailDeg > 120 ? "in front of them" : "abeam";
 
   if (!open) {
     return (
@@ -74,7 +60,7 @@ export function DetailsPanel({
         <Row label="clock" value={clock} />
         <Row label="range" value={formatRange(relative.rangeM)} />
         <Row label="closure" value={`${signed(Math.round(relative.closureRateMps))} m/s`} />
-        <Row label="angle off tail" value={`${Math.round(relative.angleOffTailDeg)}°`} note={aspect} />
+        <Row label="angle off tail" value={`${Math.round(relative.angleOffTailDeg)}°`} note={aspect(relative.angleOffTailDeg)} />
         <Row label="LOS rate" value={`${relative.lineOfSightRateDegS.toFixed(1)} °/s`} />
       </Section>
 
@@ -140,14 +126,6 @@ export function DetailsPanel({
   );
 }
 
-/**
- * What the model decided, and how sure it was.
- *
- * This belongs with the omniscient data rather than on the head-up display for
- * the same reason as everything else here: a pilot does not see their own
- * reasoning laid out as a bar chart. It is the benchmark's view of the model,
- * not the aircraft's view of the world.
- */
 function DecisionSection({ decision }: { decision: DecisionRecord }) {
   const action = decision.action;
   return (

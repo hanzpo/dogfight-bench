@@ -1,10 +1,3 @@
-/**
- * Token pricing, US dollars per million tokens.
- *
- * A benchmark that reports capability without reporting cost is only half a
- * result, so every decision is priced as it happens. Unknown models are priced
- * at zero and flagged rather than guessed at.
- */
 export interface ModelPrice {
   inputPerMTok: number;
   outputPerMTok: number;

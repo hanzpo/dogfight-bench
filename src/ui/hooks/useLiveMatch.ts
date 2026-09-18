@@ -20,45 +20,23 @@ import {
   type PilotInputSettings,
 } from "../input/pilot-input";
 
-/**
- * Who is flying one aircraft.
- *
- * `human` is the person at the keyboard. `basic` and `basic-pursuit` are the
- * scripted baselines. Anything else is a provider name the server knows, flown
- * through `/api/decide` -- so adding a model to the server adds it here without
- * a change on this side.
- */
 export type PilotChoice = string;
 
 export const HUMAN: PilotChoice = "human";
 
-/**
- * Whether a finished match went anywhere.
- *
- * A result only counts when the server issued a ticket for the match and served
- * the decisions itself, which is what stops anybody reporting a win against a
- * model they never called.
- */
 export interface RecordingState {
   status: "idle" | "ranked" | "unranked" | "saving" | "saved" | "failed";
   message?: string;
 }
 
-/** How often the readouts a person looks at are refreshed, milliseconds. */
 const UI_REFRESH_MS = 100;
 
 export interface LiveMatch {
-  /** Latest scene for the renderer. A ref, so drawing does not re-render React. */
   snapshotRef: RefObject<ViewerSnapshot | undefined>;
-  /** Match state for the readouts, refreshed ten times a second. */
   state: MatchState | undefined;
-  /** Simulated clock, updated every frame for the harness readouts. */
   simTimeRef: RefObject<number>;
-  /** Live match state for overlays that draw every frame. */
   liveStateRef: RefObject<MatchState | undefined>;
-  /** Most recent decision per aircraft, for the details panel. */
   decisions: Record<string, DecisionRecord | undefined>;
-  /** How the finished match was recorded, if it was. */
   recording: RecordingState;
   paused: boolean;
   timeScale: number;
@@ -94,12 +72,6 @@ function infoFor(pilot: PilotChoice): AgentInfo {
   };
 }
 
-/**
- * Builds whatever flies one aircraft, or nothing at all for a person.
- *
- * A model agent reads its credentials at request time rather than capture time,
- * so entering a key mid-match takes effect on the next decision.
- */
 function buildAgent(
   pilot: PilotChoice,
   aircraftId: string,
@@ -110,21 +82,10 @@ function buildAgent(
   if (pilot === "basic-pursuit") return new BasicPursuitAgent(aircraftId);
   return new HttpAgent(aircraftId, infoFor(pilot), "/api/decide", pilot, () => {
     const id = matchId();
-    // The ticket goes out with every decision, so the server can count what it
-    // actually flew for this match.
     return { ...keyHeaders(pilot), ...(id ? { "x-match-id": id } : {}) };
   });
 }
 
-/**
- * Owns the live simulation and its animation loop.
- *
- * The simulation is a mutable object stepped at 120 Hz and kept in a ref. The
- * renderer reads its scene from another ref every frame. React state is
- * refreshed only ten times a second, and only for the readouts a person
- * actually reads -- fast enough to look live, slow enough that reconciliation
- * is not the most expensive thing on the page.
- */
 export function useLiveMatch(): LiveMatch {
   const account = useAccount();
   const simulation = useRef<DogfightSimulation>(undefined);
@@ -167,16 +128,6 @@ export function useLiveMatch(): LiveMatch {
     const blue = bluePilotRef.current;
     const red = redPilotRef.current;
 
-    /**
-     * How often a model is asked what to do.
-     *
-     * The scripted baselines are free and local, so they decide four times a
-     * second. A model is a paid network round trip, and four a second is
-     * roughly twelve hundred calls in a single match -- enough for one person
-     * to spend the day's shared allowance in one sitting. Once a second is what
-     * the headless benchmark uses and what the tactical schema is designed for:
-     * the autopilot flies the standing order continuously in between.
-     */
     const usesModel = [blue, red].some(
       (pilot) => pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit",
     );
@@ -202,21 +153,7 @@ export function useLiveMatch(): LiveMatch {
     setRecording({ status: "idle" });
     setPaused(false);
 
-    /**
-     * Ask the server to open a match, but do not wait for it.
-     *
-     * The aircraft should be flying the instant the page is ready; a round trip
-     * to open a ticket is not a reason to stare at a frozen merge. Any decision
-     * that goes out before the ticket lands simply is not counted against it,
-     * which costs a fraction of a second of credit at the very start.
-     */
-    // Any opponent that is not another person: beating the scripted baseline is
-    // a real result and the obvious way onto the ladder without spending
-    // anything on inference.
     if (!authConfigured) {
-      // No accounts on this deployment, so there is nothing to rank against and
-      // nowhere to keep a replay. Say that rather than asking somebody to sign
-      // in to a thing that does not exist.
       if (blue === HUMAN) {
         setRecording({ status: "unranked", message: "Not recorded" });
       }
@@ -227,41 +164,20 @@ export function useLiveMatch(): LiveMatch {
           matchTicket.current = { id: ticket.matchId, ranked: ticket.ranked };
           setRecording({
             status: ticket.ranked ? "ranked" : "unranked",
-            // Short on purpose: it sits over a live match for the whole match.
             message: ticket.ranked ? undefined : "Not counted · sign in to rank",
           });
         })
         .catch(() => {
-          // A server that cannot open a ticket is a server that cannot record
-          // the result either. The match still flies.
           setRecording({ status: "unranked", message: "Not recorded" });
         });
     }
   }, []);
 
-  /**
-   * Restart when the pilots change, and when who is flying changes.
-   *
-   * A ticket is issued once, at the start, and carries whether the result will
-   * count. Signing in half way through a match cannot retroactively make that
-   * match ranked, so start a fresh one -- otherwise somebody signs in, flies a
-   * good fight and is told at the end that it did not count.
-   */
   useEffect(() => restart(), [restart, bluePilot, redPilot, account.user?.id]);
 
-  /**
-   * Bind the devices to the viewport.
-   *
-   * The pointer has to be captured on the element the person actually clicked,
-   * so this waits for the canvas host to exist rather than listening on the
-   * document and hoping.
-   */
   useEffect(() => {
     const host = document.querySelector<HTMLElement>("#viewport") ?? document.body;
     const detach = input.current.attach(host);
-    // Pointer lock can be lost without warning -- Escape, a window switch, the
-    // browser deciding it has had enough -- and there is no single event that
-    // covers every case, so the visible state is polled rather than inferred.
     const poll = setInterval(() => {
       setCanCapturePointer(input.current.canCapturePointer);
       setMouseMode(input.current.mouseMode);
@@ -333,13 +249,6 @@ export function useLiveMatch(): LiveMatch {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  /**
-   * Reports a finished match, once.
-   *
-   * Only for a match the server issued a ticket for: a scripted opponent has
-   * nothing to verify against, so recording it would put unverifiable results
-   * on a public board for no benefit.
-   */
   const reportResult = useCallback(async (sim: DogfightSimulation) => {
     const ticket = matchTicket.current;
     if (!ticket || reported.current) return;

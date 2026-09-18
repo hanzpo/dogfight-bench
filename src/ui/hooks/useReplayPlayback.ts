@@ -8,24 +8,12 @@ import { heightAboveGround } from "../../sim/terrain";
 import type { ReplayFile, ReplayFrame } from "../../sim/replay";
 import type { AircraftState, MatchState } from "../../sim/types";
 import type { ViewerSnapshot } from "../../viewer";
+import { radians } from "../../math";
 
-/**
- * Plays a recorded replay back at a chosen speed.
- *
- * Frames are stored at a fixed cadence, so playback interpolates between the
- * two frames bracketing the current time; without that, a replay recorded at
- * 30 Hz visibly stutters on a 120 Hz display.
- *
- * The scene goes to the renderer through a ref and advances every frame, while
- * the clock that drives the scrubber is React state refreshed ten times a
- * second. Rendering and re-rendering are separate problems.
- */
 const UI_REFRESH_MS = 100;
 
 export function useReplayPlayback(replay: ReplayFile | undefined) {
   const [time, setTime] = useState(0);
-  // A copy for the panels React renders, refreshed at the same modest rate as
-  // the clock rather than on every frame.
   const [state, setState] = useState<MatchState>();
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -33,13 +21,6 @@ export function useReplayPlayback(replay: ReplayFile | undefined) {
   const clock = useRef(0);
   const lastUiUpdate = useRef(0);
   const snapshotRef = useRef<ViewerSnapshot>(undefined);
-  /**
-   * The replay rebuilt as match state.
-   *
-   * The flight display, gun overlay and details panel all read a `MatchState`,
-   * so reconstructing one from each frame lets a replay show exactly the same
-   * instruments as live flight instead of being a silent fly-by.
-   */
   const stateRef = useRef<MatchState>(undefined);
 
   const duration = useMemo(() => replay?.frames.at(-1)?.t ?? 0, [replay]);
@@ -80,12 +61,10 @@ export function useReplayPlayback(replay: ReplayFile | undefined) {
   return { snapshotRef, stateRef, state, time, setTime: seek, duration, playing, setPlaying, speed, setSpeed };
 }
 
-/** Interpolated scene at an arbitrary time within a replay. */
 export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSnapshot | undefined {
   if (!replay?.frames.length) return undefined;
   const { current, next, blend } = bracket(replay, time);
 
-  // Impacts land within a frame of the event, so effects fire in playback too.
   const window = 0.2;
   const positions = new Map(current.aircraft.map((aircraft) => [aircraft.id, aircraft.p]));
   const impacts = replay.events
@@ -119,7 +98,6 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
   };
 }
 
-/** Frame bracketing a time, with the blend between them. */
 function bracket(replay: ReplayFile, time: number): { current: ReplayFrame; next: ReplayFrame; blend: number } {
   const frames = replay.frames;
   let low = 0;
@@ -136,15 +114,6 @@ function bracket(replay: ReplayFile, time: number): { current: ReplayFrame; next
   return { current, next, blend: span > 1e-6 ? Math.min(1, Math.max(0, (time - current.t) / span)) : 0 };
 }
 
-/**
- * Rebuilds match state from a replay frame.
- *
- * Fields the recording does not carry are filled with values that make the
- * instruments read correctly rather than with zeroes: mass from the recorded
- * fuel, air data from position and velocity. Nothing here is fed back into the
- * simulation, so an approximation is honest as long as what is displayed is
- * what was recorded.
- */
 function rebuildState(replay: ReplayFile, time: number): MatchState {
   const { current, next, blend } = bracket(replay, time);
   return {
@@ -180,7 +149,7 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
           afterburner: afterburner === 1,
         },
         massKg: MASS.emptyKg + fuelKg,
-        aoaRad: (aoaDeg * Math.PI) / 180,
+        aoaRad: radians(aoaDeg),
         sideslipRad: 0,
         loadFactor,
         mach: velocity.length() / air.speedOfSoundMps,
@@ -203,14 +172,6 @@ function lerp3(a: [number, number, number], b: [number, number, number], t: numb
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
-/**
- * Normalised linear interpolation between quaternions.
- *
- * Frames are close enough together that nlerp and slerp are visually identical,
- * and this avoids the trigonometry on every frame. The sign flip matters: two
- * quaternions can describe the same rotation with opposite signs, and blending
- * across that boundary spins the aircraft the long way round.
- */
 function slerpish(
   a: [number, number, number, number],
   b: [number, number, number, number],

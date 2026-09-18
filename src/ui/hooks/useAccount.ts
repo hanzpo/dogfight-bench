@@ -2,12 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { authConfigured, displayNameOf, signOut, supabase } from "../auth";
 
-/**
- * Who is signed in, if anyone.
- *
- * Subscribes to Supabase's own auth state rather than polling, so returning
- * from an OAuth redirect updates the page without a reload.
- */
 export interface AccountState {
   user: User | undefined;
   displayName: string;

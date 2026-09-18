@@ -1,20 +1,6 @@
 import { MANEUVERS, THROTTLE_DETENTS } from "../src/agents/action";
-import type { AgentObservation } from "../src/sim/telemetry";
-
-/**
- * Turns perfect-information telemetry into a briefing a model can read.
- *
- * Changing anything in here changes the pilot, so the adapters' policy version
- * has to move with it: a rating earned by one prompt does not belong to
- * another. `bfm-briefing-2` balanced the description of load factor, which in
- * `-1` framed every setting above two g purely as a cost.
- *
- * The observation carries roughly sixty numbers per aircraft. Handing all of
- * them to a language model four times a second buries the handful that decide
- * the fight, so this presents the tactical picture the way a pilot would think
- * about it -- energy, angles, and whether anybody has a shot -- and keeps the
- * raw numbers for the fields that matter.
- */
+import type { AgentObservation, GunSolution } from "../src/sim/telemetry";
+import { aspect, either, signed } from "../src/format";
 
 export const MANEUVER_GUIDE: Record<(typeof MANEUVERS)[number], string> = {
   pure_pursuit: "nose straight at the bandit; closes range fastest, overshoots easiest",
@@ -49,15 +35,6 @@ function bar(label: string, value: number, unit = "", digits = 0): string {
   return `${label} ${value.toFixed(digits)}${unit}`;
 }
 
-/**
- * Turns the observation into the tactical picture.
- *
- * `includeActionMenu` is what separates a briefing for a model that writes an
- * answer from one for a model that is handed typed questions. The picture is
- * identical either way, deliberately: two providers answering differently about
- * the same situation is the comparison; two providers reading different
- * situations is not.
- */
 export function buildBriefing(observation: AgentObservation, includeActionMenu = true): string {
   const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
   const bandit = observation.aircraft.find((aircraft) => aircraft.id === observation.relative.opponentId)!;
@@ -72,7 +49,7 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
     "YOU:",
     `  ${bar("speed", own.speedMps, " m/s")} (Mach ${own.mach.toFixed(2)}, corner speed ${own.cornerSpeedMps.toFixed(0)} m/s)`,
     `  ${bar("altitude", own.altitudeM, " m")}, ${bar("height above ground", own.altitudeAglM, " m")}, ${bar("climbing at", own.verticalSpeedMps, " m/s")}`,
-    `  energy ${own.specificEnergyM.toFixed(0)} m, Ps ${own.specificExcessPowerMps >= 0 ? "+" : ""}${own.specificExcessPowerMps.toFixed(0)} m/s (${own.specificExcessPowerMps >= 0 ? "gaining" : "LOSING"} energy)`,
+    `  energy ${own.specificEnergyM.toFixed(0)} m, Ps ${signed(own.specificExcessPowerMps)} m/s (${either(own.specificExcessPowerMps, "gaining", "LOSING")} energy)`,
     `  pulling ${own.loadFactorG.toFixed(1)} g, ${own.availableLoadFactorG.toFixed(1)} g available, ${own.sustainedLoadFactorG.toFixed(1)} g sustainable`,
     `  ${bar("turn rate", own.turnRateDegS, " deg/s")}, ${bar("turn radius", own.turnRadiusM, " m")}, ${bar("alpha", own.angleOfAttackDeg, " deg")}${own.limiterActive ? " (AT THE LIMIT)" : ""}`,
     `  ammo ${own.ammoRemaining}, fuel ${own.fuelKg.toFixed(0)} kg${own.afterburner ? ", afterburner lit" : ""}`,
@@ -90,11 +67,11 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
     "",
     "BANDIT:",
     `  ${bar("range", relative.rangeM, " m")}, ${bar("closure", relative.closureRateMps, " m/s")}${relative.closureRateMps < 0 ? " (opening)" : ""}`,
-    `  ${bar("bearing", relative.bearingDeg, " deg")} (${relative.bearingDeg >= 0 ? "right" : "left"}), ${bar("elevation", relative.elevationDeg, " deg")} (${relative.elevationDeg >= 0 ? "above" : "below"})`,
-    `  angle off their tail ${relative.angleOffTailDeg.toFixed(0)} deg (${relative.angleOffTailDeg < 60 ? "you are BEHIND them" : relative.angleOffTailDeg > 120 ? "you are in front of them" : "abeam"})`,
+    `  ${bar("bearing", relative.bearingDeg, " deg")} (${either(relative.bearingDeg, "right", "left")}), ${bar("elevation", relative.elevationDeg, " deg")} (${either(relative.elevationDeg, "above", "below")})`,
+    `  angle off their tail ${relative.angleOffTailDeg.toFixed(0)} deg (you are ${aspect(relative.angleOffTailDeg)})`,
     `  they are ${relative.antennaTrainAngleDeg.toFixed(0)} deg off your nose; line of sight rate ${relative.lineOfSightRateDegS.toFixed(1)} deg/s`,
     `  ${bar("their speed", bandit.speedMps, " m/s")}, ${bar("their altitude", bandit.altitudeM, " m")}, ammo ${bandit.ammoRemaining}`,
-    `  energy advantage ${relative.energyAdvantageM >= 0 ? "+" : ""}${relative.energyAdvantageM.toFixed(0)} m (${relative.energyAdvantageM >= 0 ? "yours" : "THEIRS"}), altitude advantage ${relative.altitudeAdvantageM.toFixed(0)} m`,
+    `  energy advantage ${signed(relative.energyAdvantageM)} m (${either(relative.energyAdvantageM, "yours", "THEIRS")}), altitude advantage ${relative.altitudeAdvantageM.toFixed(0)} m`,
   );
   if (bandit.hitsTaken > 0) lines.push(`  you have hit them ${bandit.hitsTaken} times; their integrity ${(bandit.health * 100).toFixed(0)}%`);
 
@@ -103,7 +80,7 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
     "GUNS:",
     `  predicted miss distance ${gun.predictedMissM > 2_000 ? "way off" : `${gun.predictedMissM.toFixed(0)} m`} (under 15 m hits)`,
     `  time of flight ${gun.timeOfFlightS.toFixed(2)}s, rounds ${gun.inLethalRange ? "would still be lethal" : "would NOT reach or would be spent"}`,
-    `  ${gun.trackingSolution ? "*** YOU HAVE A GUN SOLUTION - FIRE ***" : `aim is ${gun.aimErrorDeg.toFixed(1)} deg off; lead is ${gun.leadBearingDeg.toFixed(0)} deg ${gun.leadBearingDeg >= 0 ? "right" : "left"}, ${gun.leadElevationDeg.toFixed(0)} deg ${gun.leadElevationDeg >= 0 ? "up" : "down"}`}`,
+    `  ${gunLine(gun)}`,
   );
   if (relative.threatened) lines.push("  *** THREATENED: the bandit has a shot on you. Defend. ***");
 
@@ -153,4 +130,11 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
   }
 
   return lines.join("\n");
+}
+
+function gunLine(gun: GunSolution): string {
+  if (gun.trackingSolution) return "*** YOU HAVE A GUN SOLUTION - FIRE ***";
+  const bearing = `${gun.leadBearingDeg.toFixed(0)} deg ${either(gun.leadBearingDeg, "right", "left")}`;
+  const elevation = `${gun.leadElevationDeg.toFixed(0)} deg ${either(gun.leadElevationDeg, "up", "down")}`;
+  return `aim is ${gun.aimErrorDeg.toFixed(1)} deg off; lead is ${bearing}, ${elevation}`;
 }

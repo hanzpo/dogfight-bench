@@ -1,13 +1,5 @@
 import type { ReplayFile } from "../sim/replay";
 
-/**
- * Client for the benchmark server.
- *
- * Every call goes through the server, which is what keeps provider credentials
- * out of the browser. If the server is not running, the pages say so instead of
- * showing an empty leaderboard as though nobody had ever flown.
- */
-
 export interface LeaderboardEntry {
   competitorId: string;
   kind: "human" | "model" | "scripted";
@@ -16,7 +8,6 @@ export interface LeaderboardEntry {
   provider: string;
   model: string;
   policyVersion: string;
-  /** Which interface it flies through: named manoeuvres, or the stick itself. */
   schema: "raw" | "tactical";
   rating: number;
   matches: number;
@@ -59,11 +50,8 @@ export interface MatchRow {
 
 export interface AgentRow {
   kind: string;
-  /** This deployment holds a credential for it. */
   available: boolean;
-  /** Anyone may fly it without supplying a key, up to the shared daily cap. */
   free: boolean;
-  /** It can be flown by supplying your own key. */
   acceptsCallerKey: boolean;
   name: string;
   provider: string;
@@ -72,7 +60,6 @@ export interface AgentRow {
   pricing: { inputPerMTok: number; outputPerMTok: number } | null;
 }
 
-/** What is left of the shared daily allowance for the free providers. */
 export interface FreeBudget {
   provider: string;
   decisions: number;
@@ -88,12 +75,9 @@ export interface AccountSummary {
   anonymous: boolean;
 }
 
-/** A live match the server has agreed to count, if it is reported back. */
 export interface LiveTicket {
   matchId: string;
-  /** False when nobody is signed in, so the result will not be recorded. */
   ranked: boolean;
-  /** True when results go to a shared leaderboard rather than a local file. */
   shared: boolean;
 }
 

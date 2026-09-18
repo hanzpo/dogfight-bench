@@ -11,47 +11,17 @@ import { runSeries, type SeriesRequest } from "./match-runner";
 import { SCRIPTED_NAMES, providers } from "./providers";
 import { priceOf } from "./pricing";
 
-/**
- * The benchmark API.
- *
- * It owns three things the browser must not: provider credentials, match
- * orchestration, and the results database. The viewer talks to it over HTTP and
- * never sees a key.
- *
- * Only the routes live here. Serving the built viewer, binding a port and
- * printing a banner are things a Node process does and a Cloudflare Worker does
- * not, so they live in the entry points -- `server/node.ts` and `worker/` --
- * which mount this same app.
- */
 const app = new Hono();
 const store = createStore();
 
-/**
- * True when this process is reachable from somewhere other than this machine.
- *
- * A Worker is always exposed; a Node process bound to loopback is not.
- */
 export const exposed =
   (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers") ||
   (env.host !== "127.0.0.1" && env.host !== "localhost");
 
-/**
- * Cross-origin access is off unless origins are named explicitly.
- *
- * In development the viewer reaches the API through Vite's proxy, so it is
- * already same-origin; in production this process serves the viewer itself. A
- * blanket `cors()` only ever helps somebody else's page call this one.
- */
 if (env.allowedOrigins.length) {
   app.use("/api/*", cors({ origin: env.allowedOrigins }));
 }
 
-/**
- * Guards the endpoints that spend money.
- *
- * Everything else -- the leaderboard, match history, replays -- is read-only
- * and public. These two call paid providers on this server's credentials.
- */
 const requireToken = async (
   context: { req: { header: (name: string) => string | undefined } },
   next: () => Promise<void>,
@@ -77,20 +47,11 @@ const requireToken = async (
   return next();
 };
 
-/**
- * Burst limiter, per address.
- *
- * Not a quota -- the quota is the shared daily cap. This only stops one runaway
- * client spending the whole day's budget before anyone else gets a turn. Held
- * in memory on purpose: it protects against a loop, not against an adversary
- * with a botnet, and the daily cap is what protects against that.
- */
 const burst = new Map<string, { count: number; second: number }>();
 function withinBurst(address: string): boolean {
   const second = Math.floor(Date.now() / 1_000);
   const entry = burst.get(address);
   if (!entry || entry.second !== second) {
-    // The map only ever holds addresses seen in the last second or two.
     if (burst.size > 10_000) burst.clear();
     burst.set(address, { count: 1, second });
     return true;
@@ -105,18 +66,14 @@ app.use("/api/matches", async (context, next) =>
 
 app.get("/api/health", (context) => context.json({ ok: true, version: 2 }));
 
-/** Which entrants this deployment can actually field. */
 app.get("/api/agents", async (context) => {
   const available = [...providers()].map(([name, provider]) => {
     const info = provider.describe();
     const free = env.publicProviders.includes(name);
     return {
       kind: name,
-      /** True when this deployment holds a credential for it. */
       available: provider.available(),
-      /** True when anyone may use it without supplying a key. */
       free,
-      /** True when it can be used by supplying your own key. */
       acceptsCallerKey: env.allowCallerKeys && name !== "scripted",
       ...info,
       pricing: priceOf(info.model) ?? null,
@@ -148,19 +105,12 @@ app.get("/api/agents", async (context) => {
   return context.json({ agents: [...scripted, ...available], freeBudget: budget });
 });
 
-/**
- * One decision for one aircraft. This is what `HttpAgent` in the browser calls,
- * so a live match in the viewer can be flown by a real model.
- */
 app.post("/api/decide", async (context) => {
   const body = (await context.req.json()) as {
     agentId?: string;
     kind?: string;
     observation?: AgentObservation;
   };
-  // Validate the shape before handing it to a provider: an adapter reaching
-  // into a malformed observation produces a 502 with an internal message, which
-  // is both confusing and more than a caller should be told.
   const observation = body.observation;
   if (
     !observation ||
@@ -175,14 +125,6 @@ app.post("/api/decide", async (context) => {
   const kind = body.kind ?? env.publicProviders[0] ?? "jev";
   const liveMatchId = context.req.header("x-match-id")?.trim();
 
-  /**
-   * Whose credit is being spent decides who may ask.
-   *
-   * A caller who supplies their own key is paying for the call, so it is
-   * allowed without a token and without touching the shared budget. A caller
-   * who supplies nothing is spending this deployment's money, so the provider
-   * has to be one offered for free and the day's cap has to have room left.
-   */
   const callerKey = env.allowCallerKeys ? context.req.header("x-provider-key")?.trim() : undefined;
   const callerModel = context.req.header("x-provider-model")?.trim();
   const usingOwnKey = Boolean(callerKey);
@@ -229,19 +171,14 @@ app.post("/api/decide", async (context) => {
   try {
     const decision = validateDecision(await provider.decide(observation));
     if (!usingOwnKey) await store.recordPublicUsage(kind, decision.usage?.costUsd ?? 0);
-    // Count it against the match ticket, so a result reported later can be
-    // checked against what the server actually flew.
     if (liveMatchId) await store.noteLiveDecision(liveMatchId, decision.usage?.costUsd ?? 0);
     return context.json(decision);
   } catch (error) {
-    // A provider error must not echo back anything that could contain the
-    // caller's own key.
     const message = error instanceof Error ? error.message : String(error);
     return context.json({ error: callerKey ? message.split(callerKey).join("[key]") : message }, 502);
   }
 });
 
-/** Runs a benchmark series and stores every match. */
 app.post("/api/matches", async (context) => {
   if (!env.allowSeries) {
     return context.json(
@@ -253,7 +190,6 @@ app.post("/api/matches", async (context) => {
   if (!request?.blue?.kind || !request?.red?.kind) {
     return context.json({ error: "blue.kind and red.kind are required" }, 400);
   }
-  // One request must not be able to queue an unbounded amount of paid work.
   if ((request.rounds ?? 3) > env.maxSeriesRounds) {
     return context.json({ error: `rounds may not exceed ${env.maxSeriesRounds}` }, 400);
   }
@@ -279,14 +215,12 @@ app.post("/api/matches", async (context) => {
   }
 });
 
-/** Only one benchmark series at a time; they are long and they cost money. */
 let running = false;
 
 app.get("/api/matches", async (context) =>
   context.json({ matches: await store.listMatches({ limit: boundedLimit(context.req.query("limit")) }) }),
 );
 
-/** The signed-in player's own matches: the replay history browser's source. */
 app.get("/api/me/matches", async (context) => {
   const account = await accountFor(context.req.header("authorization"));
   if (!account) return context.json({ error: "sign in to see your replays" }, 401);
@@ -306,13 +240,6 @@ app.get("/api/matches/:id/replay", async (context) => {
   return new Response(replay, { headers: { "content-type": "application/json" } });
 });
 
-/**
- * The leaderboard, models by default.
- *
- * Humans are ranked on the same Elo scale and against the same models, but
- * they are a different question -- "which model flies best" is what the
- * benchmark is for -- so they are asked for explicitly rather than mixed in.
- */
 app.get("/api/leaderboard", async (context) => {
   const requested = (context.req.query("kinds") ?? "model,scripted")
     .split(",")
@@ -324,7 +251,6 @@ app.get("/api/leaderboard", async (context) => {
   });
 });
 
-/** Who the caller is, if anyone. Lets the page render before it knows. */
 app.get("/api/me", async (context) => {
   const account = await accountFor(context.req.header("authorization"));
   return context.json({ account: account ?? null, sharedLeaderboard: storeIsShared() });
@@ -335,35 +261,15 @@ app.post("/api/signout", (context) => {
   return context.json({ ok: true });
 });
 
-/**
- * Opens a live match and hands back a ticket.
- *
- * The ticket is what makes a browser-reported result worth recording. Every
- * decision for the match is counted against it, so a client cannot claim to
- * have beaten a model it never called. It does not stop somebody flying a real
- * match and lying about who won -- nothing short of a deterministic replay
- * would, and a live match is not deterministic by construction -- which is why
- * the replay is kept and the result is labelled with how far it was checked.
- */
 app.post("/api/live/start", async (context) => {
   const account = await accountFor(context.req.header("authorization"));
   const body = (await context.req.json().catch(() => ({}))) as { opponent?: string };
   const opponent = typeof body.opponent === "string" ? body.opponent.slice(0, 64) : "basic";
   const id = randomUUID();
   await store.openLiveMatch({ id, userId: account?.id, opponentKind: opponent });
-  // Ranked means "this server will record the result", which needs an account
-  // and nothing else. Whether the results are shared with the world or sit in a
-  // local file is a deployment question, reported separately.
   return context.json({ matchId: id, ranked: Boolean(account), shared: storeIsShared() });
 });
 
-/**
- * Reports the result of a live match.
- *
- * Checked against the ticket rather than believed: the match must exist, must
- * not already have been reported, and the server must have served a plausible
- * number of decisions for the opponent that is being claimed.
- */
 app.post("/api/live/:id/result", async (context) => {
   const account = await accountFor(context.req.header("authorization"));
   if (!account) return context.json({ error: "sign in to have a result count" }, 401);
@@ -389,11 +295,6 @@ app.post("/api/live/:id/result", async (context) => {
   const opponentAircraft = summary.aircraft.find((aircraft) => aircraft.id !== humanAircraftId);
   if (!opponentAircraft) return context.json({ error: "the summary names only one aircraft" }, 400);
 
-  /**
-   * The control in the viewer calls the energy fighter "basic", which is a
-   * label, not an identity. Recording it under that name gave the same
-   * opponent two competitors and split its rating between them.
-   */
   const canonicalScripted: Record<string, string> = {
     basic: "energy-fighter",
     "energy-fighter": "energy-fighter",
@@ -411,12 +312,6 @@ app.post("/api/live/:id/result", async (context) => {
     );
   }
 
-  /**
-   * A scripted opponent leaves no trace on the server, so the only thing left
-   * to check is the clock: a match cannot be reported sooner than it could
-   * possibly have been flown, even at the fastest time scale the page offers.
-   * It is a weak check and it is the honest one available.
-   */
   if (scripted) {
     const elapsedS = (Date.now() - Date.parse(ticket.createdAt)) / 1_000;
     const fastestPossibleS = (summary.durationS / MAX_TIME_SCALE) * 0.5;
@@ -443,8 +338,6 @@ app.post("/api/live/:id/result", async (context) => {
         schema: "tactical",
       }
     : competitorFor({
-        // Identity comes from the server's own view of the provider, never from
-        // the client: otherwise anyone could report a win against any name.
         name: opponentInfo?.name ?? ticket.opponentKind,
         provider: ticket.opponentKind,
         model: providers().get(ticket.opponentKind)?.describe().model ?? ticket.opponentKind,
@@ -460,8 +353,6 @@ app.post("/api/live/:id/result", async (context) => {
       summary,
       competitors: { [humanAircraftId]: human, [opponentAircraft.id]: opponent },
       origin: "live",
-      // The server served the decisions, so the match happened; it cannot
-      // confirm the outcome, and does not claim to.
       verified: !scripted && ticket.decisionsServed >= env.liveMatchMinimumDecisions,
       replayJson: typeof body.replay === "string" ? body.replay : undefined,
       submittedBy: account.id,
@@ -473,10 +364,8 @@ app.post("/api/live/:id/result", async (context) => {
   return context.json({ counted: true, matchId: ticket.id, provisional: human.provisional === true });
 });
 
-/** The fastest the live page will run a match, used to sanity-check the clock. */
 const MAX_TIME_SCALE = 16;
 
-/** Caps a caller-supplied page size, so one request cannot ask for everything. */
 function boundedLimit(raw: string | undefined): number {
   const value = Number(raw ?? 50);
   return Number.isFinite(value) ? Math.max(1, Math.min(200, Math.floor(value))) : 50;

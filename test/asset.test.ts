@@ -2,15 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NOZZLE } from "../src/sim/config";
 
-/**
- * The aircraft asset is load-bearing.
- *
- * The entire flight model is written against this model's axes: the nose is
- * +z, the canopy is +y, and therefore +x is the aircraft's left. Re-exporting
- * with a different orientation would not break anything visibly -- the jet
- * would fly beautifully and turn the wrong way, and every hit volume would be
- * in the wrong place. So the asset's geometry is checked, not assumed.
- */
 interface Primitive {
   name: string;
   min: [number, number, number];
@@ -51,7 +42,6 @@ function readGlb(path: string): { primitives: Primitive[]; nodeNames: string[]; 
   return { primitives, nodeNames: gltf.nodes.map((node) => node.name ?? ""), vertices };
 }
 
-/** Widest span across the aircraft within a slice along its long axis. */
 function spanInSlice(vertices: [number, number, number][], fromZ: number, toZ: number): number {
   const slice = vertices.filter((vertex) => vertex[2] >= fromZ && vertex[2] <= toZ);
   if (!slice.length) return 0;
@@ -73,7 +63,6 @@ describe("the F-16 asset", () => {
     const length = bounds.max[2] - bounds.min[2];
     const span = bounds.max[0] - bounds.min[0];
     const height = bounds.max[1] - bounds.min[1];
-    // Real F-16C: 15.0 m long, 9.96 m span, 5.1 m tall.
     expect(length).toBeGreaterThan(13);
     expect(length).toBeLessThan(17);
     expect(span).toBeGreaterThan(8.5);
@@ -83,16 +72,12 @@ describe("the F-16 asset", () => {
   });
 
   it("points its nose along +z and its canopy along +y", () => {
-    // The exhaust is the unambiguous marker for the back of the aircraft.
     const exhaust = primitives.find((primitive) => /exhaust/i.test(primitive.name));
     expect(exhaust, "asset should still contain an exhaust mesh").toBeDefined();
     expect(exhaust!.max[2]).toBeLessThan(0);
 
-    // The tail fin reaches far higher than anything reaches low.
     expect(bounds.max[1]).toBeGreaterThan(Math.abs(bounds.min[1]));
 
-    // The nose tapers to a point while the tail carries the stabilators, so the
-    // +z extremity must be far narrower than the middle of the aircraft.
     const noseSlice = spanInSlice(vertices, bounds.max[2] - 1.2, bounds.max[2]);
     const wingSlice = spanInSlice(vertices, -2, 2);
     expect(noseSlice).toBeLessThan(2);
@@ -100,9 +85,7 @@ describe("the F-16 asset", () => {
   });
 
   it("does not ship the modelling reference blueprints as scene geometry", () => {
-    // These may exist as empty nodes, but nothing named REF may carry a mesh.
     expect(primitives.some((primitive) => /^REF\b/i.test(primitive.name))).toBe(false);
-    // And if they are present as nodes, the viewer is expected to strip them.
     const references = nodeNames.filter((name) => /^REF\b/i.test(name));
     if (references.length) {
       expect(references.every((name) => /^REF\b/i.test(name))).toBe(true);
@@ -110,9 +93,6 @@ describe("the F-16 asset", () => {
   });
 
   it("has its engine nozzle where the afterburner plume is drawn", () => {
-    // The plume is positioned from constants, not from the mesh, because the
-    // renderer must not pay to search the geometry every frame. That makes the
-    // constants a copy of the asset, and a copy can go stale -- so check it.
     const core = vertices.filter((vertex) => Math.hypot(vertex[0], vertex[1] - NOZZLE.centreYM) < 0.9);
     const exitZ = Math.min(...core.map((vertex) => vertex[2]));
     const ring = core.filter((vertex) => vertex[2] < exitZ + 0.05);

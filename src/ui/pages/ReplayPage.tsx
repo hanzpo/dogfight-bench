@@ -10,13 +10,6 @@ import { useReplayPlayback } from "../hooks/useReplayPlayback";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 import { parseReplay, type ReplayFile } from "../../sim/replay";
 
-/**
- * Replay playback.
- *
- * A replay can come from the server by match id, or from a file the viewer
- * drops in, so a result someone published can be checked without running the
- * benchmark server at all.
- */
 export function ReplayPage() {
   const { id } = useParams();
   const location = useLocation();
@@ -34,7 +27,6 @@ export function ReplayPage() {
     viewer.current?.setView(view);
   }, [view]);
 
-  /** A file chosen on the matches page arrives through the router's state. */
   useEffect(() => {
     const handed = (location.state as { file?: File } | null)?.file;
     if (handed instanceof File) void loadFile(handed);
@@ -173,8 +165,6 @@ export function ReplayPage() {
               max={playback.duration}
               step={0.05}
               value={playback.time}
-              /* The filled part of the track is drawn from this, because a
-                 range input gives no way to colour progress on its own. */
               style={{ "--played": `${playback.duration ? (playback.time / playback.duration) * 100 : 0}%` } as React.CSSProperties}
               onChange={(changed) => {
                 playback.setPlaying(false);

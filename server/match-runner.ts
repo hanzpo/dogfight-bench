@@ -8,25 +8,13 @@ import { competitorFor, type ResultsStore } from "./store";
 import { env } from "./env";
 import { providerAgent, providers, scriptedAgent } from "./providers";
 
-/**
- * Runs benchmark matches headlessly and stores the results.
- *
- * Every match runs through `runHeadless`, so neither model gets extra simulated
- * time for being slow and the recorded decision log reproduces the match
- * exactly. A series runs the same seeded scenario ladder for both entrants and
- * swaps sides, because a single symmetric merge mostly measures who happened to
- * win the first pass.
- */
-
 export interface Entrant {
-  /** A provider name ("anthropic", "openai", "jev") or a scripted agent name. */
   kind: string;
 }
 
 export interface SeriesRequest {
   blue: Entrant;
   red: Entrant;
-  /** Number of scenario variants; each is flown twice with sides swapped. */
   rounds?: number;
   maxTimeS?: number;
   decisionIntervalS?: number;
@@ -82,7 +70,6 @@ export async function runMatch(
       "blue-1": competitorFor(blueAgent.info),
       "red-1": competitorFor(redAgent.info),
     },
-    // Run here, from the decision log, so it reproduces exactly.
     origin: "headless",
     verified: true,
     replayJson: options.storeReplay === false ? undefined : recorder.toJSON(),
@@ -100,7 +87,6 @@ export async function runSeries(store: ResultsStore, request: SeriesRequest): Pr
   const errors: string[] = [];
 
   for (const scenario of scenarios) {
-    // Fly each scenario both ways round so a side advantage cannot decide it.
     for (const [blue, red] of [
       [request.blue, request.red],
       [request.red, request.blue],

@@ -18,45 +18,29 @@ import { loadKey } from "../keys";
 import { CONTROL_SCHEMES, type ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 
-/** What to tell the pilot, for whatever they are holding. */
+function pilotNote(hasKey: boolean, free: boolean, exhausted: boolean): string {
+  if (hasKey) return "your key";
+  if (free) return "free";
+  if (exhausted) return "allowance spent";
+  return "needs a key";
+}
+
 const KEYMAP: Record<ControlScheme, string> = {
   keyboard: "W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE",
   mouse: "MOUSE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM · Q/E RUDDER · R/F THROTTLE",
   gamepad: "RIGHT STICK · LEFT STICK RUDDER · TRIGGERS THROTTLE · RB FIRE",
 };
 
-/**
- * The live match page.
- *
- * The control ids, their visible labels and the `#app` dataset below are part
- * of the contract with the Jev browser-feedback harness in `tools/` and the
- * Playwright check in `tools/ui-check`, both of which drive these controls and
- * then verify the resulting state independently. Renaming them silently breaks
- * those tests, so they are deliberate.
- */
 export function LivePage() {
   const match = useLiveMatch();
   const roster = useRoster();
   const viewer = useRef<DogfightViewer>(undefined);
   const [view, setView] = useState<ViewMode>("chase");
-  /**
-   * The details panel is 286 wide and would cover most of a phone, so it
-   * starts as a tab there. Measured once, not tracked: somebody who opens it
-   * deliberately should not have it shut again by a rotation.
-   */
   const [detailsOpen, setDetailsOpen] = useState(() => globalThis.innerWidth > 900);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";
 
-  /**
-   * Which opponents can actually be flown right now.
-   *
-   * A model is flyable if this deployment offers it free and the day's
-   * allowance is not spent, or if a key for it has been entered here. Anything
-   * else is offered but labelled, so the reason it will not fly is on the
-   * control rather than in a failed request thirty seconds into a match.
-   */
   const pilotOptions = useMemo(() => {
     void keyNonce;
     const scripted = [
@@ -69,15 +53,7 @@ export function LivePage() {
         const budget = roster.freeBudget.find((entry) => entry.provider === agent.kind);
         const hasKey = Boolean(loadKey(agent.kind));
         const free = agent.free && agent.available && !budget?.exhausted;
-        const note = hasKey ? "your key" : free ? "free" : budget?.exhausted ? "allowance spent" : "needs a key";
-        /**
-         * Which interface the model is flying through, named in the picker.
-         *
-         * The two are separate entrants with separate ratings, so this is not a
-         * setting hidden behind a gear icon -- it is the choice between two
-         * pilots, and naming it here is how anybody finds out the comparison
-         * exists at all.
-         */
+        const note = pilotNote(hasKey, free, Boolean(budget?.exhausted));
         const interfaceName = agent.schema === "raw" ? "stick" : "manoeuvres";
         return { value: agent.kind, label: agent.name, interfaceName, note, usable: free || hasKey };
       });
@@ -91,15 +67,11 @@ export function LivePage() {
     viewer.current?.setView(view);
   }, [view]);
 
-  // While the pointer belongs to the aircraft, it must not also orbit the
-  // camera.
   const pointerFlying = match.scheme === "mouse";
   useEffect(() => {
     viewer.current?.setPointerCaptured(pointerFlying);
   }, [pointerFlying]);
 
-  // Derived during render. Setting this from an effect keyed on an object that
-  // is rebuilt every frame is what drove React past its update depth.
   const event = useMemo(() => {
     if (!match.state) return "MERGE INITIALIZED";
     if (match.state.finished) {
@@ -109,7 +81,6 @@ export function LivePage() {
     return latest ? `${latest.type.toUpperCase()} ${latest.actorId ?? ""}` : "MERGE INITIALIZED";
   }, [match.state]);
 
-  // UI state the harness reads, published whenever it changes.
   useEffect(() => {
     const app = document.querySelector<HTMLElement>("#app");
     if (!app) return;
@@ -120,19 +91,12 @@ export function LivePage() {
     app.dataset["view"] = view;
   }, [match.state?.finished, match.paused, match.timeScale, match.bluePilot, followId, view]);
 
-  /**
-   * Camera and framing are published from their own frame loop rather than from
-   * React state. They change every frame, and the whole point of measuring them
-   * is to catch drift that only shows up between frames.
-   */
   useEffect(() => {
     let frame = 0;
     const publish = () => {
       const app = document.querySelector<HTMLElement>("#app");
       const instance = viewer.current;
       if (instance) {
-        // Camera movement the pilot asked for with the right button and wheel,
-        // applied once per frame rather than once per mouse event.
         const view = match.inputRef.current.consumeViewDelta();
         if (view.orbitX || view.orbitY) instance.orbitBy(view.orbitX, view.orbitY);
         if (view.zoom) instance.zoomBy(Math.exp(view.zoom * 0.0012));
@@ -365,7 +329,6 @@ export function LivePage() {
               : match.recording.status === "saving"
                 ? "Saving…"
                 : (match.recording.message ?? "Not recorded");
-          // When it is telling you to sign in, it is also the way to.
           const opensSignIn = label.includes("sign in");
           const body = (
             <>

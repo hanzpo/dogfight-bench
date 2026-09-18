@@ -14,13 +14,6 @@ function awareness(
   return terrainAwareness({ positionM: position, velocityMps: velocity, availableLoadFactorG, hardDeckAglM: HARD_DECK_M });
 }
 
-/**
- * Finds a place where flying due north runs into rising ground.
- *
- * Searched rather than hard-coded: the terrain function is deterministic, so
- * this is reproducible, but pinning coordinates would turn any future change to
- * the landscape into a mysterious test failure about a hill that moved.
- */
 function steepestClimbingApproach(): { x: number; z: number; riseM: number } {
   let best = { x: 0, z: 0, riseM: -Infinity };
   for (let x = -25_000; x <= 25_000; x += 1_000) {
@@ -36,7 +29,6 @@ function flatWaterPoint(): { x: number; z: number } | undefined {
   for (let x = -28_000; x <= 28_000; x += 1_000) {
     for (let z = -28_000; z <= 28_000; z += 1_000) {
       if (!isWater(x, z)) continue;
-      // Water for the whole twelve kilometres ahead, so nothing rises into it.
       let clear = true;
       for (let ahead = 1_000; ahead <= 13_000; ahead += 1_000) {
         if (!isWater(x, z - ahead)) clear = false;
@@ -61,9 +53,7 @@ describe("terrain awareness", () => {
     const altitude = terrainHeight(ridge.x, ridge.z) + 800;
     const level = awareness([ridge.x, altitude, ridge.z], [0, 0, -250]);
 
-    // Straight and level, so the aircraft is not descending at all...
     expect(level.clearanceM).toBeCloseTo(800, 6);
-    // ...and yet the ground comes up to meet it.
     expect(level.minimumClearanceAheadM).toBeLessThan(level.clearanceM);
     expect(level.timeToMinimumClearanceS).toBeGreaterThan(0);
     expect(level.warning).not.toBe("clear");
@@ -83,7 +73,6 @@ describe("terrain awareness", () => {
     expect(diving.warning).toBe("pull-up");
     expect(diving.timeToImpactS).not.toBeNull();
     expect(diving.timeToImpactS!).toBeLessThan(6);
-    // The pull costs more height than there is, which is the whole point.
     expect(diving.recoveryHeightLossM).toBeGreaterThan(900);
     expect(diving.recoveryMarginM).toBeLessThan(0);
   });
@@ -91,8 +80,6 @@ describe("terrain awareness", () => {
   it("stops projecting at the ground rather than reporting depth underneath it", () => {
     const ground = terrainHeight(0, 0);
     const diving = awareness([0, ground + 900, 0], [0, -250, 0]);
-    // A twenty-second projection through the surface would report kilometres of
-    // negative clearance; the first breach is the only meaningful answer.
     expect(diving.minimumClearanceAheadM).toBeGreaterThan(-400);
     expect(diving.timeToMinimumClearanceS).toBe(diving.timeToImpactS);
   });
@@ -111,7 +98,6 @@ describe("terrain awareness", () => {
     const here = awareness([ridge.x, terrainHeight(ridge.x, ridge.z) + 800, ridge.z], [0, 0, -250]);
     expect(here.safestHeadingDeg).toBeGreaterThanOrEqual(0);
     expect(here.safestHeadingDeg).toBeLessThan(360);
-    // The way out is not the way into the hill.
     expect(Math.abs(here.safestHeadingDeg - 0)).toBeGreaterThan(30);
   });
 });

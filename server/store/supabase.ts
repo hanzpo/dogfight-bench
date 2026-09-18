@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { gzipSync } from "node:zlib";
+import { leaderboardRow, matchResult } from "./types";
 import type {
   CompetitorKind,
   LeaderboardRow,
@@ -9,25 +10,6 @@ import type {
   ResultsStore,
 } from "./types";
 
-/**
- * Results in Postgres, replays in object storage.
- *
- * This is the deployed configuration. It exists for three things SQLite cannot
- * do: accounts, somewhere to put replays that is not a text column, and a
- * rating that several processes can update without racing each other.
- *
- * Every write goes through a database function rather than a sequence of
- * statements. Elo is a read-modify-write on two rows, so doing it from here
- * would let two matches finishing at the same moment read the same rating and
- * write back contradictory answers -- on a leaderboard many people contribute
- * to, that is not a rare case.
- *
- * The client holds the service role key, which bypasses row level security. It
- * must therefore never be constructed anywhere the browser can reach, which is
- * why this file lives under `server/` alongside the provider credentials.
- */
-
-/** Replays compress by roughly ten to one: they are mostly slowly-varying floats. */
 const REPLAY_BUCKET = "replays";
 
 interface CompetitorRow {
@@ -87,7 +69,7 @@ export class SupabaseStore implements ResultsStore {
           aircraftId: aircraft.id,
           competitorId: competitor.id,
           team: aircraft.team,
-          result: summary.winnerId ? (summary.winnerId === aircraft.id ? "win" : "loss") : "draw",
+          result: matchResult(summary.winnerId, aircraft.id),
           survived: aircraft.alive,
           health: aircraft.health,
           hitsScored: aircraft.hitsScored,
@@ -124,14 +106,6 @@ export class SupabaseStore implements ResultsStore {
     if (error) throw new Error(`Could not record match: ${error.message}`);
   }
 
-  /**
-   * Puts a replay in object storage and returns its path.
-   *
-   * Compressed, because a replay is a few megabytes of trajectory that
-   * compresses about ten to one, and because most of them will never be
-   * watched. Failing to store one must not lose the match result, so a storage
-   * error is reported and swallowed rather than thrown.
-   */
   private async storeReplay(
     matchId: string,
     replayJson: string,
@@ -175,9 +149,6 @@ export class SupabaseStore implements ResultsStore {
       .in("competitor_id", ids);
     if (participantError) throw new Error(`Could not read results: ${participantError.message}`);
 
-    // Aggregated here rather than in SQL because PostgREST cannot express a
-    // grouped aggregate without another database function, and the row count is
-    // small enough that the round trip saved is not worth another migration.
     const byCompetitor = new Map<string, ParticipantRow[]>();
     for (const row of (participants ?? []) as ParticipantRow[]) {
       const bucket = byCompetitor.get(row.competitor_id);
@@ -190,40 +161,36 @@ export class SupabaseStore implements ResultsStore {
         const competitor = entry as CompetitorRow;
         const rows = byCompetitor.get(competitor.id) ?? [];
         const sum = (pick: (row: ParticipantRow) => number) => rows.reduce((total, row) => total + pick(row), 0);
+        const count = (matching: (row: ParticipantRow) => boolean) => rows.filter(matching).length;
         const matches = rows.length;
-        const wins = rows.filter((row) => row.result === "win").length;
-        const rounds = sum((row) => row.rounds_fired);
-        const decisions = sum((row) => row.decisions);
-        const failures = sum((row) => row.failures);
-        const hitsScored = sum((row) => row.hits_scored);
-        const costUsd = sum((row) => row.cost_usd);
-        return {
-          competitorId: competitor.id,
-          kind: competitor.kind,
-          name: competitor.display_name,
-          provider: competitor.provider,
-          model: competitor.model,
-          policyVersion: competitor.policy_version,
-          schema: (competitor.schema === "raw" ? "raw" : "tactical") as "raw" | "tactical",
-          provisional: competitor.provisional,
-          rating: competitor.rating,
-          matches,
-          wins,
-          losses: rows.filter((row) => row.result === "loss").length,
-          draws: rows.filter((row) => row.result === "draw").length,
-          winRate: matches ? wins / matches : 0,
-          hitsScored,
-          hitsTaken: sum((row) => row.hits_taken),
-          roundsFired: rounds,
-          accuracy: rounds ? hitsScored / rounds : 0,
-          timeOnTargetS: sum((row) => row.time_on_target_s),
-          survivalRate: matches ? rows.filter((row) => row.survived).length / matches : 0,
-          decisions,
-          failureRate: decisions + failures > 0 ? failures / (decisions + failures) : 0,
-          avgLatencyMs: matches ? sum((row) => row.avg_latency_ms) / matches : 0,
-          costUsd,
-          costPerMatchUsd: matches ? costUsd / matches : 0,
-        };
+        return leaderboardRow(
+          {
+            competitorId: competitor.id,
+            kind: competitor.kind,
+            name: competitor.display_name,
+            provider: competitor.provider,
+            model: competitor.model,
+            policyVersion: competitor.policy_version,
+            schema: competitor.schema === "raw" ? "raw" : "tactical",
+            provisional: competitor.provisional,
+            rating: competitor.rating,
+          },
+          {
+            matches,
+            wins: count((row) => row.result === "win"),
+            losses: count((row) => row.result === "loss"),
+            draws: count((row) => row.result === "draw"),
+            survivals: count((row) => row.survived),
+            hitsScored: sum((row) => row.hits_scored),
+            hitsTaken: sum((row) => row.hits_taken),
+            roundsFired: sum((row) => row.rounds_fired),
+            timeOnTargetS: sum((row) => row.time_on_target_s),
+            decisions: sum((row) => row.decisions),
+            failures: sum((row) => row.failures),
+            avgLatencyMs: matches ? sum((row) => row.avg_latency_ms) / matches : 0,
+            costUsd: sum((row) => row.cost_usd),
+          },
+        );
       })
       .filter((row) => row.matches > 0);
   }
@@ -281,7 +248,6 @@ export class SupabaseStore implements ResultsStore {
     const { data, error } = await this.client.storage.from(REPLAY_BUCKET).download(path);
     if (error || !data) return undefined;
     const buffer = Buffer.from(await data.arrayBuffer());
-    // Stored gzipped; older objects may not be.
     const { gunzipSync } = await import("node:zlib");
     try {
       return gunzipSync(buffer).toString("utf8");
@@ -321,8 +287,6 @@ export class SupabaseStore implements ResultsStore {
   }
 
   async noteLiveDecision(id: string, costUsd: number): Promise<void> {
-    // Best effort: losing a tick of the served count must not fail a decision
-    // the caller is waiting on.
     const { error } = await this.client.rpc("note_live_decision", {
       p_id: id,
       p_cost: Number.isFinite(costUsd) ? costUsd : 0,

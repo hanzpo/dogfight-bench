@@ -3,12 +3,6 @@ import { Quaternion, Vector3 } from "three";
 import { aeroRatesToRotationVector, bodyAxes } from "../src/sim/flight-model";
 import { createNeutralMerge, neutralMerge } from "../src/sim/scenario";
 
-/**
- * Frame conventions are the highest-risk thing in this codebase: a flipped sign
- * produces an aircraft that flies perfectly and turns the wrong way. These
- * tests pin every axis down explicitly.
- */
-
 function rotate(p: number, q: number, r: number, seconds: number): Quaternion {
   const omega = aeroRatesToRotationVector(p, q, r);
   const angle = omega.length() * seconds;
@@ -20,14 +14,11 @@ describe("frame conventions", () => {
     const axes = bodyAxes(new Quaternion());
     expect(axes.nose.toArray()).toEqual([0, 0, 1]);
     expect(axes.up.toArray()).toEqual([0, 1, 0]);
-    // A right-handed y-up basis with the nose at +z puts +x on the aircraft's
-    // left, so its right wing points along -x.
     expect(axes.right.x).toBeCloseTo(-1, 9);
   });
 
   it("rolls right for positive p", () => {
     const axes = bodyAxes(rotate(1, 0, 0, 0.5));
-    // Right wing drops, and the canopy tilts toward where the right wing was.
     expect(axes.right.y).toBeLessThan(0);
     expect(axes.up.x).toBeLessThan(0);
   });
@@ -38,8 +29,6 @@ describe("frame conventions", () => {
 
   it("yaws nose right for positive r", () => {
     const axes = bodyAxes(rotate(0, 0, 1, 0.5));
-    // From the identity attitude the nose is along +z; yawing right must swing
-    // it toward the right wing, which is -x.
     expect(axes.nose.x).toBeLessThan(0);
   });
 

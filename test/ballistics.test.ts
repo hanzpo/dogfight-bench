@@ -12,10 +12,6 @@ import type { MatchState } from "../src/sim/types";
 
 const DT = 1 / 120;
 
-/**
- * Flies a single round on a flat trajectory and records where it is over time.
- * This is the same integrator the simulation uses.
- */
 function flyRound(altitudeM: number, elevationRad = 0) {
   const air = atmosphere(altitudeM);
   const velocity = new Vector3(0, Math.sin(elevationRad), Math.cos(elevationRad)).multiplyScalar(
@@ -44,10 +40,8 @@ describe("20 mm ballistics", () => {
   it("follows the G1 drag curve through the transonic rise", () => {
     expect(g1DragCoefficient(0.5)).toBeCloseTo(0.2217, 3);
     expect(g1DragCoefficient(1.2)).toBeCloseTo(0.5386, 3);
-    // Drag peaks just above Mach 1 and falls again at high supersonic speed.
     expect(g1DragCoefficient(1.2)).toBeGreaterThan(g1DragCoefficient(0.8));
     expect(g1DragCoefficient(3.0)).toBeLessThan(g1DragCoefficient(1.2));
-    // The round is a bit slipperier than the G1 standard projectile.
     expect(FORM_FACTOR).toBeGreaterThan(0.6);
     expect(FORM_FACTOR).toBeLessThan(1.0);
   });
@@ -55,10 +49,8 @@ describe("20 mm ballistics", () => {
   it("reaches 1000 m in roughly the published time of flight", () => {
     const shot = flyRound(4_500);
     const thousand = shot.at(1_000);
-    // Gun-camera and tabular data put a 20 mm round at 1 km in about 1.1-1.4 s.
     expect(thousand.t).toBeGreaterThan(1.0);
     expect(thousand.t).toBeLessThan(1.45);
-    // It should still be supersonic and carrying most of its energy.
     expect(thousand.speed).toBeGreaterThan(550);
     expect(thousand.speed).toBeLessThan(800);
   });
@@ -69,8 +61,6 @@ describe("20 mm ballistics", () => {
     const far = shot.at(1_500);
     expect(near.speed).toBeGreaterThan(far.speed);
     expect(far.drop).toBeGreaterThan(near.drop);
-    // Drop is a bit less than the drag-free 0.5 g t^2, because drag acts on the
-    // vertical component of velocity too.
     const dragFree = 0.5 * 9.80665 * far.t * far.t;
     expect(far.drop).toBeGreaterThan(dragFree * 0.7);
     expect(far.drop).toBeLessThan(dragFree);
@@ -147,7 +137,6 @@ describe("the gun", () => {
     });
     expect(runs[0]).toEqual(runs[1]);
     const mean = runs[0]!.reduce((sum, angle) => sum + angle, 0) / runs[0]!.length;
-    // Mean of a Rayleigh-distributed miss angle is about 1.25 sigma.
     expect(mean).toBeGreaterThan(GUN.dispersionRad1Sigma * 0.6);
     expect(mean).toBeLessThan(GUN.dispersionRad1Sigma * 2.5);
   });
@@ -156,11 +145,9 @@ describe("the gun", () => {
 describe("damage", () => {
   it("covers the airframe with sensible hit volumes", () => {
     expect(HIT_VOLUMES).toHaveLength(6);
-    // The hull sphere has to enclose everything for broad-phase culling to be safe.
     for (const volume of HIT_VOLUMES) {
       expect(Math.hypot(...volume.offset) + volume.radiusM).toBeLessThanOrEqual(HULL_RADIUS_M + 1e-9);
     }
-    // And it should be about the size of an F-16, not a hangar.
     expect(HULL_RADIUS_M).toBeGreaterThan(4);
     expect(HULL_RADIUS_M).toBeLessThan(8);
   });
@@ -219,14 +206,6 @@ describe("damage", () => {
   });
 });
 
-/**
- * Where a round actually ends up after `seconds`.
- *
- * Rounds leave along the gun line but inherit the aircraft's velocity, which is
- * a degree or so below the nose at trim, and then drop. Placing a target by eye
- * on the boresight therefore tests the author's trigonometry rather than the
- * collision code, so the tests below put the target on the real trajectory.
- */
 function roundPositionAfter(state: MatchState, shooter: MatchState["aircraft"][number], seconds: number): Vector3 {
   const probe = { ...state, projectiles: [], events: [] } as MatchState;
   const scratch = {
@@ -248,7 +227,6 @@ describe("hit resolution", () => {
   it("registers a hit on a jet parked in front of the gun and not on the shooter", () => {
     const state = createNeutralMerge(neutralMerge);
     const [shooter, target] = state.aircraft;
-    // Park the target where the rounds will actually be half a second out.
     target!.position.copy(roundPositionAfter(state, shooter!, 0.5));
     target!.velocity.set(0, 0, 0);
     target!.orientation.copy(shooter!.orientation);
@@ -276,8 +254,6 @@ describe("hit resolution", () => {
     target!.orientation
       .copy(shooter!.orientation)
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI));
-    // Fly it straight back down the gun line at 250 m/s, so closure is 500 m/s
-    // and a round crosses the jet in far less than one tick.
     target!.velocity.copy(gunLine).multiplyScalar(-250);
     shooter!.controls.fire = true;
     shooter!.gunSpin = 1;
@@ -301,7 +277,6 @@ describe("the closed-form time of flight", () => {
     for (const range of [500, 1_000, 1_500, 2_000]) {
       const marched = shot.at(range);
       const closed = timeOfFlight(range, GUN.muzzleVelocityMps, air.densityKgM3, air.speedOfSoundMps);
-      // Within a few percent is plenty for a gun solution.
       expect(Math.abs(closed.seconds - marched.t) / marched.t).toBeLessThan(0.08);
       expect(Math.abs(closed.impactSpeedMps - marched.speed) / marched.speed).toBeLessThan(0.1);
     }
@@ -335,7 +310,6 @@ describe("the gunsight", () => {
   it("aims above the target to compensate for the drop", () => {
     const state = createNeutralMerge(neutralMerge);
     const [shooter, target] = state.aircraft;
-    // A stationary target one kilometre straight ahead.
     const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
     target!.position.copy(shooter!.position).addScaledVector(nose, 1_000);
     target!.velocity.set(0, 0, 0);
@@ -346,7 +320,6 @@ describe("the gunsight", () => {
       targetPosition: target!.position,
       targetVelocity: target!.velocity,
     });
-    // Rounds fall a few metres over a kilometre, so the sight must aim high.
     const straightAt = target!.position.clone().sub(shooter!.position).normalize();
     expect(solution.direction.y).toBeGreaterThan(straightAt.y);
     const dropCompensation = Math.tan(Math.acos(solution.direction.dot(straightAt))) * 1_000;
