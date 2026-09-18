@@ -14,7 +14,6 @@ export class DogfightViewer {
   private readonly modelCenter = new THREE.Vector3();
   private followId = "blue-1";
   private cameraInitialized = false;
-  private readonly framingOffset = new THREE.Vector3();
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -56,7 +55,6 @@ export class DogfightViewer {
   setFollow(id: string): void {
     this.followId = id;
     this.cameraInitialized = false;
-    this.framingOffset.set(0, 0, 0);
   }
 
   private createTerrain(): void {
@@ -130,9 +128,10 @@ export class DogfightViewer {
 
     const follow = state.aircraft.find((a) => a.id === this.followId) ?? state.aircraft[0];
     if (follow) {
-      // The mesh origin sits forward of its visual center. Orbit around the
-      // rendered model's center so the aircraft—not its origin—stays framed.
-      const target = this.modelCenter.clone().applyQuaternion(follow.orientation).add(follow.position).add(this.framingOffset);
+      const followMesh = this.aircraftMeshes.get(follow.id);
+      const target = followMesh
+        ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
+        : this.modelCenter.clone().applyQuaternion(follow.orientation).add(follow.position);
       if (!this.cameraInitialized) {
         const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(follow.orientation);
         this.camera.position.copy(target).add(initialOffset);
@@ -147,29 +146,10 @@ export class DogfightViewer {
       }
     }
     this.controls.update();
-    this.centerProjectedAircraft();
     this.renderer.render(this.scene, this.camera);
   }
 
-  private centerProjectedAircraft(): void {
-    const framing = this.getFollowFraming();
-    if (!framing) return;
-    const ndcX = framing.x * 2 - 1;
-    const ndcY = 1 - framing.y * 2;
-    if (Math.abs(ndcX) < 0.001 && Math.abs(ndcY) < 0.001) return;
-    const distance = this.camera.position.distanceTo(this.controls.target);
-    const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * distance;
-    const visibleWidth = visibleHeight * this.camera.aspect;
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
-    const correction = right.multiplyScalar(ndcX * visibleWidth / 2).add(up.multiplyScalar(ndcY * visibleHeight / 2));
-    this.camera.position.add(correction);
-    this.controls.target.add(correction);
-    this.framingOffset.add(correction);
-    this.camera.updateMatrixWorld(true);
-  }
-
-  getFollowFraming(): { x: number; y: number } | undefined {
+  getFollowFraming(): { x: number; y: number; minX: number; maxX: number; minY: number; maxY: number } | undefined {
     const mesh = this.aircraftMeshes.get(this.followId);
     if (!mesh) return undefined;
     mesh.updateMatrixWorld(true);
@@ -194,7 +174,14 @@ export class DogfightViewer {
     if (!Number.isFinite(minX)) return undefined;
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    return { x: (centerX + 1) / 2, y: (1 - centerY) / 2 };
+    return {
+      x: (centerX + 1) / 2,
+      y: (1 - centerY) / 2,
+      minX: (minX + 1) / 2,
+      maxX: (maxX + 1) / 2,
+      minY: (1 - maxY) / 2,
+      maxY: (1 - minY) / 2,
+    };
   }
 
   private resize(): void {

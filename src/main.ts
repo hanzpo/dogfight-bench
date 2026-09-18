@@ -108,6 +108,10 @@ function updateHud(): void {
   if (framing) {
     app.dataset.subjectScreenX = framing.x.toFixed(4);
     app.dataset.subjectScreenY = framing.y.toFixed(4);
+    app.dataset.subjectMinX = framing.minX.toFixed(4);
+    app.dataset.subjectMaxX = framing.maxX.toFixed(4);
+    app.dataset.subjectMinY = framing.minY.toFixed(4);
+    app.dataset.subjectMaxY = framing.maxY.toFixed(4);
   }
   const latest = simulation.state.events.at(-1);
   text("event", simulation.state.finished

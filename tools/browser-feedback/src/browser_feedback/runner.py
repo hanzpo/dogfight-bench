@@ -40,7 +40,10 @@ class FeedbackResult:
     actual_state: dict[str, str]
     expected_state: dict[str, str]
     orbit_changed: bool | None
-    framing_centered: bool
+    initial_framing_safe: bool
+    orbit_framing_safe: bool
+    initial_state: dict[str, str]
+    post_orbit_state: dict[str, str]
     actions: list[dict[str, object | None]]
     trace_path: str
     screenshot_path: str
@@ -63,7 +66,8 @@ def _read_simulator_state(browser: BrowserProtocol) -> dict[str, str]:
         "(() => { const d=document.querySelector('#app')?.dataset; return d ? "
         "{bluePilot:d.bluePilot||'',follow:d.follow||'',timeScale:d.timeScale||'',"
         "simStatus:d.simStatus||'',camera:d.camera||'',subjectScreenX:d.subjectScreenX||'',"
-        "subjectScreenY:d.subjectScreenY||''} : {}; })()"
+        "subjectScreenY:d.subjectScreenY||'',subjectMinX:d.subjectMinX||'',subjectMaxX:d.subjectMaxX||'',"
+        "subjectMinY:d.subjectMinY||'',subjectMaxY:d.subjectMaxY||''} : {}; })()"
     )
     if not isinstance(value, dict):
         return {}
@@ -71,14 +75,14 @@ def _read_simulator_state(browser: BrowserProtocol) -> dict[str, str]:
     return {str(key): str(item) for key, item in items.items()}
 
 
-def _exercise_orbit(browser: BrowserProtocol) -> bool:
+def _exercise_orbit(browser: BrowserProtocol) -> tuple[bool, dict[str, str]]:
     before = _read_simulator_state(browser).get("camera", "")
     rect = browser.evaluate(
         "(() => { const r=document.querySelector('canvas')?.getBoundingClientRect(); "
         "return r ? {x:r.x,y:r.y,width:r.width,height:r.height} : null; })()"
     )
     if not isinstance(rect, dict):
-        return False
+        return False, _read_simulator_state(browser)
     geometry = cast(dict[str, float | int], rect)
     x = float(geometry["x"]) + float(geometry["width"]) * 0.56
     y = float(geometry["y"]) + float(geometry["height"]) * 0.46
@@ -95,21 +99,28 @@ def _exercise_orbit(browser: BrowserProtocol) -> bool:
     browser.call("Input.dispatchMouseEvent", type="mouseReleased", x=x + 100, y=y - 35, button="left", clickCount=1)
     browser.call("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=0, deltaY=-180)
     time.sleep(0.15)
-    after = _read_simulator_state(browser).get("camera", "")
-    return bool(before and after and before != after)
+    after_state = _read_simulator_state(browser)
+    after = after_state.get("camera", "")
+    return bool(before and after and before != after), after_state
 
 
 def matches_expected(actual: dict[str, str], expected: dict[str, str]) -> bool:
     return all(actual.get(key) == value for key, value in expected.items())
 
 
-def framing_is_centered(actual: dict[str, str], tolerance: float = 0.05) -> bool:
+def framing_is_safe(actual: dict[str, str], center_tolerance: float = 0.08, margin: float = 0.02) -> bool:
     try:
         x = float(actual["subjectScreenX"])
         y = float(actual["subjectScreenY"])
+        min_x = float(actual["subjectMinX"])
+        max_x = float(actual["subjectMaxX"])
+        min_y = float(actual["subjectMinY"])
+        max_y = float(actual["subjectMaxY"])
     except (KeyError, ValueError):
         return False
-    return abs(x - 0.5) <= tolerance and abs(y - 0.5) <= tolerance
+    centered = abs(x - 0.5) <= center_tolerance and abs(y - 0.5) <= center_tolerance
+    contained = min_x >= margin and max_x <= 1 - margin and min_y >= margin and max_y <= 1 - margin
+    return centered and contained
 
 
 def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackResult:
@@ -118,16 +129,35 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
     artifact_dir.mkdir(parents=True, exist_ok=True)
     with Agent(url, case.goal, record_dir=artifact_dir, screenshots=True) as raw_agent:
         agent = cast(Any, raw_agent)
+        browser = cast(BrowserProtocol, agent.browser)
+        # Catch camera drift in the untouched, live default state before Jev
+        # changes any controls.
+        browser.call(
+            "Emulation.setDeviceMetricsOverride",
+            width=1600,
+            height=900,
+            deviceScaleFactor=1,
+            mobile=False,
+        )
+        time.sleep(6.2)
+        initial_page = browser.observe(screenshot=True)
+        initial_screenshot_path = artifact_dir / "initial-live.jpg"
+        initial_screenshot_path.write_bytes(base64.b64decode(str(initial_page["screenshot"])))
+        initial_state = _read_simulator_state(browser)
+        initial_framing_safe = framing_is_safe(initial_state)
+
         state: dict[str, Any] = agent.snapshot()
         for state in agent.run():
             history = cast(list[dict[str, Any]], state["history"])
             operation = history[-1]["kind"] if history else "observe"
             print(f"{state['elapsed_ms']:>5} ms  {len(history):>2} actions  {operation}  {state['status']}")
 
-        browser = cast(BrowserProtocol, agent.browser)
         actual = _read_simulator_state(browser)
-        framing_centered = framing_is_centered(actual)
-        orbit_changed = _exercise_orbit(browser) if case.exercise_orbit else None
+        if case.exercise_orbit:
+            orbit_changed, post_orbit_state = _exercise_orbit(browser)
+        else:
+            orbit_changed, post_orbit_state = None, actual
+        orbit_framing_safe = framing_is_safe(post_orbit_state)
         final_page = browser.observe(screenshot=True)
         screenshot_path = artifact_dir / "final.jpg"
         screenshot_path.write_bytes(base64.b64decode(str(final_page["screenshot"])))
@@ -135,7 +165,8 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
         passed = (
             state["status"] == "done"
             and matches_expected(actual, case.expected_state)
-            and framing_centered
+            and initial_framing_safe
+            and orbit_framing_safe
             and orbit_changed is not False
         )
         trace_path = artifact_dir / "summary.json"
@@ -165,7 +196,10 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
             actual_state=actual,
             expected_state=case.expected_state,
             orbit_changed=orbit_changed,
-            framing_centered=framing_centered,
+            initial_framing_safe=initial_framing_safe,
+            orbit_framing_safe=orbit_framing_safe,
+            initial_state=initial_state,
+            post_orbit_state=post_orbit_state,
             actions=actions,
             trace_path=str(trace_path),
             screenshot_path=str(screenshot_path),
