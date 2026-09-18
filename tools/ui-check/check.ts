@@ -590,7 +590,7 @@ check(
 const ladderRungs = await page.locator(".conformal line").count();
 check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
-await page.selectOption("#view", "orbit");
+await page.selectOption("#view", "chase");
 await page.waitForTimeout(1_500);
 
 /**

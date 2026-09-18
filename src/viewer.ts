@@ -51,12 +51,26 @@ export interface ViewerTracer {
 /**
  * Where the camera sits.
  *
- * `orbit` is the external chase view. `cockpit` puts the eye at the pilot's
- * position looking along the nose, which is the only view in which conformal
- * head-up symbology -- a pitch ladder, a flight path marker, a gun cross -- is
- * actually telling the truth.
+ * `cockpit` puts the eye at the pilot's position looking along the nose, which
+ * is the only view in which conformal head-up symbology -- a pitch ladder, a
+ * flight path marker, a gun cross -- is actually telling the truth.
+ *
+ * The other four answer different questions, which is why there are four:
+ *
+ *   `chase`  sits behind the aircraft and does not roll with it, so the horizon
+ *            stays level and you can read the attitude off the airframe.
+ *   `track`  stands off along the line through both aircraft, your jet in the
+ *            foreground and the bandit beyond it: the one view in which angle
+ *            off and range are a single picture rather than two numbers.
+ *   `arena`  looks down on both from outside, broadside to the line between
+ *            them, which is how the turning circles are actually shaped.
+ *   `free`   is the hand-driven orbit, for when you want to look at something
+ *            none of the others thought to point at.
  */
-export type ViewMode = "orbit" | "cockpit";
+export type ViewMode = "free" | "chase" | "track" | "arena" | "cockpit";
+
+/** Views that place the camera themselves, leaving nothing for the mouse to orbit. */
+const AUTOMATIC_VIEWS: readonly ViewMode[] = ["chase", "track", "arena", "cockpit"];
 
 export interface ViewerSnapshot {
   aircraft: ViewerAircraft[];
@@ -180,11 +194,39 @@ function cloudTexture(size = 512): THREE.Texture {
   return texture;
 }
 
+/**
+ * A soft round blob, white, fading to nothing at the edge.
+ *
+ * Smoke used to be a low-segment sphere, which at twenty metres across and
+ * close to the camera is unmistakably a faceted polyhedron with a hard rim --
+ * a hole in the sky rather than smoke. A billboard with a radial falloff has no
+ * edges to see, always faces the camera, and costs two triangles.
+ */
+function makePuffTexture(): THREE.Texture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d")!;
+  const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.45, "rgba(255,255,255,0.55)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
 /** Most tracers drawn at once; a full burst is about a hundred rounds in flight. */
 const MAX_TRACERS = 420;
 
 /** Pilot's eye in body axes: up out of the seat, forward under the canopy. */
 const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
+/** Body axes, for placing cameras relative to an aircraft's attitude. */
+const BODY_FORWARD = new THREE.Vector3(0, 0, 1);
+const BODY_UP = new THREE.Vector3(0, 1, 0);
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
@@ -235,11 +277,28 @@ export class DogfightViewer {
   private sky?: THREE.Mesh;
   private pointerCaptured = false;
   private readonly plumes = new Map<string, THREE.Mesh>();
-  private readonly effects: Array<{ mesh: THREE.Mesh; born: number; life: number; grow: number }> = [];
+  private readonly effects: Array<{
+    mesh: THREE.Sprite;
+    born: number;
+    life: number;
+    grow: number;
+    /** Metres across at birth; it grows from here. */
+    size: number;
+    /** Opacity at birth; it fades from here to nothing. */
+    peak: number;
+  }> = [];
   private lastEffectTime = 0;
   private modelTemplate?: THREE.Object3D;
   private followId = "blue-1";
-  private view: ViewMode = "orbit";
+  private view: ViewMode = "chase";
+  /**
+   * How far off the automatic views stand, as a multiple of their natural
+   * framing. The wheel drives it, so a view that places itself can still be
+   * pulled in or pushed out without giving up the framing.
+   */
+  private framing = 1;
+  /** Real seconds at the previous frame, for the camera's own smoothing. */
+  private lastFrameMs = 0;
   private readonly tracerMaterial = new THREE.LineBasicMaterial({
     color: 0xffd06a,
     transparent: true,
@@ -254,16 +313,26 @@ export class DogfightViewer {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  private readonly sparkMaterial = new THREE.MeshBasicMaterial({
+  private readonly puffTexture = makePuffTexture();
+  private readonly sparkMaterial = new THREE.SpriteMaterial({
+    map: this.puffTexture,
     color: 0xffb257,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  private readonly smokeMaterial = new THREE.MeshBasicMaterial({
-    color: 0x2b2b2b,
+  /**
+   * Warm grey, not black.
+   *
+   * Smoke is lit by the same sky as everything else. Near-black against a pale
+   * horizon reads as a cut-out rather than as something in the air, and at the
+   * old peak opacity it blotted out the aircraft trailing it.
+   */
+  private readonly smokeMaterial = new THREE.SpriteMaterial({
+    map: this.puffTexture,
+    color: 0x6d6560,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.3,
     depthWrite: false,
   });
   private cameraInitialized = false;
@@ -380,6 +449,7 @@ export class DogfightViewer {
   setView(view: ViewMode): void {
     if (view === this.view) return;
     this.view = view;
+    this.framing = 1;
     this.cameraInitialized = false;
     this.applyControlAvailability();
   }
@@ -400,7 +470,7 @@ export class DogfightViewer {
   private applyControlAvailability(): void {
     // Orbiting a camera that is bolted to the aircraft makes no sense, and
     // leaving the controls live would fight the attitude update every frame.
-    this.controls.enabled = this.view === "orbit" && !this.pointerCaptured;
+    this.controls.enabled = !AUTOMATIC_VIEWS.includes(this.view) && !this.pointerCaptured;
   }
 
   /**
@@ -413,7 +483,7 @@ export class DogfightViewer {
    * is locked to the aircraft or not.
    */
   orbitBy(deltaXPixels: number, deltaYPixels: number): void {
-    if (this.view !== "orbit") return;
+    if (AUTOMATIC_VIEWS.includes(this.view)) return;
     const offset = this.camera.position.clone().sub(this.controls.target);
     const spherical = new THREE.Spherical().setFromVector3(offset);
     spherical.theta -= deltaXPixels * ORBIT_RADIANS_PER_PIXEL;
@@ -425,9 +495,18 @@ export class DogfightViewer {
     this.camera.lookAt(this.controls.target);
   }
 
-  /** Dollies the external camera, honouring the same limits as the controls. */
+  /**
+   * Dollies the camera.
+   *
+   * In the free view that means moving it, honouring the same limits as the
+   * controls. In a view that places itself it adjusts how far off that view
+   * stands, which survives the aircraft moving and the framing being recomputed.
+   */
   zoomBy(factor: number): void {
-    if (this.view !== "orbit") return;
+    if (AUTOMATIC_VIEWS.includes(this.view)) {
+      if (this.view !== "cockpit") this.framing = Math.max(0.35, Math.min(4, this.framing * factor));
+      return;
+    }
     const offset = this.camera.position.clone().sub(this.controls.target);
     const distance = Math.max(
       this.controls.minDistance,
@@ -725,30 +804,38 @@ export class DogfightViewer {
 
     const follow =
       snapshot.aircraft.find((aircraft) => aircraft.id === this.followId) ?? snapshot.aircraft[0];
+    const other = snapshot.aircraft.find((aircraft) => aircraft.id !== follow?.id);
     if (follow) {
       const followMesh = this.aircraftMeshes.get(follow.id);
+      // Centre of the airframe rather than its origin: the model's origin sits
+      // at the nose, and a camera aimed there frames the jet off to one side.
+      const target = followMesh
+        ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
+        : new THREE.Vector3().fromArray(follow.position);
+
       if (this.view === "cockpit") {
         this.placeCockpitCamera(follow);
         // You cannot see your own airframe from inside it, and drawing it would
         // fill the screen.
         if (followMesh) followMesh.visible = false;
+      } else if (this.view === "chase") {
+        this.placeChaseCamera(follow, target);
+      } else if (this.view === "track" && other) {
+        this.placeTrackCamera(target, new THREE.Vector3().fromArray(other.position));
+      } else if (this.view === "arena" && other) {
+        this.placeArenaCamera(target, new THREE.Vector3().fromArray(other.position));
+      } else if (!this.cameraInitialized) {
+        const orientation = new THREE.Quaternion().fromArray(follow.orientation);
+        const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(orientation);
+        this.camera.position.copy(target).add(initialOffset);
+        this.controls.target.copy(target);
+        this.camera.up.set(0, 1, 0);
+        this.cameraInitialized = true;
       } else {
-        const target = followMesh
-          ? new THREE.Box3().setFromObject(followMesh).getCenter(new THREE.Vector3())
-          : new THREE.Vector3().fromArray(follow.position);
-        if (!this.cameraInitialized) {
-          const orientation = new THREE.Quaternion().fromArray(follow.orientation);
-          const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(orientation);
-          this.camera.position.copy(target).add(initialOffset);
-          this.controls.target.copy(target);
-          this.camera.up.set(0, 1, 0);
-          this.cameraInitialized = true;
-        } else {
-          // Follow translation without overwriting the player's orbit angle.
-          const movement = target.clone().sub(this.controls.target);
-          this.camera.position.add(movement);
-          this.controls.target.copy(target);
-        }
+        // Follow translation without overwriting the player's orbit angle.
+        const movement = target.clone().sub(this.controls.target);
+        this.camera.position.add(movement);
+        this.controls.target.copy(target);
       }
     }
 
@@ -757,7 +844,7 @@ export class DogfightViewer {
     // silently overwrite the attitude set above -- leaving a view that looks
     // plausible while every conformal projection is computed against the wrong
     // camera.
-    if (this.view === "orbit") this.controls.update();
+    if (!AUTOMATIC_VIEWS.includes(this.view)) this.controls.update();
     this.sky?.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
   }
@@ -798,10 +885,10 @@ export class DogfightViewer {
 
   private spawnEffects(snapshot: ViewerSnapshot): void {
     for (const impact of snapshot.impacts ?? []) {
-      const spark = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), this.sparkMaterial.clone());
+      const spark = new THREE.Sprite(this.sparkMaterial.clone());
       spark.position.fromArray(impact);
       this.effectGroup.add(spark);
-      this.effects.push({ mesh: spark, born: snapshot.time, life: 0.55, grow: 26 });
+      this.effects.push({ mesh: spark, born: snapshot.time, life: 0.55, grow: 9, size: 3, peak: 0.9 });
     }
 
     // A damaged jet trails smoke, so a fight's state is legible from outside.
@@ -810,7 +897,7 @@ export class DogfightViewer {
     this.lastEffectTime = snapshot.time;
     for (const aircraft of snapshot.aircraft) {
       if (!aircraft.alive || (aircraft.integrity ?? 1) > 0.7) continue;
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(2.2, 8, 6), this.smokeMaterial.clone());
+      const puff = new THREE.Sprite(this.smokeMaterial.clone());
       puff.position
         .fromArray(aircraft.position)
         .addScaledVector(
@@ -818,7 +905,7 @@ export class DogfightViewer {
           -5,
         );
       this.effectGroup.add(puff);
-      this.effects.push({ mesh: puff, born: snapshot.time, life: 2.6, grow: 9 });
+      this.effects.push({ mesh: puff, born: snapshot.time, life: 2.6, grow: 5, size: 6, peak: 0.34 });
     }
   }
 
@@ -829,14 +916,13 @@ export class DogfightViewer {
       const age = time - effect.born;
       if (age < 0 || age > effect.life) {
         this.effectGroup.remove(effect.mesh);
-        effect.mesh.geometry.dispose();
         (effect.mesh.material as THREE.Material).dispose();
         this.effects.splice(index, 1);
         continue;
       }
       const progress = age / effect.life;
-      effect.mesh.scale.setScalar(1 + progress * effect.grow);
-      (effect.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - progress) * 0.6;
+      effect.mesh.scale.setScalar(effect.size * (1 + progress * effect.grow));
+      (effect.mesh.material as THREE.SpriteMaterial).opacity = (1 - progress) * effect.peak;
     }
   }
 
@@ -914,6 +1000,155 @@ export class DogfightViewer {
   private applyPixelRatio(): void {
     const scale = this.pinnedScale ?? this.renderScale;
     this.renderer.setPixelRatio(Math.max(0.5, Math.min(Math.min(devicePixelRatio, 2) * scale, 2)));
+  }
+
+  /**
+   * Eases the camera towards where a view wants it.
+   *
+   * A camera snapped exactly onto a moving aircraft every frame reads as
+   * rigid: the jet cannot move relative to it, so there is nothing to see it
+   * move against. A first-order lag lets the airframe lead and settle, which is
+   * what makes a chase view feel like a camera rather than a bracket. The rate
+   * is per second and resolved against real elapsed time, so it is the same lag
+   * at thirty frames a second as at a hundred and twenty.
+   *
+   * On the first frame of a view there is nothing to ease from, so it cuts.
+   */
+  private easeTo(eye: THREE.Vector3, lookAt: THREE.Vector3, perSecond: number): void {
+    const now = performance.now();
+    const elapsedS = this.lastFrameMs > 0 ? Math.min((now - this.lastFrameMs) / 1000, 0.1) : 0;
+    this.lastFrameMs = now;
+
+    if (!this.cameraInitialized) {
+      this.camera.position.copy(eye);
+      this.cameraInitialized = true;
+    } else {
+      this.camera.position.lerp(eye, Number.isFinite(perSecond) ? 1 - Math.exp(-perSecond * elapsedS) : 1);
+    }
+    this.camera.up.copy(WORLD_UP);
+    this.camera.lookAt(lookAt);
+    this.controls.target.copy(lookAt);
+  }
+
+  /**
+   * Behind and slightly above, along the nose, without the roll.
+   *
+   * Taking the aircraft's roll would rotate the horizon with it and leave the
+   * airframe motionless in frame -- which is the cockpit view's job, and it
+   * does it honestly. Here the world stays the right way up and the jet banks
+   * against it, which is the only way to read an attitude from outside.
+   *
+   * Near the vertical the aircraft's heading stops meaning anything, so "behind"
+   * is blended towards the aircraft's own up: at the top of a loop the camera
+   * ends up over the canopy rather than spinning through the yaw axis.
+   */
+  private placeChaseCamera(aircraft: ViewerAircraft, centre: THREE.Vector3): void {
+    const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
+    const forward = BODY_FORWARD.clone().applyQuaternion(orientation);
+    const vertical = Math.min(1, Math.max(0, (Math.abs(forward.y) - 0.7) / 0.25));
+    const up = WORLD_UP.clone()
+      .lerp(BODY_UP.clone().applyQuaternion(orientation), vertical)
+      .normalize();
+
+    const distance = 62 * this.framing;
+    const eye = centre
+      .clone()
+      .addScaledVector(forward, -distance)
+      .addScaledVector(up, distance * 0.22);
+    // Aim a little above the aircraft rather than at it, so the jet sits below
+    // the middle of the frame and most of the screen is the air it is flying
+    // into -- which is where everything worth seeing happens.
+    this.easeTo(eye, centre.clone().addScaledVector(up, distance * 0.10), 6);
+  }
+
+  /**
+   * Camera, your aircraft, the bandit -- on one line, in that order.
+   *
+   * Angle off and range stop being two numbers to hold in your head and become
+   * one picture: the bandit's aspect is its shape in the frame, the range is
+   * its size, and the closure is whether it is growing. Nothing else shows all
+   * three at once.
+   *
+   * The camera is lifted a little off the line so your own jet sits low in
+   * frame instead of squarely on top of what you are trying to watch, and the
+   * stand-off grows with separation so the bandit does not shrink to a pixel.
+   */
+  private placeTrackCamera(centre: THREE.Vector3, bandit: THREE.Vector3): void {
+    const axis = centre.clone().sub(bandit);
+    const separation = axis.length();
+    // Degenerate only if the two are in the same place, which is a collision.
+    axis.normalize();
+    if (separation < 1) axis.set(0, 0, -1);
+
+    const distance = Math.min(46 + separation * 0.05, 200) * this.framing;
+    // Lift perpendicular to the line, not along world up, so the offset holds
+    // its meaning when the fight goes vertical.
+    const lift = new THREE.Vector3().crossVectors(axis, WORLD_UP).cross(axis);
+    if (lift.lengthSq() < 1e-6) lift.copy(BODY_UP);
+    lift.normalize();
+
+    const eye = centre.clone().addScaledVector(axis, distance).addScaledVector(lift, distance * 0.10);
+    // Look at the bandit: your own aircraft is then between you and it, in the
+    // foreground, which is the whole point of the view. Placed exactly rather
+    // than eased, because a camera that lags a hard turn by even a tenth of a
+    // second is no longer on the line, and being on the line is the view.
+    this.easeTo(eye, bandit, Number.POSITIVE_INFINITY);
+  }
+
+  /**
+   * Both aircraft, from outside, broadside to the line between them.
+   *
+   * A fight is two turning circles and the geometry between them, and neither
+   * aircraft can see that. Standing off the line rather than along it is what
+   * makes the separation a width on screen instead of a depth you cannot judge;
+   * looking down at it is what makes the circles read as circles.
+   *
+   * The stand-off is computed from the field of view, so the pair stay framed
+   * whether they are merging at two hundred metres or running out to five
+   * kilometres.
+   */
+  private placeArenaCamera(centre: THREE.Vector3, bandit: THREE.Vector3): void {
+    const midpoint = centre.clone().add(bandit).multiplyScalar(0.5);
+    const separation = centre.distanceTo(bandit);
+
+    /**
+     * One rule, from the field of view.
+     *
+     * `reach` is how far off centre this camera may look and still keep what it
+     * is looking at comfortably inside the frame. The camera aims at the
+     * midpoint when the midpoint is within reach -- both aircraft framed -- and
+     * otherwise slides back along that line until the aircraft being followed
+     * is, which is the same thing said once instead of twice.
+     *
+     * The distance is capped because "both in frame" and "you can see them"
+     * stop being the same request past a few hundred metres: framing a
+     * five-kilometre split puts two aeroplanes on screen as two pixels, which
+     * is a picture of nothing. Past the cap the bandit leaves the frame -- the
+     * overlay still boxes it and gives the range -- and this settles into a
+     * high stand-off shot of the aircraft being followed.
+     */
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+    const framed = Math.tan(halfFov) * 0.55;
+    const distance = Math.min(Math.max(separation / 2 / framed, 200), 1_100) * this.framing;
+    const reach = distance * framed;
+    const lookAt = centre.clone().add(midpoint.clone().sub(centre).clampLength(0, reach));
+
+    // Broadside: perpendicular to the line between them, in the horizontal
+    // plane, so the separation lies across the screen.
+    const broadside = new THREE.Vector3(bandit.z - centre.z, 0, centre.x - bandit.x);
+    if (broadside.lengthSq() < 1e-6) broadside.set(1, 0, 0);
+    broadside.normalize();
+
+    const elevation = THREE.MathUtils.degToRad(26);
+    const eye = lookAt
+      .clone()
+      .addScaledVector(broadside, distance * Math.cos(elevation))
+      .addScaledVector(WORLD_UP, distance * Math.sin(elevation));
+    // Never underground: the view is useless from inside a hill.
+    eye.y = Math.max(eye.y, terrainHeight(eye.x, eye.z) + 60);
+    // Slow: this camera is a vantage point, and a vantage point that chases
+    // every twitch of the separation is worse than one that lags it.
+    this.easeTo(eye, lookAt, 1.6);
   }
 
   /**

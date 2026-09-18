@@ -553,10 +553,27 @@ function drawLadder(
       const inner = ends[1]![0];
       const x = outer.x * width;
       const y = outer.y * height;
-      const angle = (Math.atan2(y - inner.y * height, x - inner.x * width) * 180) / Math.PI;
+      let angle = (Math.atan2(y - inner.y * height, x - inner.x * width) * 180) / Math.PI;
+      /**
+       * Numerals stay the right way up.
+       *
+       * The rung banks with the aircraft and the label is rotated to lie along
+       * it, which past ninety degrees of bank turns the text upside down: the
+       * ladder read "02" and "0E" through the top of a loop. Flipping the
+       * rotation and putting the label on the other end of the rung keeps it
+       * beside the same mark and readable, which is what an inverted pilot
+       * needs from it.
+       */
+      let anchor = "start";
+      let dx = 6;
+      if (angle > 90 || angle < -90) {
+        angle -= Math.sign(angle) * 180;
+        anchor = "end";
+        dx = -6;
+      }
       if (Number.isFinite(x) && Number.isFinite(y)) {
         marks.push(
-          `<text class="rung-label" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="start" transform="rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})" dy="4" dx="6">${Math.abs(pitch)}</text>`,
+          `<text class="rung-label" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" transform="rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})" dy="4" dx="${dx}">${Math.abs(pitch)}</text>`,
         );
       }
     }

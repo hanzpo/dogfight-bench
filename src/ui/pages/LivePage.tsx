@@ -38,7 +38,7 @@ export function LivePage() {
   const match = useLiveMatch();
   const roster = useRoster();
   const viewer = useRef<DogfightViewer>(undefined);
-  const [view, setView] = useState<ViewMode>("orbit");
+  const [view, setView] = useState<ViewMode>("chase");
   /**
    * The details panel is 286 wide and would cover most of a phone, so it
    * starts as a tab there. Measured once, not tracked: somebody who opens it
@@ -178,7 +178,7 @@ export function LivePage() {
       />
       <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} detailsOpen={detailsOpen} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
-      {view === "orbit" && !pointerFlying ? (
+      {view === "free" && !pointerFlying ? (
         <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
       ) : null}
 
@@ -268,8 +268,11 @@ export function LivePage() {
         <label>
           View
           <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
-            <option value="orbit">External</option>
+            <option value="chase">Chase</option>
+            <option value="track">Target track</option>
+            <option value="arena">Arena</option>
             <option value="cockpit">Cockpit</option>
+            <option value="free">Free look</option>
           </select>
         </label>
         {/* Which aircraft the camera is on, shown as a state rather than as a
