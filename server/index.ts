@@ -67,7 +67,28 @@ const requireToken = async (
   return next();
 };
 
-app.use("/api/decide", requireToken);
+/**
+ * Burst limiter, per address.
+ *
+ * Not a quota -- the quota is the shared daily cap. This only stops one runaway
+ * client spending the whole day's budget before anyone else gets a turn. Held
+ * in memory on purpose: it protects against a loop, not against an adversary
+ * with a botnet, and the daily cap is what protects against that.
+ */
+const burst = new Map<string, { count: number; second: number }>();
+function withinBurst(address: string): boolean {
+  const second = Math.floor(Date.now() / 1_000);
+  const entry = burst.get(address);
+  if (!entry || entry.second !== second) {
+    // The map only ever holds addresses seen in the last second or two.
+    if (burst.size > 10_000) burst.clear();
+    burst.set(address, { count: 1, second });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= env.publicBurstPerSecond;
+}
+
 app.use("/api/matches", async (context, next) =>
   context.req.method === "POST" ? requireToken(context, next) : next(),
 );
@@ -78,9 +99,15 @@ app.get("/api/health", (context) => context.json({ ok: true, version: 2 }));
 app.get("/api/agents", (context) => {
   const available = [...providers()].map(([name, provider]) => {
     const info = provider.describe();
+    const free = env.publicProviders.includes(name);
     return {
       kind: name,
+      /** True when this deployment holds a credential for it. */
       available: provider.available(),
+      /** True when anyone may use it without supplying a key. */
+      free,
+      /** True when it can be used by supplying your own key. */
+      acceptsCallerKey: env.allowCallerKeys && name !== "scripted",
       ...info,
       pricing: priceOf(info.model) ?? null,
     };
@@ -88,6 +115,8 @@ app.get("/api/agents", (context) => {
   const scripted = SCRIPTED_NAMES.map((name) => ({
     kind: name,
     available: true,
+    free: true,
+    acceptsCallerKey: false,
     name,
     provider: "scripted",
     model: name,
@@ -95,7 +124,18 @@ app.get("/api/agents", (context) => {
     schema: "tactical" as const,
     pricing: null,
   }));
-  return context.json({ agents: [...scripted, ...available] });
+  const budget = env.publicProviders.map((name) => {
+    const used = store.publicUsageToday(name);
+    return {
+      provider: name,
+      decisions: used.decisions,
+      costUsd: Number(used.costUsd.toFixed(6)),
+      dailyBudgetUsd: env.publicDailyBudgetUsd,
+      dailyDecisions: env.publicDailyDecisions,
+      exhausted: used.costUsd >= env.publicDailyBudgetUsd || used.decisions >= env.publicDailyDecisions,
+    };
+  });
+  return context.json({ agents: [...scripted, ...available], freeBudget: budget });
 });
 
 /**
@@ -122,16 +162,68 @@ app.post("/api/decide", async (context) => {
     return context.json({ error: "a complete observation is required" }, 400);
   }
 
-  const kind = body.kind ?? "anthropic";
-  const provider = providers().get(kind);
+  const kind = body.kind ?? env.publicProviders[0] ?? "jev";
+
+  /**
+   * Whose credit is being spent decides who may ask.
+   *
+   * A caller who supplies their own key is paying for the call, so it is
+   * allowed without a token and without touching the shared budget. A caller
+   * who supplies nothing is spending this deployment's money, so the provider
+   * has to be one offered for free and the day's cap has to have room left.
+   */
+  const callerKey = env.allowCallerKeys ? context.req.header("x-provider-key")?.trim() : undefined;
+  const callerModel = context.req.header("x-provider-model")?.trim();
+  const usingOwnKey = Boolean(callerKey);
+
+  if (!usingOwnKey) {
+    if (!env.publicProviders.includes(kind)) {
+      return context.json(
+        {
+          error: `"${kind}" is not free on this deployment. Supply your own key, or use: ${env.publicProviders.join(", ") || "none"}.`,
+          needsKey: true,
+        },
+        402,
+      );
+    }
+    const address =
+      context.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+      context.req.header("x-real-ip") ??
+      "local";
+    if (!withinBurst(address)) {
+      return context.json({ error: "Too many requests; slow down." }, 429);
+    }
+    const used = store.publicUsageToday(kind);
+    if (used.costUsd >= env.publicDailyBudgetUsd || used.decisions >= env.publicDailyDecisions) {
+      return context.json(
+        {
+          error: `The free daily allowance for "${kind}" is spent. It resets at 00:00 UTC, or supply your own key.`,
+          needsKey: true,
+          exhausted: true,
+        },
+        429,
+      );
+    }
+  }
+
+  const provider = providers({
+    ...(callerKey ? { apiKey: callerKey } : {}),
+    ...(callerModel ? { model: callerModel } : {}),
+  }).get(kind);
   if (!provider) return context.json({ error: `Unknown provider "${kind}"` }, 400);
-  if (!provider.available()) return context.json({ error: `Provider "${kind}" has no credential` }, 503);
+  if (!provider.available()) {
+    return context.json({ error: `Provider "${kind}" has no credential`, needsKey: true }, 503);
+  }
 
   try {
-    const decision = await provider.decide(observation);
-    return context.json(validateDecision(decision));
+    const decision = validateDecision(await provider.decide(observation));
+    if (!usingOwnKey) store.recordPublicUsage(kind, decision.usage?.costUsd ?? 0);
+    return context.json(decision);
   } catch (error) {
-    return context.json({ error: error instanceof Error ? error.message : String(error) }, 502);
+    // A provider error must not echo back anything that could contain the
+    // caller's own key.
+    const message = error instanceof Error ? error.message : String(error);
+    return context.json({ error: callerKey ? message.split(callerKey).join("[key]") : message }, 502);
   }
 });
 

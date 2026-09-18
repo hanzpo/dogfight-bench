@@ -23,6 +23,33 @@ export const env = {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
+  /**
+   * Providers anyone may use on this server's own credentials, with no key and
+   * no token, subject to the daily cap below.
+   *
+   * Everything else requires the caller to bring their own key. The point is
+   * that an open deployment can offer one model for free without offering its
+   * whole inference budget to the internet.
+   */
+  publicProviders: (process.env["DOGFIGHT_PUBLIC_PROVIDERS"] ?? "jev")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean),
+  /** Dollars a day the free providers may spend across everybody, together. */
+  publicDailyBudgetUsd: Number(process.env["DOGFIGHT_PUBLIC_DAILY_USD"] ?? 5),
+  /** Decisions a day the free providers may serve, as a second backstop. */
+  publicDailyDecisions: Number(process.env["DOGFIGHT_PUBLIC_DAILY_DECISIONS"] ?? 40_000),
+  /**
+   * Requests a second from one address before it is throttled.
+   *
+   * Not a quota -- the quota is the daily cap above, shared by everyone. This
+   * exists so a runaway loop in one tab cannot drain the day's budget in a
+   * minute before anybody else gets a turn.
+   */
+  publicBurstPerSecond: Number(process.env["DOGFIGHT_PUBLIC_BURST"] ?? 12),
+  /** Set false to refuse caller-supplied provider keys entirely. */
+  allowCallerKeys: process.env["DOGFIGHT_ALLOW_CALLER_KEYS"] !== "false",
+
   /** Directory of the built viewer, served by this process in production. */
   staticDir: process.env["DOGFIGHT_STATIC_DIR"] ?? "dist",
   /** Most matches one `/api/matches` request may run. */

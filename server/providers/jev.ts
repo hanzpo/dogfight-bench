@@ -1,9 +1,9 @@
 import { MANEUVERS, THROTTLE_DETENTS, validateAction } from "../../src/agents/action";
-import type { AgentDecision, AgentInfo } from "../../src/agents/agent";
+import type { AgentDecision, AgentInfo, ChoiceDistribution } from "../../src/agents/agent";
 import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
 import { MANEUVER_GUIDE } from "../prompt";
-import type { ModelProvider } from "./types";
+import type { ModelProvider, ProviderOptions } from "./types";
 
 /**
  * Jev, through TypeSafe's System One endpoint.
@@ -42,7 +42,10 @@ Hard turns cost energy, and a jet with no energy cannot fight. Corner speed is w
 Angle off tail near 0 means you are behind the bandit, which wins; near 180 means they are behind you.
 The gun fires along the nose, so you must aim where the bandit will be. Predicted miss under 15 m hits.
 Do not fire when the predicted miss is large: ammunition is finite.
-If threatened, defend before anything else. The ground, the hard deck and the arena edge all kill.`;
+If threatened, defend before anything else. The ground, the hard deck and the arena edge all kill.
+The ground is not flat. Terrain gives the clearance this flight path would leave over the next twenty seconds,
+what a recovery costs, and whether it still fits. On a pull-up warning, recover before anything else:
+flying level into a ridge is a collision that height above the ground underneath will never warn you about.`;
 
 interface ChoiceAnswer {
   choice: string;
@@ -116,6 +119,21 @@ function state(observation: AgentObservation) {
       rounds_still_lethal: relative.gunSolution.inLethalRange,
       tracking_solution: relative.gunSolution.trackingSolution,
     },
+    terrain: {
+      ground_elevation_m: round(own.terrain.groundElevationM),
+      over_water: own.terrain.overWater,
+      clearance_m: round(own.terrain.clearanceM),
+      // What the clearance becomes if this flight path is held, which is the
+      // only number that sees a ridge before it arrives.
+      minimum_clearance_ahead_m: round(own.terrain.minimumClearanceAheadM),
+      seconds_to_minimum_clearance: round(own.terrain.timeToMinimumClearanceS, 1),
+      seconds_to_impact: own.terrain.timeToImpactS === null ? null : round(own.terrain.timeToImpactS, 1),
+      recovery_costs_m: round(own.terrain.recoveryHeightLossM),
+      recovery_margin_m: round(own.terrain.recoveryMarginM),
+      highest_ground_within_12km_m: round(own.terrain.highestNearbyM),
+      lowest_ground_heading_deg: round(own.terrain.safestHeadingDeg),
+      warning: own.terrain.warning,
+    },
     arena: {
       hard_deck_agl_m: observation.arena.hardDeckAglM,
       distance_from_centre_m: round(observation.arena.distanceFromCentreM),
@@ -133,18 +151,27 @@ function state(observation: AgentObservation) {
 export class JevProvider implements ModelProvider {
   readonly id = "jev";
 
-  /** Fire only when the model is actually confident, not merely on argmax. */
-  constructor(private readonly fireConfidence = 0.6) {}
+  private readonly model: string;
+  private readonly apiKey: string | undefined;
+
+  constructor(
+    options: ProviderOptions = {},
+    /** Fire only when the model is actually confident, not merely on argmax. */
+    private readonly fireConfidence = 0.6,
+  ) {
+    this.model = options.model ?? env.typesafeModel;
+    this.apiKey = options.apiKey ?? env.typesafeApiKey;
+  }
 
   available(): boolean {
-    return Boolean(env.typesafeApiKey);
+    return Boolean(this.apiKey);
   }
 
   describe(): AgentInfo {
     return {
-      name: `jev/${env.typesafeModel}`,
+      name: `jev/${this.model}`,
       provider: "jev",
-      model: env.typesafeModel,
+      model: this.model,
       policyVersion: "bfm-choices-1",
       schema: "tactical",
     };
@@ -152,7 +179,7 @@ export class JevProvider implements ModelProvider {
 
   async decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
     const body = {
-      model: env.typesafeModel,
+      model: this.model,
       state: state(observation),
       questions: {
         maneuver: {
@@ -182,7 +209,7 @@ export class JevProvider implements ModelProvider {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${requireKey(env.typesafeApiKey, "TYPESAFE_API_KEY")}`,
+        authorization: `Bearer ${requireKey(this.apiKey, "TYPESAFE_API_KEY")}`,
       },
       signal,
       body: JSON.stringify(body),
@@ -201,7 +228,27 @@ export class JevProvider implements ModelProvider {
     const fireProbability = fire.probabilities["FIRE"] ?? 0;
     const shooting = fire.choice === "FIRE" && fireProbability >= this.fireConfidence;
 
+    // Jev's whole output is a set of calibrated distributions, not a sampled
+    // answer, so hand them on intact rather than throwing away everything
+    // except the argmax.
+    const distributions: ChoiceDistribution[] = (
+      [
+        ["maneuver", maneuver],
+        ["target_g", targetG],
+        ["throttle", throttle],
+        ["fire", fire],
+      ] as const
+    ).map(([question, answer]) => ({
+      question,
+      choice: answer.choice,
+      confidence: answer.confidence,
+      options: Object.entries(answer.probabilities)
+        .map(([id, probability]) => ({ id, probability }))
+        .sort((a, b) => b.probability - a.probability),
+    }));
+
     return {
+      distributions,
       action: validateAction({
         schema: "tactical",
         maneuver: maneuver.choice,

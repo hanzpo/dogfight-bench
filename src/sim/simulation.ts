@@ -1,4 +1,4 @@
-import type { AgentAdapter, AgentInfo, DecisionUsage } from "../agents/agent";
+import type { AgentAdapter, AgentInfo, ChoiceDistribution, DecisionUsage } from "../agents/agent";
 import { AgentTimeoutError, decideWithTimeout, resolveAction, validateDecision } from "../agents/agent";
 import type { AgentAction, TacticalAction } from "../agents/action";
 import { contextFromState, resolveTactical } from "../agents/autopilot";
@@ -43,6 +43,8 @@ export interface DecisionRecord {
   rationale?: string;
   latencyMs: number;
   usage?: DecisionUsage;
+  /** Calibrated probabilities, for models that report them. */
+  distributions?: ChoiceDistribution[];
   error?: string;
 }
 
@@ -119,6 +121,7 @@ export class DogfightSimulation {
   readonly decisionTimeoutMs: number;
   readonly inferenceBudgetUsd: number;
   readonly decisions: DecisionRecord[] = [];
+  private readonly lastDecisions = new Map<string, DecisionRecord>();
   private readonly recordDecisions: boolean;
 
   constructor(
@@ -209,6 +212,7 @@ export class DogfightSimulation {
             rationale: decision.rationale,
             latencyMs: performance.now() - started,
             usage: decision.usage,
+            ...(decision.distributions ? { distributions: decision.distributions } : {}),
           });
         })
         .catch((error: unknown) => {
@@ -238,7 +242,20 @@ export class DogfightSimulation {
   }
 
   private record(decision: DecisionRecord): void {
+    this.lastDecisions.set(decision.aircraftId, decision);
     if (this.recordDecisions) this.decisions.push(decision);
+  }
+
+  /**
+   * The most recent decision for one aircraft.
+   *
+   * Kept separately from the decision log because the live display wants it
+   * every frame and the log is appended to for the whole match; scanning
+   * backwards through a thousand records sixty times a second to find the last
+   * one is not a reasonable way to draw a panel.
+   */
+  latestDecision(aircraftId: string): DecisionRecord | undefined {
+    return this.lastDecisions.get(aircraftId);
   }
 
   step(): MatchState {

@@ -11,16 +11,16 @@ export function App() {
         <div className="brand">
           <span className="mark">DB</span>
           <div>
-            DOGFIGHT <b>BENCH</b>
+            Dogfight <b>Bench</b>
           </div>
         </div>
         <nav className="nav">
           <NavLink to="/" end>
-            LIVE
+            Fly
           </NavLink>
-          <NavLink to="/leaderboard">LEADERBOARD</NavLink>
-          <NavLink to="/matches">MATCHES</NavLink>
-          <NavLink to="/replay">REPLAY</NavLink>
+          <NavLink to="/leaderboard">Leaderboard</NavLink>
+          <NavLink to="/matches">Matches</NavLink>
+          <NavLink to="/replay">Replays</NavLink>
         </nav>
       </header>
 

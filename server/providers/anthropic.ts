@@ -7,7 +7,7 @@ import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
 import { costUsd } from "../pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../prompt";
-import type { ModelProvider } from "./types";
+import type { ModelProvider, ProviderOptions } from "./types";
 
 /**
  * Claude as a fighter pilot.
@@ -29,10 +29,16 @@ export class AnthropicProvider implements ModelProvider {
   readonly id = "anthropic";
   private client?: Anthropic;
 
-  constructor(private readonly model = env.anthropicModel) {}
+  private readonly model: string;
+  private readonly apiKey: string | undefined;
+
+  constructor(options: ProviderOptions = {}) {
+    this.model = options.model ?? env.anthropicModel;
+    this.apiKey = options.apiKey ?? env.anthropicApiKey;
+  }
 
   available(): boolean {
-    return Boolean(env.anthropicApiKey);
+    return Boolean(this.apiKey);
   }
 
   describe(): AgentInfo {
@@ -46,7 +52,7 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   private sdk(): Anthropic {
-    this.client ??= new Anthropic({ apiKey: requireKey(env.anthropicApiKey, "ANTHROPIC_API_KEY") });
+    this.client ??= new Anthropic({ apiKey: requireKey(this.apiKey, "ANTHROPIC_API_KEY") });
     return this.client;
   }
 

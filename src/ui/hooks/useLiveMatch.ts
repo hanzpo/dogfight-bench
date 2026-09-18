@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { SCRIPTED_INFO } from "../../agents/agent";
-import { EnergyFighterAgent } from "../../agents/baselines";
+import { SCRIPTED_INFO, type AgentAdapter, type AgentInfo } from "../../agents/agent";
+import { BasicPursuitAgent, EnergyFighterAgent } from "../../agents/baselines";
 import { HttpAgent } from "../../agents/http-agent";
 import { ReplayRecorder } from "../../sim/replay";
 import { neutralMerge } from "../../sim/scenario";
-import { DogfightSimulation } from "../../sim/simulation";
+import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
 import type { MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
+import { keyHeaders } from "../keys";
 import {
   PilotInput,
   loadSettings,
@@ -16,7 +17,17 @@ import {
   type PilotInputSettings,
 } from "../input/pilot-input";
 
-export type PilotKind = "human" | "basic" | "model";
+/**
+ * Who is flying one aircraft.
+ *
+ * `human` is the person at the keyboard. `basic` and `basic-pursuit` are the
+ * scripted baselines. Anything else is a provider name the server knows, flown
+ * through `/api/decide` -- so adding a model to the server adds it here without
+ * a change on this side.
+ */
+export type PilotChoice = string;
+
+export const HUMAN: PilotChoice = "human";
 
 /** How often the readouts a person looks at are refreshed, milliseconds. */
 const UI_REFRESH_MS = 100;
@@ -30,27 +41,53 @@ export interface LiveMatch {
   simTimeRef: RefObject<number>;
   /** Live match state for overlays that draw every frame. */
   liveStateRef: RefObject<MatchState | undefined>;
+  /** Most recent decision per aircraft, for the observer panel. */
+  decisions: Record<string, DecisionRecord | undefined>;
   paused: boolean;
   timeScale: number;
   followRed: boolean;
-  bluePilot: PilotKind;
-  /** Which device is flying the blue jet. */
+  bluePilot: PilotChoice;
+  redPilot: PilotChoice;
   scheme: ControlScheme;
   inputSettings: PilotInputSettings;
-  /** True when the pointer could still be captured for a free-moving stick. */
   canCapturePointer: boolean;
-  /** How the mouse is being read right now. */
   mouseMode: MouseMode;
-  /** Live stick position for the control indicator; read every frame. */
   inputRef: RefObject<PilotInput>;
   setScheme: (scheme: ControlScheme) => void;
   setInputSettings: (settings: PilotInputSettings) => void;
   setPaused: (paused: boolean) => void;
   setTimeScale: (scale: number) => void;
   setFollowRed: (follow: boolean) => void;
-  setBluePilot: (pilot: PilotKind) => void;
+  setBluePilot: (pilot: PilotChoice) => void;
+  setRedPilot: (pilot: PilotChoice) => void;
   restart: () => void;
   downloadReplay: () => void;
+}
+
+function infoFor(pilot: PilotChoice): AgentInfo {
+  if (pilot === HUMAN) return SCRIPTED_INFO("human", "raw");
+  if (pilot === "basic") return SCRIPTED_INFO("energy-fighter");
+  if (pilot === "basic-pursuit") return SCRIPTED_INFO("basic-pursuit");
+  return {
+    name: pilot,
+    provider: pilot,
+    model: "server-configured",
+    policyVersion: "1",
+    schema: "tactical",
+  };
+}
+
+/**
+ * Builds whatever flies one aircraft, or nothing at all for a person.
+ *
+ * A model agent reads its credentials at request time rather than capture time,
+ * so entering a key mid-match takes effect on the next decision.
+ */
+function buildAgent(pilot: PilotChoice, aircraftId: string): AgentAdapter | undefined {
+  if (pilot === HUMAN) return undefined;
+  if (pilot === "basic") return new EnergyFighterAgent(aircraftId);
+  if (pilot === "basic-pursuit") return new BasicPursuitAgent(aircraftId);
+  return new HttpAgent(aircraftId, infoFor(pilot), "/api/decide", pilot, () => keyHeaders(pilot));
 }
 
 /**
@@ -76,10 +113,12 @@ export function useLiveMatch(): LiveMatch {
   const lastEventIndex = useRef(0);
   const lastUiUpdate = useRef(0);
   const [state, setState] = useState<MatchState>();
+  const [decisions, setDecisions] = useState<Record<string, DecisionRecord | undefined>>({});
   const [paused, setPaused] = useState(false);
   const [timeScale, setTimeScale] = useState(1);
   const [followRed, setFollowRed] = useState(false);
-  const [bluePilot, setBluePilot] = useState<PilotKind>("human");
+  const [bluePilot, setBluePilot] = useState<PilotChoice>(HUMAN);
+  const [redPilot, setRedPilot] = useState<PilotChoice>("basic");
   const [scheme, setSchemeState] = useState<ControlScheme>("keyboard");
   const [inputSettings, setInputSettingsState] = useState<PilotInputSettings>(() => loadSettings());
   const [canCapturePointer, setCanCapturePointer] = useState(false);
@@ -87,39 +126,36 @@ export function useLiveMatch(): LiveMatch {
 
   const pausedRef = useRef(paused);
   const scaleRef = useRef(timeScale);
-  const pilotRef = useRef(bluePilot);
+  const bluePilotRef = useRef(bluePilot);
+  const redPilotRef = useRef(redPilot);
   pausedRef.current = paused;
   scaleRef.current = timeScale;
-  pilotRef.current = bluePilot;
+  bluePilotRef.current = bluePilot;
+  redPilotRef.current = redPilot;
 
   const restart = useCallback(() => {
     const sim = new DogfightSimulation(neutralMerge, { decisionIntervalS: 0.25 });
-    const pilot = pilotRef.current;
-    if (pilot === "basic") sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
-    if (pilot === "model") {
-      sim.attachAgent(
-        "blue-1",
-        new HttpAgent(
-          "blue-1",
-          { name: "server model", provider: "server", model: "configured", policyVersion: "1", schema: "tactical" },
-          "/api/decide",
-        ),
-      );
-    }
-    sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
+    const blue = bluePilotRef.current;
+    const red = redPilotRef.current;
+
+    const blueAgent = buildAgent(blue, "blue-1");
+    if (blueAgent) sim.attachAgent("blue-1", blueAgent);
+    const redAgent = buildAgent(red, "red-1");
+    if (redAgent) sim.attachAgent("red-1", redAgent);
 
     simulation.current = sim;
     recorder.current = new ReplayRecorder(neutralMerge, {
-      "blue-1": pilot === "human" ? SCRIPTED_INFO("human", "raw") : SCRIPTED_INFO(pilot),
-      "red-1": SCRIPTED_INFO("energy-fighter"),
+      "blue-1": infoFor(blue),
+      "red-1": infoFor(red),
     });
     accumulator.current = 0;
     lastEventIndex.current = 0;
     input.current.reset();
+    setDecisions({});
     setPaused(false);
   }, []);
 
-  useEffect(() => restart(), [restart, bluePilot]);
+  useEffect(() => restart(), [restart, bluePilot, redPilot]);
 
   /**
    * Bind the devices to the viewport.
@@ -169,7 +205,7 @@ export function useLiveMatch(): LiveMatch {
       if (sim && !pausedRef.current && !sim.state.finished) {
         accumulator.current += wallDt * scaleRef.current;
 
-        if (pilotRef.current === "human") {
+        if (bluePilotRef.current === HUMAN) {
           sim.setHumanControls("blue-1", input.current.sample(wallDt));
         }
 
@@ -190,6 +226,10 @@ export function useLiveMatch(): LiveMatch {
         if (now - lastUiUpdate.current >= UI_REFRESH_MS) {
           lastUiUpdate.current = now;
           setState({ ...sim.state });
+          setDecisions({
+            "blue-1": sim.latestDecision("blue-1"),
+            "red-1": sim.latestDecision("red-1"),
+          });
         }
       }
       frame = requestAnimationFrame(tick);
@@ -215,10 +255,12 @@ export function useLiveMatch(): LiveMatch {
     simTimeRef,
     liveStateRef,
     state,
+    decisions,
     paused,
     timeScale,
     followRed,
     bluePilot,
+    redPilot,
     scheme,
     inputSettings,
     canCapturePointer,
@@ -230,6 +272,7 @@ export function useLiveMatch(): LiveMatch {
     setTimeScale,
     setFollowRed,
     setBluePilot,
+    setRedPilot,
     restart,
     downloadReplay,
   };

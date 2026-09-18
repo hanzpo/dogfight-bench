@@ -33,10 +33,31 @@ export interface DecisionUsage {
   costUsd?: number;
 }
 
+/**
+ * A calibrated distribution over one question's options.
+ *
+ * Most models return an answer and nothing else. Some return how sure they are
+ * of each alternative, which is strictly more information than the answer: a
+ * manoeuvre chosen at 0.31 against a field of twelve is a guess, and the same
+ * manoeuvre at 0.94 is a conviction, and a benchmark that shows only the choice
+ * cannot tell those apart. Optional, because nothing may assume it exists.
+ */
+export interface ChoiceDistribution {
+  /** What was asked: "maneuver", "target_g", "throttle", "fire". */
+  question: string;
+  /** The option that won. */
+  choice: string;
+  confidence: number;
+  /** Every option and its probability, highest first. */
+  options: Array<{ id: string; probability: number }>;
+}
+
 export interface AgentDecision {
   action: AgentAction;
   rationale?: string;
   usage?: DecisionUsage;
+  /** Present only for models that report calibrated probabilities. */
+  distributions?: ChoiceDistribution[];
 }
 
 export interface AgentAdapter {
@@ -60,12 +81,61 @@ export function validateDecision(value: unknown): AgentDecision {
   const record = (value ?? {}) as Record<string, unknown>;
   const rationale = record["rationale"];
   const usage = record["usage"] as DecisionUsage | undefined;
+  const distributions = validateDistributions(record["distributions"]);
   return {
     // Accept a bare action, or a decision wrapping one.
     action: validateAction(record["action"] ?? record),
     rationale: typeof rationale === "string" ? rationale.slice(0, 2_000) : undefined,
     usage: usage && typeof usage === "object" ? usage : undefined,
+    ...(distributions ? { distributions } : {}),
   };
+}
+
+/**
+ * Coerces reported probabilities into something safe to render.
+ *
+ * Bounded in every dimension, because this crosses the network from a model's
+ * response and ends up on screen sixty times a second. A provider that returns
+ * ten thousand options must not be able to make the page unusable, and one that
+ * returns nonsense must produce no distribution rather than a broken one.
+ */
+function validateDistributions(value: unknown): ChoiceDistribution[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const distributions: ChoiceDistribution[] = [];
+  for (const entry of value.slice(0, 8)) {
+    const record = (entry ?? {}) as Record<string, unknown>;
+    const question = record["question"];
+    const choice = record["choice"];
+    const options = record["options"];
+    if (typeof question !== "string" || typeof choice !== "string" || !Array.isArray(options)) continue;
+
+    const parsed = options
+      .slice(0, 32)
+      .map((option) => {
+        const fields = (option ?? {}) as Record<string, unknown>;
+        const id = fields["id"];
+        const probability = fields["probability"];
+        if (typeof id !== "string" || typeof probability !== "number" || !Number.isFinite(probability)) {
+          return undefined;
+        }
+        return { id: id.slice(0, 48), probability: Math.max(0, Math.min(1, probability)) };
+      })
+      .filter((option): option is { id: string; probability: number } => option !== undefined)
+      .sort((a, b) => b.probability - a.probability);
+    if (!parsed.length) continue;
+
+    const confidence = record["confidence"];
+    distributions.push({
+      question: question.slice(0, 48),
+      choice: choice.slice(0, 48),
+      confidence:
+        typeof confidence === "number" && Number.isFinite(confidence)
+          ? Math.max(0, Math.min(1, confidence))
+          : (parsed[0]?.probability ?? 0),
+      options: parsed,
+    });
+  }
+  return distributions.length ? distributions : undefined;
 }
 
 /** Turns an action of either schema into the stick and throttle the jet flies. */

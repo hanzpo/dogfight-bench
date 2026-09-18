@@ -4,7 +4,7 @@ import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
 import { costUsd } from "../pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../prompt";
-import type { ModelProvider } from "./types";
+import type { ModelProvider, ProviderOptions } from "./types";
 
 /**
  * Any endpoint that speaks the OpenAI chat-completions shape.
@@ -35,14 +35,19 @@ interface ChatCompletion {
 export class OpenAiCompatibleProvider implements ModelProvider {
   readonly id = "openai";
 
-  constructor(
-    private readonly model = env.openaiModel,
-    private readonly baseUrl = env.openaiBaseUrl,
-  ) {}
+  private readonly model: string;
+  private readonly baseUrl: string;
+  private readonly apiKey: string | undefined;
+
+  constructor(options: ProviderOptions = {}) {
+    this.model = options.model ?? env.openaiModel;
+    this.baseUrl = options.baseUrl ?? env.openaiBaseUrl;
+    this.apiKey = options.apiKey ?? env.openaiApiKey;
+  }
 
   available(): boolean {
     // A local endpoint such as Ollama needs no key.
-    return Boolean(env.openaiApiKey) || !this.baseUrl.includes("api.openai.com");
+    return Boolean(this.apiKey) || !this.baseUrl.includes("api.openai.com");
   }
 
   describe(): AgentInfo {
@@ -58,9 +63,9 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.baseUrl.includes("api.openai.com")) {
-      headers["authorization"] = `Bearer ${requireKey(env.openaiApiKey, "OPENAI_API_KEY")}`;
-    } else if (env.openaiApiKey) {
-      headers["authorization"] = `Bearer ${env.openaiApiKey}`;
+      headers["authorization"] = `Bearer ${requireKey(this.apiKey, "OPENAI_API_KEY")}`;
+    } else if (this.apiKey) {
+      headers["authorization"] = `Bearer ${this.apiKey}`;
     }
 
     const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {

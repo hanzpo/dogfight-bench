@@ -13,13 +13,26 @@ export class HttpAgent implements AgentAdapter {
     public readonly id: string,
     readonly info: AgentInfo,
     private readonly endpoint: string,
+    /**
+     * Which provider to ask for, and optionally the caller's own credentials.
+     *
+     * Read fresh on every request rather than captured once, so entering a key
+     * mid-match takes effect on the next decision instead of on the next match.
+     */
+    private readonly kind?: string,
+    private readonly headers?: () => Record<string, string>,
   ) {}
 
   async decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
     const response = await fetch(this.endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId: this.id, agent: this.info, observation }),
+      headers: { "content-type": "application/json", ...(this.headers?.() ?? {}) },
+      body: JSON.stringify({
+        agentId: this.id,
+        agent: this.info,
+        ...(this.kind ? { kind: this.kind } : {}),
+        observation,
+      }),
       signal,
     });
     if (!response.ok) {

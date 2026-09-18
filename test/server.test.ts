@@ -161,7 +161,7 @@ describe("openai-compatible provider", () => {
         { status: 200 },
       ),
     );
-    const provider = new OpenAiCompatibleProvider("claude-opus-5", "https://example.test/v1");
+    const provider = new OpenAiCompatibleProvider({ model: "claude-opus-5", baseUrl: "https://example.test/v1" });
     const decision = await provider.decide(sampleObservation());
     expect(decision.action).toEqual({ schema: "tactical", maneuver: "lag_pursuit", targetG: 6, throttle: "mil", fire: false });
     expect(decision.rationale).toBe("behind them");
@@ -178,13 +178,13 @@ describe("openai-compatible provider", () => {
         { status: 200 },
       ),
     );
-    const decision = await new OpenAiCompatibleProvider("m", "https://example.test/v1").decide(sampleObservation());
+    const decision = await new OpenAiCompatibleProvider({ model: "m", baseUrl: "https://example.test/v1" }).decide(sampleObservation());
     expect(decision.action).toEqual({ schema: "tactical", maneuver: "level", targetG: 9, throttle: "mil", fire: false });
   });
 
   it("raises a provider error on a non-2xx response", async () => {
     vi.stubGlobal("fetch", async () => new Response("rate limited", { status: 429 }));
-    await expect(new OpenAiCompatibleProvider("m", "https://example.test/v1").decide(sampleObservation())).rejects.toThrow(/429/);
+    await expect(new OpenAiCompatibleProvider({ model: "m", baseUrl: "https://example.test/v1" }).decide(sampleObservation())).rejects.toThrow(/429/);
   });
 });
 

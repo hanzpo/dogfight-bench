@@ -1,16 +1,48 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/**
+ * Two visual languages, on purpose.
+ *
+ * Everything a pilot looks at -- the head-up display, the attitude indicator,
+ * the gunsight -- is drawn the way those instruments are actually drawn:
+ * phosphor green, condensed type, stroked symbology. That is not decoration,
+ * it is the subject.
+ *
+ * Everything else is a research tool that happens to contain a flight
+ * simulator, and it is set like one: neutral greys, one restrained accent,
+ * sentence case, generous spacing, type that is meant to be read rather than
+ * to look futuristic. Mixing the two is what makes an interface feel like a
+ * costume, so the tokens below are kept deliberately separate.
+ */
 
 :root {
-  --ink: #eef7f3;
-  --accent: #67e5d0;
-  --warn: #ff9a6b;
-  --good: #8dfba8;
-  --panel: #071015d9;
-  --hairline: #ffffff1c;
-  font-family: "Barlow Condensed", sans-serif;
-  color: var(--ink);
-  background: #080d10;
+  /* Surfaces, darkest to lightest. */
+  --bg: #0c0d0f;
+  --surface: #141618;
+  --surface-raised: #1b1e21;
+  --line: #ffffff14;
+  --line-strong: #ffffff24;
+
+  /* Text, by how much it matters. */
+  --text: #ececee;
+  --text-muted: #9a9ca1;
+  --text-faint: #6d7076;
+
+  --accent: #7dd3c0;
+  --accent-ink: #0c1512;
+  --warn: #e8a87c;
+  --good: #8fc99b;
+  --danger: #e08a86;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 * { box-sizing: border-box; }
@@ -20,85 +52,157 @@ html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
    is, the element must never be larger than its container. */
 canvas { display: block; cursor: grab; width: 100%; height: 100%; }
 canvas:active { cursor: grabbing; }
-code { font: 11px "JetBrains Mono"; color: var(--accent); }
+code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
+
+::selection { background: #7dd3c033; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
 
 /* ---------- Chrome ---------- */
 
 .topbar {
   position: fixed;
   inset: 0 0 auto 0;
-  height: 64px;
+  height: 56px;
   z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: linear-gradient(#071015e8, #07101500);
+  padding: 0 20px;
+  background: linear-gradient(#0c0d0fdd, #0c0d0f00);
+  backdrop-filter: blur(8px);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.brand b { font-weight: 600; color: var(--text-muted); }
+.mark {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: var(--radius-sm); background: var(--accent); color: var(--accent-ink);
+  font-size: 11px; font-weight: 600;
 }
 
-.brand { display: flex; align-items: center; gap: 11px; font-size: 18px; letter-spacing: .12em; }
-.brand b { color: var(--accent); }
-.mark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--accent); color: var(--accent); font-weight: 700; }
-
-.nav { display: flex; gap: 18px; font: 10px "JetBrains Mono"; letter-spacing: .14em; }
-.nav a { color: #8fa3a0; text-decoration: none; padding-bottom: 3px; border-bottom: 1px solid transparent; }
-.nav a:hover { color: var(--ink); }
-.nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+.nav { display: flex; gap: 4px; font-size: 13px; }
+.nav a {
+  color: var(--text-muted); text-decoration: none;
+  padding: 6px 11px; border-radius: var(--radius-sm);
+}
+.nav a:hover { color: var(--text); background: #ffffff0a; }
+.nav a.active { color: var(--text); background: #ffffff12; }
 
 /* Below the heading tape, which owns the top centre. */
 .orbit-help {
+  /* Clear of the heading scale, which owns the top centre down to about 130. */
+  position: fixed; top: 152px; left: 50%; transform: translateX(-50%);
+  color: #d8e5e099; font: 11px/1 "JetBrains Mono"; pointer-events: none; z-index: 2;
   text-shadow: 0 1px 3px #000c;
-  position: fixed; top: 128px; left: 50%; transform: translateX(-50%);
-  color: #d8e5e099; font: 9px "JetBrains Mono"; letter-spacing: .12em; pointer-events: none; z-index: 2;
 }
 
 /* Mouse-flying status. Deliberately not a modal: it sits over a live match. */
 .pointer-hint {
-  position: fixed; top: 128px; left: 50%; transform: translateX(-50%); z-index: 3;
-  display: flex; align-items: center; gap: 12px;
+  position: fixed; top: 146px; left: 50%; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 10px;
 }
 .pointer-hint span {
-  font: 9px "JetBrains Mono"; letter-spacing: .12em; color: #d8e5e0aa; text-shadow: 0 1px 3px #000c;
+  font: 11px/1 "JetBrains Mono"; color: #d8e5e0aa; text-shadow: 0 1px 3px #000c;
 }
-.pointer-hint button { min-height: 26px; padding: 0 10px; }
 
-select, button {
-  min-height: 32px;
-  border: 1px solid #ffffff22;
-  color: #dce7e4;
-  background: #121e23;
-  font: 10px "JetBrains Mono";
-  letter-spacing: .06em;
-  transition: border-color .12s, color .12s, background .12s;
+/* ---------- Controls ---------- */
+
+select, button, input {
+  font-family: inherit; font-size: 13px; color: var(--text);
+  background: var(--surface-raised); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); min-height: 32px; padding: 0 10px;
 }
-button:active { background: #18272d; }
-select { margin-left: 8px; padding: 0 28px 0 9px; }
-button { padding: 0 12px; cursor: pointer; }
-button:hover { border-color: var(--accent); color: var(--accent); }
-label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
+select { appearance: none; padding-right: 26px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+                    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+button { cursor: pointer; padding: 0 12px; }
+button:hover:not(:disabled) { background: #24282c; border-color: #ffffff3a; }
+button:active:not(:disabled) { background: #101214; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+select:hover { border-color: #ffffff3a; }
+
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+button.primary:hover:not(:disabled) { background: #93dccb; border-color: #93dccb; }
+button.ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+button.ghost:hover:not(:disabled) { background: #ffffff0f; color: var(--text); border-color: transparent; }
+button.ghost.danger:hover:not(:disabled) { color: var(--danger); }
+
+input { width: 100%; }
+input::placeholder { color: var(--text-faint); }
+
+/* A control's label sits above it, in the same small muted voice everywhere. */
+label { color: var(--text-muted); font-size: 11px; }
 
 .controls {
-  position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 3;
-  display: flex; align-items: center; gap: 6px; padding: 8px;
-  background: #060d11e8; border: 1px solid var(--hairline);
-  backdrop-filter: blur(14px); white-space: nowrap;
-  box-shadow: 0 12px 34px #0009;
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; justify-content: center;
+  padding: 10px 12px;
+  background: #16181bec; border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 8px 28px #00000055;
+  max-width: calc(100vw - 32px);
 }
-.controls label { display: flex; align-items: center; gap: 0; }
+.controls label { display: grid; gap: 4px; }
+.controls > button { align-self: end; }
 
+/* One status line along the bottom edge. The keyboard hints used to be a
+   separate fixed element sitting directly on top of it. */
 .flight-strip {
-  text-shadow: 0 1px 3px #000c;
-  position: fixed; left: 50%; bottom: 20px; width: min(680px, calc(100% - 32px));
-  transform: translateX(-50%); display: flex; justify-content: space-between;
-  color: #b8c8c5; font: 9px "JetBrains Mono"; letter-spacing: .07em; pointer-events: none; z-index: 2;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
+  padding: 9px 20px;
+  font: 11px/1 "JetBrains Mono"; color: var(--text-muted);
+  background: linear-gradient(#0c0d0f00, #0c0d0fee);
+  pointer-events: none;
 }
 #event { color: var(--accent); }
+.keymap { flex: 1; text-align: center; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.keymap {
-  text-shadow: 0 1px 3px #000c;
-  position: fixed; left: 20px; bottom: 22px;
-  color: #d8e5e077; font: 8px "JetBrains Mono"; letter-spacing: .08em; pointer-events: none; z-index: 2;
+/* Something went wrong with a model, said where the pilot can act on it. */
+.decision-error {
+  position: fixed; top: 68px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 14px; max-width: min(620px, calc(100vw - 40px));
+  background: var(--surface-raised); border: 1px solid #e08a8655; border-radius: var(--radius);
+  font-size: 12px; color: var(--text);
+  box-shadow: 0 8px 28px #00000066;
 }
+.decision-error strong { color: var(--danger); font-size: 11px; font-weight: 600; }
+.decision-error span { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Sheets ---------- */
+
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 10;
+  display: grid; place-items: center; padding: 24px;
+  background: #06070899; backdrop-filter: blur(4px);
+}
+.sheet {
+  width: min(520px, 100%); max-height: min(720px, calc(100vh - 48px)); overflow: auto;
+  padding: 22px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 24px 64px #00000077;
+}
+.sheet header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.sheet h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.sheet header p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-muted); max-width: 46ch; }
+.sheet header button { margin-left: auto; }
+
+.field { display: grid; gap: 5px; margin-bottom: 12px; }
+.field > span { font-size: 12px; color: var(--text-muted); }
+.muted { color: var(--text-faint); }
+
+.key-row { padding: 16px 0; border-top: 1px solid var(--line); }
+.key-row-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+.key-provider { font-weight: 500; text-transform: capitalize; }
+.key-saved { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.key-saved code { color: var(--text-muted); }
+.key-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+.scope { display: grid; gap: 8px; margin: 0 0 4px; padding: 0; border: 0; }
+.scope label { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text); cursor: pointer; }
+.scope input { width: auto; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); }
+.scope span span { display: block; font-size: 11px; }
 
 /* ---------- Flight display ----------
    Everything a pilot could actually read: head-up display green, phosphor
@@ -201,122 +305,191 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 }
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
 
+
+/* ---------- Tactical overlay ----------
+   Gun symbology, which genuinely is something the pilot sees, so it keeps the
+   head-up display's treatment. Full viewport: the overlay projects in viewport
+   coordinates, and without an explicit size the SVG falls back to its intrinsic
+   300x150 and folds the whole thing into the top-left corner. */
+
+.tactical {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 2; pointer-events: none;
+  --hud: #6bff9e;
+  --shoot: #b9ff6b;
+}
+.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
+
+.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
+.reticle circle { stroke: inherit; }
+.reticle .pip { fill: var(--hud); stroke: none; }
+
+.target-box { filter: drop-shadow(0 0 3px #000a); }
+.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
+.target-box text { fill: #ffd98a; }
+
+/* Dashed, so it reads as a correction to close rather than a solid object. */
+.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
+
+.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
+
+.shoot-cue text {
+  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
+  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
+  text-anchor: middle;
+}
+.shoot-cue { animation: pulse .7s ease-in-out infinite; }
+
+
 /* ---------- Observer panel ----------
+
    Deliberately not a HUD. This is the benchmark's omniscient view, so it reads
    as data: plain monospace, no glow, one block, one place. */
 
 .observer {
-  position: fixed; top: 78px; right: 18px; z-index: 3; width: 252px;
-  max-height: calc(100vh - 200px); overflow: auto;
-  padding: 12px 14px;
-  background: #080d10ee; border: 1px solid #ffffff1a;
-  font: 10px "JetBrains Mono"; color: #b7c6c3; letter-spacing: .02em;
+  position: fixed; top: 68px; right: 16px; z-index: 3; width: 286px;
+  max-height: calc(100vh - 190px); overflow: auto;
+  padding: 14px 16px;
+  background: #16181bf2; border: 1px solid var(--line); border-radius: var(--radius);
+  font: 11px/1.45 "JetBrains Mono"; color: var(--text-muted);
+  box-shadow: 0 8px 28px #00000044;
 }
-.observer header { display: grid; gap: 3px; margin-bottom: 11px; padding-right: 22px; }
+.observer header { display: grid; gap: 3px; margin-bottom: 14px; padding-right: 26px; }
+.observer header span:first-child {
+  font-family: Inter, sans-serif; font-size: 13px; font-weight: 600; color: var(--text);
+}
+.observer-note { font-family: Inter, sans-serif; font-size: 11px; color: var(--text-faint); line-height: 1.45; }
 .observer-toggle {
-  position: absolute; top: 8px; right: 8px; min-height: 0; padding: 2px 7px;
-  font: 9px "JetBrains Mono"; background: transparent; border-color: #ffffff22;
+  position: absolute; top: 10px; right: 10px; min-height: 0; padding: 3px 8px;
+  font-size: 11px; background: transparent; border-color: transparent; color: var(--text-faint);
 }
+.observer-toggle:hover { background: #ffffff0f; border-color: transparent; color: var(--text); }
+
 /* Collapsed it becomes a tab on the edge of the screen, rather than a small
    floating box with a button loose inside it. */
-.observer.collapsed {
-  width: auto; padding: 0; background: none; border: none;
-  top: 82px; right: 0;
-}
+.observer.collapsed { width: auto; padding: 0; background: none; border: none; box-shadow: none; top: 76px; right: 0; }
 .observer.collapsed header, .observer.collapsed section { display: none; }
 .observer.collapsed .observer-toggle {
-  position: static; padding: 7px 12px; letter-spacing: .18em;
-  background: #080d10ee; border: 1px solid #ffffff1a; border-right: none;
-  color: #9fb2af;
+  position: static; padding: 8px 13px;
+  font-family: Inter, sans-serif; font-size: 12px;
+  background: #16181bf2; border: 1px solid var(--line); border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius); color: var(--text-muted);
 }
-.observer.collapsed .observer-toggle:hover { color: var(--accent); border-color: var(--accent); border-right: none; }
-.observer header span:first-child { font-size: 9px; letter-spacing: .24em; color: #e7f0ee; }
-.observer-note { font-size: 8px; color: #6f817e; line-height: 1.4; }
+.observer.collapsed .observer-toggle:hover { color: var(--text); border-right: none; }
+
 .observer h2 {
-  margin: 12px 0 5px; font: 8px "JetBrains Mono"; letter-spacing: .2em;
-  color: #6f817e; font-weight: 400;
-  border-bottom: 1px solid #ffffff12; padding-bottom: 4px;
+  margin: 16px 0 7px; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;
+  letter-spacing: .04em; color: var(--text-faint); text-transform: uppercase;
+  border-bottom: 1px solid var(--line); padding-bottom: 5px;
 }
 .observer section:first-of-type h2 { margin-top: 0; }
 .observer dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
-.observer dt { color: #7f8f8c; white-space: nowrap; }
-.observer dd { margin: 0; text-align: right; color: #dfeae8; font-variant-numeric: tabular-nums; }
-.observer dd.good { color: #8dfba8; }
-.observer dd.bad { color: #ff9a6b; }
-.observer-sub { color: #6f817e; }
+.observer dt { color: var(--text-faint); white-space: nowrap; }
+.observer dd { margin: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.observer dd.good { color: var(--good); }
+.observer dd.bad { color: var(--warn); }
+.observer-sub { color: var(--text-faint); }
+.observer-rationale {
+  margin: 9px 0 0; font-family: Inter, sans-serif; font-size: 11px; line-height: 1.5;
+  color: var(--text-muted); font-style: italic;
+}
+
+/* A calibrated model reports how sure it was of every alternative, not just
+   which one won. A bar chart is the only honest way to show that. */
+.distribution { margin-top: 11px; }
+.distribution-head {
+  display: flex; justify-content: space-between; margin-bottom: 4px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint);
+}
+.distribution-row { display: grid; grid-template-columns: 82px 1fr 22px; gap: 7px; align-items: center; margin-bottom: 2px; }
+.distribution-label { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.distribution-bar { height: 5px; background: #ffffff10; border-radius: 3px; overflow: hidden; }
+.distribution-bar span { display: block; height: 100%; background: #ffffff33; border-radius: 3px; }
+.distribution-value { text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.distribution-row.chosen .distribution-label,
+.distribution-row.chosen .distribution-value { color: var(--text); }
+.distribution-row.chosen .distribution-bar span { background: var(--accent); }
 
 /* ---------- Data pages ---------- */
 
 .page {
-  position: fixed; inset: 64px 0 0 0; z-index: 4; overflow: auto;
-  padding: 28px 32px 60px; background: #080d10;
+  position: fixed; inset: 56px 0 0 0; z-index: 4; overflow: auto;
+  padding: 32px 32px 72px; background: var(--bg);
 }
-.page.overlay-page { background: #080d10e0; backdrop-filter: blur(6px); }
-.page h1 { font: 600 22px "Barlow Condensed"; letter-spacing: .2em; margin: 0 0 22px; }
+.page.overlay-page { background: #0c0d0fe8; backdrop-filter: blur(8px); }
+.page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
+.page-intro { margin: 0 0 26px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 
-.summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
-.stat {
-  display: grid; gap: 3px; padding: 10px 16px; min-width: 116px;
-  background: #0d1418; border: 1px solid var(--hairline);
+.segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.segmented button {
+  min-height: 27px; padding: 0 12px; font-size: 12px;
+  background: transparent; border: none; border-radius: 4px; color: var(--text-muted);
 }
-.stat span { font: 8px "JetBrains Mono"; letter-spacing: .18em; color: #7f9490; }
-.stat strong { font: 600 19px "Barlow Condensed"; letter-spacing: .04em; color: var(--ink); }
+.segmented button:hover:not(:disabled) { background: #ffffff0a; color: var(--text); }
+.segmented button[aria-pressed="true"] { background: #ffffff16; color: var(--text); }
+
+.summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 26px; }
+.stat {
+  display: grid; gap: 4px; padding: 12px 16px; min-width: 124px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.stat span { font-size: 11px; color: var(--text-faint); }
+.stat strong { font-size: 19px; font-weight: 600; letter-spacing: -.01em; color: var(--text); }
 
 .rank {
-  display: inline-grid; place-items: center; width: 21px; height: 21px;
-  font: 600 11px "Barlow Condensed"; color: #93a6a3; border: 1px solid #ffffff1f;
+  display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 500; color: var(--text-muted); background: #ffffff0d;
 }
-.rank-1 { color: #0b1512; background: var(--accent); border-color: var(--accent); }
-.rank-2 { color: #cfe0dd; border-color: #cfe0dd88; }
-.rank-3 { color: #d8b183; border-color: #d8b18388; }
+.rank-1 { color: var(--accent-ink); background: var(--accent); }
+.rank-2 { color: var(--text); background: #ffffff20; }
+.rank-3 { color: #e3c39e; background: #e3c39e22; }
 
 .badge {
-  margin-left: 8px; padding: 1px 6px; font: 8px "JetBrains Mono"; letter-spacing: .12em;
-  color: #8fa3a0; border: 1px solid #ffffff1c; text-transform: uppercase;
+  margin-left: 8px; padding: 2px 7px; border-radius: 999px;
+  font-size: 10px; color: var(--text-muted); background: #ffffff0d;
 }
-.badge-anthropic, .badge-openai, .badge-jev { color: var(--accent); border-color: #67e5d055; }
+.badge-anthropic, .badge-openai, .badge-jev { color: var(--accent); background: #7dd3c01f; }
+.badge-human { color: var(--warn); background: #e8a87c1f; }
 
 /* Win rate reads faster as a bar than as a number. */
-.meter {
-  display: inline-block; width: 46px; height: 4px; margin-right: 8px;
-  background: #ffffff1a; vertical-align: middle;
-}
-.meter-fill { display: block; height: 100%; background: var(--accent); }
-.notice { color: #9fb2af; font: 11px "JetBrains Mono"; line-height: 1.7; max-width: 70ch; }
-.footnote { margin-top: 18px; color: #7f9490; font: 9px "JetBrains Mono"; line-height: 1.8; max-width: 90ch; }
+.meter { display: inline-block; width: 46px; height: 4px; margin-right: 8px; background: #ffffff16; border-radius: 2px; vertical-align: middle; }
+.meter-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
-table.data { width: 100%; border-collapse: collapse; font: 11px "JetBrains Mono"; }
+.notice { color: var(--text-muted); font-size: 13px; line-height: 1.65; max-width: 70ch; }
+.footnote { margin-top: 22px; color: var(--text-faint); font-size: 12px; line-height: 1.7; max-width: 90ch; }
+
+table.data { width: 100%; border-collapse: collapse; font: 12px/1.5 "JetBrains Mono"; }
 table.data th {
-  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--hairline);
-  font: 8px "JetBrains Mono"; letter-spacing: .14em; color: #7f9490; white-space: nowrap;
+  text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line-strong);
+  font-family: Inter, sans-serif; font-size: 11px; font-weight: 500; color: var(--text-faint); white-space: nowrap;
 }
-table.data td { padding: 9px 10px; border-bottom: 1px solid #ffffff0e; color: #c6d5d2; }
+table.data td { padding: 10px; border-bottom: 1px solid var(--line); color: var(--text-muted); }
 table.data tr:hover td { background: #ffffff06; }
 table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
-table.data .strong { color: var(--ink); font-weight: 600; }
-table.data .muted { color: #7f9490; }
+table.data .strong { color: var(--text); font-weight: 500; }
+table.data .muted { color: var(--text-faint); }
 table.data .warn { color: var(--warn); }
-table.data a { color: var(--accent); text-decoration: none; letter-spacing: .1em; }
+table.data a { color: var(--accent); text-decoration: none; }
 table.data a:hover { text-decoration: underline; }
 
 /* ---------- Replay ---------- */
 
 .replay-meta {
-  position: fixed; top: 76px; left: 20px; z-index: 3; display: grid; gap: 4px;
-  padding: 10px 14px; background: var(--panel); border: 1px solid var(--hairline);
-  font: 10px "JetBrains Mono"; letter-spacing: .06em; max-width: min(460px, calc(100% - 40px));
+  position: fixed; top: 68px; left: 16px; z-index: 3; display: grid; gap: 5px;
+  padding: 12px 14px; background: #16181bf2; border: 1px solid var(--line); border-radius: var(--radius);
+  font: 11px/1.5 "JetBrains Mono"; max-width: min(460px, calc(100% - 32px));
+  box-shadow: 0 8px 28px #00000044;
 }
-.replay-meta .muted { color: #8fa3a0; }
-.replay-meta .rationale { color: var(--accent); font-style: italic; line-height: 1.5; }
-.scrubber { width: min(360px, 40vw); accent-color: var(--accent); }
-.timecode { font: 9px "JetBrains Mono"; color: #93a6a3; min-width: 92px; text-align: center; }
+.replay-meta .muted { color: var(--text-faint); }
+.replay-meta .rationale { color: var(--accent); font-style: italic; }
+.scrubber { width: min(360px, 40vw); accent-color: var(--accent); min-height: 0; padding: 0; border: none; background: none; }
+.timecode { font: 11px "JetBrains Mono"; color: var(--text-muted); min-width: 92px; text-align: center; }
 
 @media (max-width: 900px) {
-  .controls { bottom: 58px; max-width: calc(100% - 20px); overflow-x: auto; }
+  .controls { bottom: 52px; max-width: calc(100vw - 16px); overflow-x: auto; justify-content: flex-start; }
   .keymap { display: none; }
-  .hud { inset: 74px 0 auto 0; padding: 0 12px; }
-  .hud-panel { min-width: 0; }
-  .hud-value { font-size: 13px; }
-  .page { padding: 20px 16px 60px; }
-  table.data { font-size: 10px; }
+  .observer { width: min(286px, calc(100vw - 24px)); }
+  .page { padding: 22px 16px 72px; }
+  table.data { font-size: 11px; }
 }

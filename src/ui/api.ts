@@ -52,12 +52,27 @@ export interface MatchRow {
 
 export interface AgentRow {
   kind: string;
+  /** This deployment holds a credential for it. */
   available: boolean;
+  /** Anyone may fly it without supplying a key, up to the shared daily cap. */
+  free: boolean;
+  /** It can be flown by supplying your own key. */
+  acceptsCallerKey: boolean;
   name: string;
   provider: string;
   model: string;
   schema: string;
   pricing: { inputPerMTok: number; outputPerMTok: number } | null;
+}
+
+/** What is left of the shared daily allowance for the free providers. */
+export interface FreeBudget {
+  provider: string;
+  decisions: number;
+  costUsd: number;
+  dailyBudgetUsd: number;
+  dailyDecisions: number;
+  exhausted: boolean;
 }
 
 export class ServerUnavailableError extends Error {
@@ -82,5 +97,6 @@ export const api = {
   leaderboard: () => get<{ leaderboard: LeaderboardEntry[] }>("/api/leaderboard").then((body) => body.leaderboard),
   matches: () => get<{ matches: MatchRow[] }>("/api/matches").then((body) => body.matches),
   agents: () => get<{ agents: AgentRow[] }>("/api/agents").then((body) => body.agents),
+  roster: () => get<{ agents: AgentRow[]; freeBudget: FreeBudget[] }>("/api/agents"),
   replay: (id: string) => get<ReplayFile>(`/api/matches/${id}/replay`),
 };

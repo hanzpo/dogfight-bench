@@ -3,16 +3,22 @@ import type { AgentAdapter } from "../../src/agents/agent";
 import { AnthropicProvider } from "./anthropic";
 import { JevProvider } from "./jev";
 import { OpenAiCompatibleProvider } from "./openai";
-import type { ModelProvider } from "./types";
+import type { ModelProvider, ProviderOptions } from "./types";
 
-export type { ModelProvider };
+export type { ModelProvider, ProviderOptions };
 
-/** Providers, keyed by the name used in the API and on the leaderboard. */
-export function providers(): Map<string, ModelProvider> {
+/**
+ * Providers, keyed by the name used in the API and on the leaderboard.
+ *
+ * Optionally built around credentials supplied by the caller instead of the
+ * server's own, which is how someone brings their own key: the provider is
+ * constructed for that one request and discarded with it.
+ */
+export function providers(options: ProviderOptions = {}): Map<string, ModelProvider> {
   return new Map<string, ModelProvider>([
-    ["anthropic", new AnthropicProvider()],
-    ["openai", new OpenAiCompatibleProvider()],
-    ["jev", new JevProvider()],
+    ["anthropic", new AnthropicProvider(options)],
+    ["openai", new OpenAiCompatibleProvider(options)],
+    ["jev", new JevProvider(options)],
   ]);
 }
 

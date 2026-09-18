@@ -58,6 +58,21 @@ CREATE TABLE IF NOT EXISTS participants (
   PRIMARY KEY (match_id, aircraft_id)
 );
 
+/**
+ * What the free providers have spent today, across everybody.
+ *
+ * In the database rather than in memory because a restart must not hand the
+ * internet a fresh budget -- which, for a process that restarts on every
+ * deploy, would mean no budget at all.
+ */
+CREATE TABLE IF NOT EXISTS public_usage (
+  day       TEXT NOT NULL,
+  provider  TEXT NOT NULL,
+  decisions INTEGER NOT NULL DEFAULT 0,
+  cost_usd  REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, provider)
+);
+
 CREATE INDEX IF NOT EXISTS participants_agent ON participants(agent_id);
 CREATE INDEX IF NOT EXISTS matches_created ON matches(created_at DESC);
 `;
@@ -85,6 +100,11 @@ export interface LeaderboardRow {
   avgLatencyMs: number;
   costUsd: number;
   costPerMatchUsd: number;
+}
+
+/** UTC calendar day, so the cap resets at a time nobody has to reason about. */
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function agentKey(info: AgentInfo): string {
@@ -213,6 +233,27 @@ export class MatchStore {
     const update = this.db.prepare("UPDATE agents SET rating = ? WHERE id = ?");
     update.run(ratingA + k * (scoreA - expectedA), a);
     update.run(ratingB + k * (1 - scoreA - (1 - expectedA)), b);
+  }
+
+  /** Today's free-tier usage for one provider, in UTC days. */
+  publicUsageToday(provider: string): { decisions: number; costUsd: number } {
+    const row = this.db
+      .prepare("SELECT decisions, cost_usd AS costUsd FROM public_usage WHERE day = ? AND provider = ?")
+      .get(utcDay(), provider) as { decisions?: number; costUsd?: number } | undefined;
+    return { decisions: Number(row?.decisions ?? 0), costUsd: Number(row?.costUsd ?? 0) };
+  }
+
+  /** Adds one served decision to today's free-tier total. */
+  recordPublicUsage(provider: string, costUsd: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO public_usage (day, provider, decisions, cost_usd)
+         VALUES (?, ?, 1, ?)
+         ON CONFLICT(day, provider) DO UPDATE SET
+           decisions = decisions + 1,
+           cost_usd = cost_usd + excluded.cost_usd`,
+      )
+      .run(utcDay(), provider, Number.isFinite(costUsd) ? costUsd : 0);
   }
 
   leaderboard(): LeaderboardRow[] {

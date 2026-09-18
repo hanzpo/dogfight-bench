@@ -3,7 +3,10 @@ import { FlightDisplay } from "../components/FlightDisplay";
 import { ObserverPanel } from "../components/ObserverPanel";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
-import { useLiveMatch, type PilotKind } from "../hooks/useLiveMatch";
+import { ModelKeysPanel } from "../components/ModelKeysPanel";
+import { useLiveMatch, type PilotChoice } from "../hooks/useLiveMatch";
+import { useRoster } from "../hooks/useRoster";
+import { loadKey } from "../keys";
 import { CONTROL_SCHEMES, type ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 
@@ -25,10 +28,42 @@ const KEYMAP: Record<ControlScheme, string> = {
  */
 export function LivePage() {
   const match = useLiveMatch();
+  const roster = useRoster();
   const viewer = useRef<DogfightViewer>(undefined);
   const [view, setView] = useState<ViewMode>("orbit");
   const [observerOpen, setObserverOpen] = useState(true);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";
+
+  /**
+   * Which opponents can actually be flown right now.
+   *
+   * A model is flyable if this deployment offers it free and the day's
+   * allowance is not spent, or if a key for it has been entered here. Anything
+   * else is offered but labelled, so the reason it will not fly is on the
+   * control rather than in a failed request thirty seconds into a match.
+   */
+  const pilotOptions = useMemo(() => {
+    void keyNonce;
+    const scripted = [
+      { value: "basic", label: "Baseline · energy fighter", note: "" },
+      { value: "basic-pursuit", label: "Baseline · naive pursuit", note: "" },
+    ];
+    const models = roster.agents
+      .filter((agent) => agent.provider !== "scripted")
+      .map((agent) => {
+        const budget = roster.freeBudget.find((entry) => entry.provider === agent.kind);
+        const hasKey = Boolean(loadKey(agent.kind));
+        const free = agent.free && agent.available && !budget?.exhausted;
+        const note = hasKey ? "your key" : free ? "free" : budget?.exhausted ? "allowance spent" : "needs a key";
+        return { value: agent.kind, label: agent.name, note, usable: free || hasKey };
+      });
+    return { scripted, models };
+  }, [roster.agents, roster.freeBudget, keyNonce]);
+
+  const lastDecision = match.decisions[followId];
+  const decisionError = lastDecision?.error;
 
   useEffect(() => {
     viewer.current?.setView(view);
@@ -129,7 +164,7 @@ export function LivePage() {
         <div className="pointer-hint">
           {match.canCapturePointer ? (
             <button id="capture-pointer" onClick={() => void match.inputRef.current.requestPointerLock()}>
-              CAPTURE POINTER
+              Capture pointer
             </button>
           ) : null}
           <span>
@@ -139,23 +174,56 @@ export function LivePage() {
           </span>
         </div>
       ) : null}
-      <ObserverPanel state={match.state} followId={followId} open={observerOpen} onToggle={() => setObserverOpen(!observerOpen)} />
+      <ObserverPanel
+        state={match.state}
+        followId={followId}
+        decision={lastDecision}
+        open={observerOpen}
+        onToggle={() => setObserverOpen(!observerOpen)}
+      />
 
       <footer className="controls">
         <label>
-          BLUE PILOT
+          You
           <select
             id="blue-pilot"
             value={match.bluePilot}
-            onChange={(changed) => match.setBluePilot(changed.target.value as PilotKind)}
+            onChange={(changed) => match.setBluePilot(changed.target.value as PilotChoice)}
           >
-            <option value="human">HUMAN</option>
-            <option value="basic">BASELINE AI</option>
-            <option value="model">SERVER MODEL</option>
+            <option value="human">Human — you fly</option>
+            {pilotOptions.scripted.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            {pilotOptions.models.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} · {option.note}
+              </option>
+            ))}
           </select>
         </label>
         <label>
-          CONTROL
+          Opponent
+          <select
+            id="red-pilot"
+            value={match.redPilot}
+            onChange={(changed) => match.setRedPilot(changed.target.value as PilotChoice)}
+          >
+            {pilotOptions.scripted.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            {pilotOptions.models.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} · {option.note}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Controls
           <select
             id="control-scheme"
             value={match.scheme}
@@ -163,41 +231,44 @@ export function LivePage() {
           >
             {CONTROL_SCHEMES.map((option) => (
               <option key={option} value={option}>
-                {option.toUpperCase()}
+                {option[0]!.toUpperCase() + option.slice(1)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          VIEW
+          View
           <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
-            <option value="orbit">EXTERNAL</option>
-            <option value="cockpit">COCKPIT</option>
+            <option value="orbit">External</option>
+            <option value="cockpit">Cockpit</option>
           </select>
         </label>
         <button id="follow" onClick={() => match.setFollowRed(!match.followRed)}>
-          {match.followRed ? "FOLLOW BLUE" : "FOLLOW RED"}
+          {match.followRed ? "Follow blue" : "Follow red"}
         </button>
         <button id="pause" onClick={() => match.setPaused(!match.paused)}>
-          {match.paused ? "RESUME" : "PAUSE"}
+          {match.paused ? "Resume" : "Pause"}
         </button>
         <label>
-          SPEED
+          Speed
           <select
             id="speed"
             value={match.timeScale}
             onChange={(changed) => match.setTimeScale(Number(changed.target.value))}
           >
-            <option value="1">1× REALTIME</option>
-            <option value="4">4× ACCELERATED</option>
-            <option value="16">16× ACCELERATED</option>
+            <option value="1">1× real time</option>
+            <option value="4">4×</option>
+            <option value="16">16×</option>
           </select>
         </label>
         <button id="restart" onClick={match.restart}>
-          RESTART MATCH
+          Restart
         </button>
         <button id="replay" onClick={match.downloadReplay}>
-          SAVE REPLAY
+          Save replay
+        </button>
+        <button id="model-keys" onClick={() => setKeysOpen(true)}>
+          Model keys
         </button>
       </footer>
 
@@ -207,9 +278,29 @@ export function LivePage() {
             ? `${followId.toUpperCase()} · ${Math.round(followed.velocity.length() * 1.94384)} KT · ${followed.ammo} ROUNDS`
             : "STANDING BY"}
         </span>
+        <span className="keymap">{KEYMAP[match.scheme]}</span>
         <span id="event">{event}</span>
       </div>
-      <div className="keymap">{KEYMAP[match.scheme]}</div>
+
+      {decisionError ? (
+        <div className="decision-error" role="status">
+          <strong>{followId.toUpperCase()}</strong>
+          <span>{decisionError}</span>
+          {/^.*(key|allowance).*$/i.test(decisionError) ? (
+            <button className="ghost" onClick={() => setKeysOpen(true)}>
+              Add a key
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {keysOpen ? (
+        <ModelKeysPanel
+          agents={roster.agents}
+          onClose={() => setKeysOpen(false)}
+          onChanged={() => setKeyNonce((value) => value + 1)}
+        />
+      ) : null}
     </>
   );
 }

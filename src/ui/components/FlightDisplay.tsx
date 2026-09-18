@@ -389,7 +389,9 @@ function layout(
   const margin = Math.min(Math.max(width * 0.05, 26), 92);
   // The observer panel owns the right edge when it is open, so the altitude
   // tape and stores move inboard of it rather than hiding underneath.
-  const rightEdge = width - (observerOpen ? 300 : margin);
+  // The panel is 286 wide and sits 16 from the edge, so the instruments stop
+  // clear of it rather than an inch under it.
+  const rightEdge = width - (observerOpen ? 318 : margin);
   const place = (key: string, x: number, y: number) =>
     groups[key]?.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
 
