@@ -279,128 +279,131 @@ describe("openai-compatible provider", () => {
 });
 
 describe("jev provider", () => {
-  const answer = (choice: string, probabilities: Record<string, number>, confidence = 0.9) => ({
-    choice,
-    confidence,
-    probabilities,
-  });
+  const MANEUVERS = [
+    "pure_pursuit", "lead_pursuit", "lag_pursuit", "break_left", "break_right", "high_yoyo",
+    "low_yoyo", "vertical_reversal", "defensive_spiral", "extend", "climb", "dive", "level",
+  ];
 
   function uniform(ids: readonly string[], winner: string, winnerProbability: number) {
     const rest = (1 - winnerProbability) / (ids.length - 1);
     return Object.fromEntries(ids.map((id) => [id, id === winner ? winnerProbability : rest]));
   }
 
-  it("turns four calibrated choices into one action", async () => {
-    const maneuvers = ["pure_pursuit", "lead_pursuit", "lag_pursuit", "break_left", "break_right", "high_yoyo", "low_yoyo", "vertical_reversal", "defensive_spiral", "extend", "climb", "dive", "level"];
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            maneuver: answer("lead_pursuit", uniform(maneuvers, "lead_pursuit", 0.7)),
-            target_g: answer("8", uniform(["2", "4", "6", "8", "9"], "8", 0.6)),
-            throttle: answer("ab", uniform(["idle", "cruise", "mil", "ab"], "ab", 0.8)),
-            fire: answer("FIRE", { FIRE: 0.85, HOLD: 0.15 }),
-          },
-          usage: { input_tokens: 500, output_tokens: 10, cost_usd: 0.0002 },
-        }),
-        { status: 200 },
-      ),
+  const choice = (winner: string, confidence = 0.9, ids: readonly string[] = MANEUVERS) => ({
+    type: "choice",
+    choice: winner,
+    confidence,
+    probabilities: uniform(ids, winner, 0.7),
+  });
+
+  /** A score's answer: a position on the rubric, not one of its rungs. */
+  const score = (value: number, confidence = 0.8, levels = 5) => ({
+    type: "score",
+    score: value,
+    confidence,
+    probabilities: uniform(
+      Array.from({ length: levels }, (_, level) => String(level)),
+      String(Math.round(value)),
+      0.6,
+    ),
+  });
+
+  const noul = (value: number) => ({ type: "noul", noul: value });
+
+  const respond = (answers: Record<string, unknown>, usage?: Record<string, number>) =>
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ answers, usage }), { status: 200 }));
+
+  /**
+   * The point of the three primitives together.
+   *
+   * The manoeuvre is a choice because it is one of thirteen named things. The
+   * two control axes are scores, and a score between rungs has to survive as a
+   * number: 3.4 out of 4 is 7.8 g, which no menu of detents could have said.
+   */
+  it("flies a manoeuvre, a continuous load factor and a continuous throttle", async () => {
+    respond(
+      {
+        maneuver: choice("lead_pursuit"),
+        commitment: score(3.4),
+        power: score(3.5),
+        fire: noul(0.85),
+      },
+      { input_tokens: 500, output_tokens: 10, cost_usd: 0.0002 },
     );
     const decision = await new JevProvider().decide(sampleObservation());
-    expect(decision.action).toEqual({ schema: "tactical", maneuver: "lead_pursuit", targetG: 8, throttle: "ab", fire: true });
+    expect(decision.action).toEqual({
+      schema: "tactical",
+      maneuver: "lead_pursuit",
+      targetG: 1 + (3.4 / 4) * 8,
+      // The fraction is what is flown; the detent is only the nearest name for it.
+      throttle: "mil",
+      throttleFraction: 0.875,
+      fire: true,
+    });
     expect(decision.usage?.costUsd).toBeCloseTo(0.0002, 9);
   });
 
-  it("holds fire when the model is not confident, even though FIRE won", async () => {
-    const maneuvers = ["pure_pursuit", "lead_pursuit", "lag_pursuit", "break_left", "break_right", "high_yoyo", "low_yoyo", "vertical_reversal", "defensive_spiral", "extend", "climb", "dive", "level"];
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            maneuver: answer("lead_pursuit", uniform(maneuvers, "lead_pursuit", 0.4)),
-            target_g: answer("6", uniform(["2", "4", "6", "8", "9"], "6", 0.4)),
-            throttle: answer("mil", uniform(["idle", "cruise", "mil", "ab"], "mil", 0.4)),
-            fire: answer("FIRE", { FIRE: 0.52, HOLD: 0.48 }),
-          },
-        }),
-        { status: 200 },
-      ),
-    );
+  it("holds fire when the trigger question is barely past even", async () => {
+    respond({ maneuver: choice("lag_pursuit"), commitment: score(2), power: score(3), fire: noul(0.52) });
     const decision = await new JevProvider().decide(sampleObservation());
-    expect(decision.action.schema).toBe("tactical");
     expect(decision.action.schema === "tactical" && decision.action.fire).toBe(false);
   });
 
   /**
-   * The same model, the same credential, the other interface.
+   * Confidence is an answer in its own right.
    *
-   * `raw` asks for control positions instead of a named manoeuvre, and nothing
-   * interprets the answer or keeps flying it -- which also means nothing gates
-   * the trigger, so the confidence threshold is all that stands between a guess
-   * and a wasted burst.
+   * A manoeuvre the model is unsure of is not a reason to abandon one it was
+   * already flying; changing plan every second is worse than committing to one.
    */
-  it("flies the stick directly when asked for primitives", async () => {
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            pitch: answer("hard_pull", uniform(["hard_push", "push", "neutral", "pull", "hard_pull"], "hard_pull", 0.8)),
-            roll: answer("left", uniform(["hard_left", "left", "level", "right", "hard_right"], "left", 0.7)),
-            rudder: answer("centre", uniform(["left", "centre", "right"], "centre", 0.9)),
-            throttle: answer("ab", uniform(["idle", "cruise", "mil", "ab"], "ab", 0.8)),
-            fire: answer("FIRE", { FIRE: 0.9, HOLD: 0.1 }),
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-    const decision = await new JevProvider({ schema: "raw" }).decide(sampleObservation());
-    expect(decision.action).toEqual({
-      schema: "raw",
-      controls: { pitch: 1, roll: -0.45, yaw: 0, throttle: 1, fire: true },
-    });
-    // Every axis reports its own distribution, not just the one that won.
+  it("keeps flying the last manoeuvre when the new one is a guess", async () => {
+    const provider = new JevProvider();
+    respond({ maneuver: choice("high_yoyo", 0.9), commitment: score(3), power: score(3), fire: noul(0.1) });
+    expect((await provider.decide(sampleObservation())).action).toMatchObject({ maneuver: "high_yoyo" });
+
+    respond({ maneuver: choice("extend", 0.05), commitment: score(3), power: score(3), fire: noul(0.1) });
+    const held = await provider.decide(sampleObservation());
+    expect(held.action).toMatchObject({ maneuver: "high_yoyo" });
+    expect(held.rationale).toMatch(/held/);
+
+    // A fresh match must not inherit the previous one's plan.
+    provider.reset();
+    respond({ maneuver: choice("extend", 0.05), commitment: score(3), power: score(3), fire: noul(0.1) });
+    expect((await provider.decide(sampleObservation())).action).toMatchObject({ maneuver: "extend" });
+  });
+
+  /** Every question reports its own distribution, named the way a person reads it. */
+  it("reports a distribution for all three kinds of question", async () => {
+    respond({ maneuver: choice("break_left"), commitment: score(4), power: score(0), fire: noul(0.3) });
+    const decision = await new JevProvider().decide(sampleObservation());
     expect(decision.distributions?.map((entry) => entry.question)).toEqual([
-      "pitch",
-      "roll",
-      "rudder",
-      "throttle",
+      "manoeuvre",
+      "commitment",
+      "power",
       "fire",
+    ]);
+    const commitment = decision.distributions?.find((entry) => entry.question === "commitment");
+    expect(commitment?.choice).toBe("Everything");
+    expect(commitment?.options).toHaveLength(5);
+    const fire = decision.distributions?.find((entry) => entry.question === "fire");
+    expect(fire?.options).toEqual([
+      { id: "hold", probability: 0.7 },
+      { id: "shoot", probability: 0.3 },
     ]);
   });
 
-  it("is a different entrant at each interface", () => {
-    const tactical = new JevProvider().describe();
-    const stick = new JevProvider({ schema: "raw" }).describe();
-    expect(tactical.schema).toBe("tactical");
-    expect(stick.schema).toBe("raw");
-    // Same model, different pilot: the ratings must not be pooled.
-    expect(competitorIdFor(stick)).not.toBe(competitorIdFor(tactical));
-  });
-
-  it("holds a raw trigger when the model is not confident", async () => {
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            pitch: answer("neutral", uniform(["hard_push", "push", "neutral", "pull", "hard_pull"], "neutral", 0.4)),
-            roll: answer("level", uniform(["hard_left", "left", "level", "right", "hard_right"], "level", 0.4)),
-            rudder: answer("centre", uniform(["left", "centre", "right"], "centre", 0.5)),
-            throttle: answer("mil", uniform(["idle", "cruise", "mil", "ab"], "mil", 0.4)),
-            fire: answer("FIRE", { FIRE: 0.52, HOLD: 0.48 }),
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-    const decision = await new JevProvider({ schema: "raw" }).decide(sampleObservation());
-    expect(decision.action.schema === "raw" && decision.action.controls.fire).toBe(false);
+  it("is one entrant, flying manoeuvres", () => {
+    const info = new JevProvider().describe();
+    expect(info.schema).toBe("tactical");
+    expect(competitorIdFor(info)).toContain("jev");
   });
 
   it("refuses a malformed answer instead of flying it", async () => {
-    vi.stubGlobal("fetch", async () =>
-      new Response(JSON.stringify({ answers: { maneuver: { choice: "lead_pursuit", confidence: 2, probabilities: {} } } }), { status: 200 }),
-    );
+    respond({ maneuver: { choice: "lead_pursuit", confidence: 2, probabilities: {} } });
+    await expect(new JevProvider().decide(sampleObservation())).rejects.toThrow(/Invalid TypeSafe/);
+  });
+
+  it("refuses a score that is off the rubric", async () => {
+    respond({ maneuver: choice("level"), commitment: score(9), power: score(2), fire: noul(0.1) });
     await expect(new JevProvider().decide(sampleObservation())).rejects.toThrow(/Invalid TypeSafe/);
   });
 });

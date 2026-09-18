@@ -49,7 +49,16 @@ function bar(label: string, value: number, unit = "", digits = 0): string {
   return `${label} ${value.toFixed(digits)}${unit}`;
 }
 
-export function buildBriefing(observation: AgentObservation): string {
+/**
+ * Turns the observation into the tactical picture.
+ *
+ * `includeActionMenu` is what separates a briefing for a model that writes an
+ * answer from one for a model that is handed typed questions. The picture is
+ * identical either way, deliberately: two providers answering differently about
+ * the same situation is the comparison; two providers reading different
+ * situations is not.
+ */
+export function buildBriefing(observation: AgentObservation, includeActionMenu = true): string {
   const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
   const bandit = observation.aircraft.find((aircraft) => aircraft.id === observation.relative.opponentId)!;
   const relative = observation.relative;
@@ -133,13 +142,15 @@ export function buildBriefing(observation: AgentObservation): string {
     }
   }
 
-  lines.push(
-    "",
-    "CHOOSE ONE MANOEUVRE:",
-    ...MANEUVERS.map((maneuver) => `  ${maneuver}: ${MANEUVER_GUIDE[maneuver]}`),
-    "",
-    `Also choose targetG (1 to 9; higher turns faster and costs more energy), throttle (${THROTTLE_DETENTS.join(", ")}), and whether to fire.`,
-  );
+  if (includeActionMenu) {
+    lines.push(
+      "",
+      "CHOOSE ONE MANOEUVRE:",
+      ...MANEUVERS.map((maneuver) => `  ${maneuver}: ${MANEUVER_GUIDE[maneuver]}`),
+      "",
+      `Also choose targetG (1 to 9; higher turns faster and costs more energy), throttle (${THROTTLE_DETENTS.join(", ")}), and whether to fire.`,
+    );
+  }
 
   return lines.join("\n");
 }

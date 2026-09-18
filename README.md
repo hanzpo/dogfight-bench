@@ -27,20 +27,36 @@ Nothing needs a key until you want a model to fly.
 
 ## Two ways to fly the same aircraft
 
-`tactical` names a manoeuvre, a load factor and a throttle detent; an autopilot
-flies that order continuously until the next answer. `raw` moves the stick
-directly and is held until the next answer, with nothing interpreting it and
-nothing gating the trigger.
+`tactical` names a manoeuvre, a load factor and a throttle; an autopilot flies
+that order continuously until the next answer. `raw` moves the stick directly
+and is held until the next answer, with nothing interpreting it and nothing
+gating the trigger.
 
 They are separate entrants with separate ratings, because folding them together
 would average a model's grasp of tactics with its grasp of aerodynamics and
-report one number meaning neither. Jev is offered as both: pick `jev` or
-`jev-stick` in the viewer's **You** / **Opponent** control, where the interface
-is named beside the model, or `--blue jev-stick` on the command line.
+report one number meaning neither. The interface is named beside the model in
+the viewer's **You** / **Opponent** control.
 
 The stick interface is the harder one at a decision a second: holding a gun
 solution means correcting continuously, and a control position chosen once a
 second is frozen for the whole second.
+
+## Jev
+
+Jev is not asked to write an answer. It answers typed questions about a state,
+and returns each answer already shaped, with a probability distribution and a
+calibrated confidence. The adapter asks four at once, one round trip:
+
+| Question | Primitive | Why that one |
+| --- | --- | --- |
+| Which manoeuvre? | `choice` | One of thirteen named things to do |
+| How hard to pull? | `score` | A position on a rubric, returned continuously -- 3.4 of 4 is 7.8 g, which no menu of detents could say |
+| How much thrust? | `score` | The same, mapped to throttle |
+| Would a burst hit? | `noul` | A yes/no whose honest answer is a probability |
+
+Confidence is used rather than discarded: below a threshold the previous
+manoeuvre is held, because a guess is not a reason to abandon a plan mid-fight.
+The distributions are drawn live in the details panel.
 
 ## Running models
 

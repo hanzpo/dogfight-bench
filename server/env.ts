@@ -31,7 +31,7 @@ export const env = {
    * that an open deployment can offer one model for free without offering its
    * whole inference budget to the internet.
    */
-  publicProviders: (process.env["DOGFIGHT_PUBLIC_PROVIDERS"] ?? "jev,jev-stick")
+  publicProviders: (process.env["DOGFIGHT_PUBLIC_PROVIDERS"] ?? "jev")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean),

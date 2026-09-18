@@ -63,6 +63,16 @@ export interface TacticalAction {
   /** Load factor to pull through the manoeuvre, 1 to 9. */
   targetG: number;
   throttle: ThrottleDetent;
+  /**
+   * Throttle as a fraction, when the agent can express one.
+   *
+   * The detents exist because most models are choosing from a list and "mil"
+   * is a more meaningful answer than 0.85. A model that returns a calibrated
+   * position on a scale can say something the four detents cannot, and
+   * quantising it back down to them would throw that away. When absent the
+   * detent stands.
+   */
+  throttleFraction?: number;
   fire: boolean;
 }
 
@@ -106,11 +116,15 @@ export function validateAction(value: unknown): AgentAction {
   const throttle = THROTTLE_DETENTS.includes(record["throttle"] as ThrottleDetent)
     ? (record["throttle"] as ThrottleDetent)
     : "mil";
+  const fraction = record["throttleFraction"];
   return {
     schema: "tactical",
     maneuver,
     targetG: clamp(finite(record["targetG"], 4), 1, 9),
     throttle,
+    ...(typeof fraction === "number" && Number.isFinite(fraction)
+      ? { throttleFraction: clamp(fraction, 0, 1) }
+      : {}),
     fire: record["fire"] === true,
   };
 }

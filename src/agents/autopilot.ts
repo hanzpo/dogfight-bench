@@ -374,7 +374,7 @@ export function resolveTactical(action: TacticalAction, context: SteeringContext
     roll,
     yaw: gunTrackingYaw(context),
     // Recovering from the ground is not the moment to be at idle.
-    throttle: Math.max(THROTTLE_VALUES[action.throttle], urgency > 0.4 ? 0.85 : 0),
+    throttle: Math.max(action.throttleFraction ?? THROTTLE_VALUES[action.throttle], urgency > 0.4 ? 0.85 : 0),
     // Authorised only when the burst would actually connect: close enough that
     // the target's size covers the dispersion cone, and soon enough that they
     // are still there when the rounds arrive.
