@@ -157,9 +157,13 @@ export function ReplayPage() {
             observerOpen={observerOpen}
           />
           <TacticalOverlay stateRef={playback.stateRef} viewerRef={viewer} followId={followId} />
+          {/* The decision that was live at this moment, so a replay shows what
+              the model chose and how sure it was, not only what the aircraft
+              then did. */}
           <ObserverPanel
             state={playback.state}
             followId={followId}
+            decision={decision}
             open={observerOpen}
             onToggle={() => setObserverOpen(!observerOpen)}
           />
@@ -216,7 +220,7 @@ export function ReplayPage() {
 
           <footer className="controls">
             <button onClick={() => playback.setPlaying(!playback.playing)}>
-              {playback.playing ? "PAUSE" : "PLAY"}
+              {playback.playing ? "Pause" : "Play"}
             </button>
             <input
               className="scrubber"
@@ -234,14 +238,14 @@ export function ReplayPage() {
               {playback.time.toFixed(1)} / {playback.duration.toFixed(1)}s
             </span>
             <label>
-              VIEW
+              View
               <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
-                <option value="orbit">EXTERNAL</option>
-                <option value="cockpit">COCKPIT</option>
+                <option value="orbit">External</option>
+                <option value="cockpit">Cockpit</option>
               </select>
             </label>
             <label>
-              SPEED
+              Speed
               <select value={playback.speed} onChange={(changed) => playback.setSpeed(Number(changed.target.value))}>
                 <option value="0.25">0.25×</option>
                 <option value="1">1×</option>
@@ -249,7 +253,7 @@ export function ReplayPage() {
                 <option value="4">4×</option>
               </select>
             </label>
-            <button onClick={() => setFollowRed(!followRed)}>{followRed ? "FOLLOW BLUE" : "FOLLOW RED"}</button>
+            <button onClick={() => setFollowRed(!followRed)}>{followRed ? "Follow blue" : "Follow red"}</button>
           </footer>
         </>
       ) : null}
