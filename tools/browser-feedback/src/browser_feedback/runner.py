@@ -27,7 +27,7 @@ class FeedbackCase:
     name: str
     goal: str
     expected_state: dict[str, str]
-    exercise_orbit: bool = True
+    exercise_camera: bool = True
 
 
 @dataclass(frozen=True)
@@ -39,11 +39,11 @@ class FeedbackResult:
     action_count: int
     actual_state: dict[str, str]
     expected_state: dict[str, str]
-    orbit_changed: bool | None
+    camera_moved: bool | None
     initial_framing_safe: bool
-    orbit_framing_safe: bool
+    camera_framing_safe: bool
     initial_state: dict[str, str]
-    post_orbit_state: dict[str, str]
+    post_camera_state: dict[str, str]
     actions: list[dict[str, object | None]]
     trace_path: str
     screenshot_path: str
@@ -76,8 +76,16 @@ def _read_simulator_state(browser: BrowserProtocol) -> dict[str, str]:
     return {str(key): str(item) for key, item in items.items()}
 
 
-def _exercise_orbit(browser: BrowserProtocol) -> tuple[bool, dict[str, str]]:
-    before = _read_simulator_state(browser).get("camera", "")
+def _exercise_camera(browser: BrowserProtocol) -> tuple[bool, dict[str, str]]:
+    """Scroll the canvas and check the camera moved and the framing survived.
+
+    This used to left-drag to orbit, which the default view does not do: chase,
+    target track and arena place the camera themselves and the orbit controls
+    are switched off in all three. The drag was a no-op and the assertion passed
+    anyway, because the camera position changes every frame regardless -- the
+    aircraft is flying. The wheel works in every view, so it is what is tested.
+    """
+    before = _read_simulator_state(browser).get("subjectDistance", "")
     rect = browser.evaluate(
         "(() => { const r=document.querySelector('canvas')?.getBoundingClientRect(); "
         "return r ? {x:r.x,y:r.y,width:r.width,height:r.height} : null; })()"
@@ -87,22 +95,15 @@ def _exercise_orbit(browser: BrowserProtocol) -> tuple[bool, dict[str, str]]:
     geometry = cast(dict[str, float | int], rect)
     x = float(geometry["x"]) + float(geometry["width"]) * 0.56
     y = float(geometry["y"]) + float(geometry["height"]) * 0.46
-    browser.call("Input.dispatchMouseEvent", type="mousePressed", x=x, y=y, button="left", clickCount=1)
-    for offset in (25, 50, 75, 100):
-        browser.call(
-            "Input.dispatchMouseEvent",
-            type="mouseMoved",
-            x=x + offset,
-            y=y - offset * 0.35,
-            button="left",
-            buttons=1,
-        )
-    browser.call("Input.dispatchMouseEvent", type="mouseReleased", x=x + 100, y=y - 35, button="left", clickCount=1)
-    browser.call("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=0, deltaY=-180)
-    time.sleep(0.15)
+    browser.call("Input.dispatchMouseEvent", type="mouseWheel", x=x, y=y, deltaX=0, deltaY=-240)
+    time.sleep(0.4)
     after_state = _read_simulator_state(browser)
-    after = after_state.get("camera", "")
-    return bool(before and after and before != after), after_state
+    after = after_state.get("subjectDistance", "")
+    try:
+        moved = float(after) < float(before) * 0.95
+    except ValueError:
+        moved = False
+    return moved, after_state
 
 
 def matches_expected(actual: dict[str, str], expected: dict[str, str]) -> bool:
@@ -154,11 +155,11 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
             print(f"{state['elapsed_ms']:>5} ms  {len(history):>2} actions  {operation}  {state['status']}")
 
         actual = _read_simulator_state(browser)
-        if case.exercise_orbit:
-            orbit_changed, post_orbit_state = _exercise_orbit(browser)
+        if case.exercise_camera:
+            camera_moved, post_camera_state = _exercise_camera(browser)
         else:
-            orbit_changed, post_orbit_state = None, actual
-        orbit_framing_safe = framing_is_safe(post_orbit_state)
+            camera_moved, post_camera_state = None, actual
+        camera_framing_safe = framing_is_safe(post_camera_state)
         final_page = browser.observe(screenshot=True)
         screenshot_path = artifact_dir / "final.jpg"
         screenshot_path.write_bytes(base64.b64decode(str(final_page["screenshot"])))
@@ -167,8 +168,8 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
             state["status"] == "done"
             and matches_expected(actual, case.expected_state)
             and initial_framing_safe
-            and orbit_framing_safe
-            and orbit_changed is not False
+            and camera_framing_safe
+            and camera_moved is not False
         )
         trace_path = artifact_dir / "summary.json"
         history = cast(list[dict[str, Any]], state["history"])
@@ -196,11 +197,11 @@ def run_feedback(url: str, case: FeedbackCase, artifact_dir: Path) -> FeedbackRe
             action_count=len(cast(list[object], state["history"])),
             actual_state=actual,
             expected_state=case.expected_state,
-            orbit_changed=orbit_changed,
+            camera_moved=camera_moved,
             initial_framing_safe=initial_framing_safe,
-            orbit_framing_safe=orbit_framing_safe,
+            camera_framing_safe=camera_framing_safe,
             initial_state=initial_state,
-            post_orbit_state=post_orbit_state,
+            post_camera_state=post_camera_state,
             actions=actions,
             trace_path=str(trace_path),
             screenshot_path=str(screenshot_path),

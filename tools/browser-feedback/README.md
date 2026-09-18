@@ -17,7 +17,7 @@ The loop is deliberately split into three responsibilities:
 
 1. The upstream agent observes visible DOM controls once per cycle and asks Jev for an operation plus compatible speculative targets in one request.
 2. Ordinary browser code validates the indexed target and executes exactly one action.
-3. This package independently checks the simulator's exported read-only state, exercises the canvas orbit gesture directly, and saves screenshots plus a JSON summary.
+3. This package independently checks the simulator's exported read-only state, exercises the canvas zoom gesture directly, and saves screenshots plus a JSON summary.
 
 Jev never receives screenshots, selectors, JavaScript, or API credentials. A Jev `DONE` answer is not considered a passing test without the independent state checks.
 
