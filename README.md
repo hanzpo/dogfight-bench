@@ -69,12 +69,17 @@ trigger is asked strictly but answered generously -- demanding a perfect
 solution rather than a plausible one cut the rounds fired by seventy per cent
 and the hits to none.
 
-Where that leaves it, over fourteen matches against `energy-fighter`: **3-11**,
-with 19 hits from 140 rounds. The scripted pilot manages 99 from 1,234. So Jev
-shoots about twice as well per round and gets a shot roughly a thirtieth as
-often -- it is not failing at gunnery, it is failing to arrive at a gun
-solution, which is the part of a dogfight that is actually hard. Before the two
-fixes above it was 0-10 and had never hit anything.
+Where that leaves it, on the live leaderboard over eighteen matches against
+`energy-fighter`: **1-17**, with 14 hits from 93 rounds fired. The scripted
+pilot manages 114 from 1,635. So Jev shoots about twice as well per round and
+gets a shot roughly a twentieth as often -- it is not failing at gunnery, it is
+failing to arrive at a gun solution, which is the part of a dogfight that is
+actually hard. Before the two fixes above it fired almost nothing and had never
+hit anything at all.
+
+Read that as one model against one hand-tuned opponent, not as a ranking. A
+six-match sample of the same pair came out 3-3, which is roughly what six
+matches of anything are worth.
 
 ## Cameras
 
@@ -206,6 +211,10 @@ controls in words, so renaming one in the interface is a change to that file.
 
 - `energy-fighter` is a rule-based pilot, not a good one. It is the floor a
   model has to clear, and nothing here has been calibrated against a strong one.
+  Nothing has cleared it yet either.
+- Match counts are small. Eighteen matches separate 1-17 from 3-3 on the same
+  pair of entrants, and the Elo ratings carry no confidence interval, so read
+  the leaderboard as a record of what has been flown rather than a ranking.
 - The Anthropic adapter has never been run against a live endpoint here. The
   OpenAI one has been driven far enough to prove the caller-key path reaches the
   provider and is rejected for a bad key. Jev has flown full matches.
