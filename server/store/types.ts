@@ -32,6 +32,14 @@ export interface Competitor {
   provider: string;
   model: string;
   policyVersion: string;
+  /**
+   * Which interface it flies through.
+   *
+   * The same model at two interfaces is two pilots, and the difference is worth
+   * seeing on the board: `tactical` names a manoeuvre and an autopilot flies it;
+   * `raw` moves the stick directly and nothing interprets it.
+   */
+  schema: "raw" | "tactical";
   /** Set for humans, so an account can find its own matches. */
   userId?: string | undefined;
   /**
@@ -57,6 +65,7 @@ export function competitorFor(info: AgentInfo): Competitor {
     provider: info.provider,
     model: info.model,
     policyVersion: info.policyVersion,
+    schema: info.schema,
   };
 }
 
@@ -68,6 +77,8 @@ export function humanCompetitor(userId: string, displayName: string, provisional
     provider: "human",
     model: "human",
     policyVersion: "1",
+    // A person moves the stick; nothing interprets it for them.
+    schema: "raw",
     userId,
     provisional,
   };
@@ -97,6 +108,7 @@ export interface LeaderboardRow {
   provider: string;
   model: string;
   policyVersion: string;
+  schema: "raw" | "tactical";
   provisional: boolean;
   rating: number;
   matches: number;

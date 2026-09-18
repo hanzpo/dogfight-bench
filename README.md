@@ -144,6 +144,28 @@ over choices you define, which happens to be exactly the shape of the tactical
 action space, so a decision is one request with four questions and the trigger
 is gated on the model's own confidence rather than a bare argmax.
 
+### Manoeuvres or the stick
+
+Jev is offered twice, as two entrants:
+
+| Entrant | Interface | What it is asked |
+|---|---|---|
+| `jev` | manoeuvres | A named manoeuvre, a load factor and a throttle detent. An autopilot flies that order continuously until the next answer. |
+| `jev-stick` | stick | Control positions: longitudinal stick, lateral stick, pedals, throttle, trigger. Applied directly and held until the next answer. Nothing interprets them and nothing keeps flying them. |
+
+Pick either in the viewer's **You** or **Opponent** control, where the
+interface is named next to the model, or pass `--blue jev-stick` to the
+command-line benchmark. They are separate competitors with separate ratings and
+the leaderboard's **Flies** column says which is which, because folding them
+together would average a model's grasp of tactics with its grasp of
+aerodynamics and report one number meaning neither.
+
+The stick interface is the harder of the two at one decision a second, and
+deliberately so: a raw answer is a frozen control position rather than an
+intention, and nothing gates the trigger, so the model's own confidence is all
+that stands between a guess and a wasted burst. Both fly the identical airframe
+through the identical flight control system.
+
 Decisions have a wall-clock deadline and an inference budget. A model that
 misses its deadline holds its last command and is charged a timeout; one that
 blows its budget forfeits. Every decision is priced as it happens.

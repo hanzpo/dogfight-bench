@@ -31,7 +31,7 @@ declare
   k              constant double precision := 24;
 begin
   for competitor in select * from jsonb_array_elements(p_competitors) loop
-    insert into competitors (id, kind, display_name, provider, model, policy_version, user_id, provisional)
+    insert into competitors (id, kind, display_name, provider, model, policy_version, schema, user_id, provisional)
     values (
       competitor ->> 'id',
       competitor ->> 'kind',
@@ -39,6 +39,7 @@ begin
       competitor ->> 'provider',
       competitor ->> 'model',
       coalesce(competitor ->> 'policyVersion', '1'),
+      coalesce(competitor ->> 'schema', 'tactical'),
       nullif(competitor ->> 'userId', '')::uuid,
       coalesce((competitor ->> 'provisional')::boolean, false)
     )

@@ -331,6 +331,72 @@ describe("jev provider", () => {
     expect(decision.action.schema === "tactical" && decision.action.fire).toBe(false);
   });
 
+  /**
+   * The same model, the same credential, the other interface.
+   *
+   * `raw` asks for control positions instead of a named manoeuvre, and nothing
+   * interprets the answer or keeps flying it -- which also means nothing gates
+   * the trigger, so the confidence threshold is all that stands between a guess
+   * and a wasted burst.
+   */
+  it("flies the stick directly when asked for primitives", async () => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        JSON.stringify({
+          answers: {
+            pitch: answer("hard_pull", uniform(["hard_push", "push", "neutral", "pull", "hard_pull"], "hard_pull", 0.8)),
+            roll: answer("left", uniform(["hard_left", "left", "level", "right", "hard_right"], "left", 0.7)),
+            rudder: answer("centre", uniform(["left", "centre", "right"], "centre", 0.9)),
+            throttle: answer("ab", uniform(["idle", "cruise", "mil", "ab"], "ab", 0.8)),
+            fire: answer("FIRE", { FIRE: 0.9, HOLD: 0.1 }),
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const decision = await new JevProvider({ schema: "raw" }).decide(sampleObservation());
+    expect(decision.action).toEqual({
+      schema: "raw",
+      controls: { pitch: 1, roll: -0.45, yaw: 0, throttle: 1, fire: true },
+    });
+    // Every axis reports its own distribution, not just the one that won.
+    expect(decision.distributions?.map((entry) => entry.question)).toEqual([
+      "pitch",
+      "roll",
+      "rudder",
+      "throttle",
+      "fire",
+    ]);
+  });
+
+  it("is a different entrant at each interface", () => {
+    const tactical = new JevProvider().describe();
+    const stick = new JevProvider({ schema: "raw" }).describe();
+    expect(tactical.schema).toBe("tactical");
+    expect(stick.schema).toBe("raw");
+    // Same model, different pilot: the ratings must not be pooled.
+    expect(competitorIdFor(stick)).not.toBe(competitorIdFor(tactical));
+  });
+
+  it("holds a raw trigger when the model is not confident", async () => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        JSON.stringify({
+          answers: {
+            pitch: answer("neutral", uniform(["hard_push", "push", "neutral", "pull", "hard_pull"], "neutral", 0.4)),
+            roll: answer("level", uniform(["hard_left", "left", "level", "right", "hard_right"], "level", 0.4)),
+            rudder: answer("centre", uniform(["left", "centre", "right"], "centre", 0.5)),
+            throttle: answer("mil", uniform(["idle", "cruise", "mil", "ab"], "mil", 0.4)),
+            fire: answer("FIRE", { FIRE: 0.52, HOLD: 0.48 }),
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const decision = await new JevProvider({ schema: "raw" }).decide(sampleObservation());
+    expect(decision.action.schema === "raw" && decision.action.controls.fire).toBe(false);
+  });
+
   it("refuses a malformed answer instead of flying it", async () => {
     vi.stubGlobal("fetch", async () =>
       new Response(JSON.stringify({ answers: { maneuver: { choice: "lead_pursuit", confidence: 2, probabilities: {} } } }), { status: 200 }),

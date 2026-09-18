@@ -1,4 +1,4 @@
-import { MANEUVERS, THROTTLE_DETENTS, validateAction } from "../../src/agents/action";
+import { MANEUVERS, THROTTLE_DETENTS, THROTTLE_VALUES, validateAction } from "../../src/agents/action";
 import type { AgentDecision, AgentInfo, ChoiceDistribution } from "../../src/agents/agent";
 import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
@@ -46,6 +46,57 @@ const FIRE = {
   HOLD: "Hold fire and keep manoeuvring.",
 } as const;
 
+/**
+ * The other way to fly the same aircraft: the stick itself.
+ *
+ * The tactical schema asks for a named manoeuvre and lets an autopilot fly it
+ * continuously until the next answer. This asks for control positions, which
+ * are applied directly and then held until the next answer -- nothing
+ * interprets them and nothing keeps flying them. That makes it a harder
+ * interface at one decision a second, and a fairer measure of whether a model
+ * understands what a control surface does rather than what a manoeuvre is
+ * called. Both fly the identical airframe through the identical flight control
+ * system, so the two are worth comparing.
+ */
+const PITCH = {
+  hard_push: "Stick hard forward. Unload to negative g; the nose drops fast.",
+  push: "Stick forward. Ease the nose down and stop pulling.",
+  neutral: "Stick centred. One g, nose follows the flight path.",
+  pull: "Stick back. A firm pull, roughly half of what the jet has.",
+  hard_pull: "Stick fully back. Maximum available g; the limiter holds the angle of attack.",
+} as const;
+
+const ROLL = {
+  hard_left: "Full left stick. Fastest roll to the left.",
+  left: "Left stick. A measured roll to the left.",
+  level: "Lateral stick centred. Hold the current bank.",
+  right: "Right stick. A measured roll to the right.",
+  hard_right: "Full right stick. Fastest roll to the right.",
+} as const;
+
+const RUDDER = {
+  left: "Left pedal. Yaws the nose left; costs energy.",
+  centre: "Pedals neutral. No sideslip.",
+  right: "Right pedal. Yaws the nose right; costs energy.",
+} as const;
+
+const STICK_VALUES = {
+  pitch: { hard_push: -1, push: -0.45, neutral: 0, pull: 0.5, hard_pull: 1 },
+  roll: { hard_left: -1, left: -0.45, level: 0, right: 0.45, hard_right: 1 },
+  rudder: { left: -0.4, centre: 0, right: 0.4 },
+} as const;
+
+const STICK_RULES = `Fly an F-16C in a guns-only one-versus-one dogfight. You are moving the stick, the pedals and the
+throttle directly. Your inputs are held until your next answer, so choose a position you want to hold for about a
+second, not an instant twitch.
+Positive pitch is stick back, which pulls g and brings the nose up through the aircraft's own vertical.
+To turn, roll the lift vector onto the direction you want and then pull; pulling with the wings level only climbs.
+Energy is speed plus altitude. Hard pulls cost it, but a fight is won by pointing the nose, and a gentle pull never
+points it in time. Near corner speed, pull hard.
+The gun fires along the nose, so you must aim where the bandit will be. Predicted miss under 15 m hits.
+Nothing gates your trigger: if you say fire, the gun fires, and ammunition is finite.
+If threatened, defend before anything else. The ground, the hard deck and the arena edge all kill.`;
+
 const RULES = `Fly an F-16C in a guns-only one-versus-one dogfight. Choose what to do for the next second.
 Energy is speed plus altitude; specific excess power says whether you are gaining or losing it.
 Hard turns cost energy, and a jet with no energy cannot fight -- but a turn too gentle to move the nose
@@ -86,6 +137,23 @@ function validateChoice(answer: ChoiceAnswer | undefined, ids: readonly string[]
     Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) < 0.02;
   if (!valid) throw new Error("Invalid TypeSafe response; no action taken");
   return answer;
+}
+
+/**
+ * Hands every answer's probabilities on intact.
+ *
+ * Jev's whole output is a set of calibrated distributions rather than a sampled
+ * choice, so keeping only the argmax throws away most of what it said.
+ */
+function distributionsOf(answers: ReadonlyArray<readonly [string, ChoiceAnswer]>): ChoiceDistribution[] {
+  return answers.map(([question, answer]) => ({
+    question,
+    choice: answer.choice,
+    confidence: answer.confidence,
+    options: Object.entries(answer.probabilities)
+      .map(([id, probability]) => ({ id, probability }))
+      .sort((a, b) => b.probability - a.probability),
+  }));
 }
 
 function state(observation: AgentObservation) {
@@ -160,36 +228,153 @@ function state(observation: AgentObservation) {
   };
 }
 
+/** Which interface the model is being asked to fly through. */
+export type JevSchema = "tactical" | "raw";
+
 export class JevProvider implements ModelProvider {
-  readonly id = "jev";
+  readonly id: string;
 
   private readonly model: string;
   private readonly apiKey: string | undefined;
+  private readonly schema: JevSchema;
 
   constructor(
-    options: ProviderOptions = {},
+    options: ProviderOptions & { schema?: JevSchema } = {},
     /** Fire only when the model is actually confident, not merely on argmax. */
     private readonly fireConfidence = 0.6,
   ) {
     this.model = options.model ?? env.typesafeModel;
     this.apiKey = options.apiKey ?? env.typesafeApiKey;
+    this.schema = options.schema ?? "tactical";
+    this.id = this.schema === "raw" ? "jev-stick" : "jev";
   }
 
   available(): boolean {
     return Boolean(this.apiKey);
   }
 
+  /**
+   * The two schemas are two different pilots.
+   *
+   * Same model, same credential, different interface -- so they get different
+   * policy versions and rank separately. Folding them together would average a
+   * model's grasp of tactics with its grasp of aerodynamics and report one
+   * number that means neither.
+   */
   describe(): AgentInfo {
-    return {
-      name: `jev/${this.model}`,
-      provider: "jev",
-      model: this.model,
-      policyVersion: "bfm-choices-2",
-      schema: "tactical",
-    };
+    return this.schema === "raw"
+      ? {
+          name: `jev/${this.model}`,
+          provider: "jev",
+          model: this.model,
+          policyVersion: "stick-choices-1",
+          schema: "raw",
+        }
+      : {
+          name: `jev/${this.model}`,
+          provider: "jev",
+          model: this.model,
+          policyVersion: "bfm-choices-2",
+          schema: "tactical",
+        };
   }
 
   async decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
+    return this.schema === "raw" ? this.decideStick(observation, signal) : this.decideTactical(observation, signal);
+  }
+
+  /** One request, five questions, and the answer is a set of control positions. */
+  private async decideStick(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
+    const result = await this.ask(
+      {
+        pitch: {
+          type: "choice",
+          criteria: PITCH,
+          instructions: { goal: "Longitudinal stick for the next second.", rules: STICK_RULES },
+        },
+        roll: {
+          type: "choice",
+          criteria: ROLL,
+          instructions: { goal: "Lateral stick for the next second.", rules: STICK_RULES },
+        },
+        rudder: {
+          type: "choice",
+          criteria: RUDDER,
+          instructions: { goal: "Pedals for the next second.", rules: STICK_RULES },
+        },
+        throttle: {
+          type: "choice",
+          criteria: Object.fromEntries(THROTTLE_DETENTS.map((detent) => [detent, THROTTLE_GUIDE[detent]])),
+          instructions: { goal: "Throttle setting for the next second.", rules: STICK_RULES },
+        },
+        fire: {
+          type: "choice",
+          criteria: FIRE,
+          instructions: { goal: "Whether to squeeze the trigger right now.", rules: STICK_RULES },
+        },
+      },
+      signal,
+      observation,
+    );
+
+    const answers = result.answers ?? {};
+    const pitch = validateChoice(answers["pitch"], Object.keys(PITCH));
+    const roll = validateChoice(answers["roll"], Object.keys(ROLL));
+    const rudder = validateChoice(answers["rudder"], Object.keys(RUDDER));
+    const throttle = validateChoice(answers["throttle"], THROTTLE_DETENTS);
+    const fire = validateChoice(answers["fire"], Object.keys(FIRE));
+
+    // Nothing gates a raw trigger, so the confidence threshold is the only
+    // thing between a guess and a wasted burst.
+    const fireProbability = fire.probabilities["FIRE"] ?? 0;
+
+    return {
+      distributions: distributionsOf([
+        ["pitch", pitch],
+        ["roll", roll],
+        ["rudder", rudder],
+        ["throttle", throttle],
+        ["fire", fire],
+      ]),
+      action: validateAction({
+        schema: "raw",
+        controls: {
+          pitch: STICK_VALUES.pitch[pitch.choice as keyof typeof STICK_VALUES.pitch],
+          roll: STICK_VALUES.roll[roll.choice as keyof typeof STICK_VALUES.roll],
+          yaw: STICK_VALUES.rudder[rudder.choice as keyof typeof STICK_VALUES.rudder],
+          throttle: THROTTLE_VALUES[throttle.choice as (typeof THROTTLE_DETENTS)[number]],
+          fire: fire.choice === "FIRE" && fireProbability >= this.fireConfidence,
+        },
+      }),
+      rationale: `stick ${pitch.choice}/${roll.choice}, ${throttle.choice} (confidence ${pitch.confidence.toFixed(2)}), fire probability ${fireProbability.toFixed(2)}`,
+      usage: {
+        inputTokens: result.usage?.input_tokens ?? 0,
+        outputTokens: result.usage?.output_tokens ?? 0,
+        costUsd: result.usage?.cost_usd ?? 0,
+      },
+    };
+  }
+
+  /** Posts one set of questions and returns the parsed response. */
+  private async ask(
+    questions: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    observation: AgentObservation,
+  ): Promise<SystemOneResponse> {
+    const response = await fetch(env.typesafeUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${requireKey(this.apiKey, "TYPESAFE_API_KEY")}`,
+      },
+      signal,
+      body: JSON.stringify({ model: this.model, state: state(observation), questions }),
+    });
+    if (!response.ok) throw new Error(`TypeSafe returned HTTP ${response.status}: ${await response.text()}`);
+    return (await response.json()) as SystemOneResponse;
+  }
+
+  private async decideTactical(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
     const body = {
       model: this.model,
       state: state(observation),
@@ -240,27 +425,13 @@ export class JevProvider implements ModelProvider {
     const fireProbability = fire.probabilities["FIRE"] ?? 0;
     const shooting = fire.choice === "FIRE" && fireProbability >= this.fireConfidence;
 
-    // Jev's whole output is a set of calibrated distributions, not a sampled
-    // answer, so hand them on intact rather than throwing away everything
-    // except the argmax.
-    const distributions: ChoiceDistribution[] = (
-      [
+    return {
+      distributions: distributionsOf([
         ["maneuver", maneuver],
         ["target_g", targetG],
         ["throttle", throttle],
         ["fire", fire],
-      ] as const
-    ).map(([question, answer]) => ({
-      question,
-      choice: answer.choice,
-      confidence: answer.confidence,
-      options: Object.entries(answer.probabilities)
-        .map(([id, probability]) => ({ id, probability }))
-        .sort((a, b) => b.probability - a.probability),
-    }));
-
-    return {
-      distributions,
+      ]),
       action: validateAction({
         schema: "tactical",
         maneuver: maneuver.choice,

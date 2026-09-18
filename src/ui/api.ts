@@ -16,6 +16,8 @@ export interface LeaderboardEntry {
   provider: string;
   model: string;
   policyVersion: string;
+  /** Which interface it flies through: named manoeuvres, or the stick itself. */
+  schema: "raw" | "tactical";
   rating: number;
   matches: number;
   wins: number;

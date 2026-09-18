@@ -46,7 +46,11 @@ for (const error of result.errors) console.error(`  error: ${error}`);
 console.log("\nLeaderboard:");
 for (const row of await store.leaderboard(["model", "scripted", "human"])) {
   console.log(
-    `  ${row.rating.toFixed(0).padStart(5)}  ${row.name.padEnd(28)} ` +
+    // Name alone is ambiguous: the same model at two interfaces, or under two
+    // prompt versions, is several rows with the same name and different ratings.
+    `  ${row.rating.toFixed(0).padStart(5)}  ${row.name.padEnd(24)} ` +
+      `${(row.schema === "raw" ? "stick" : "manoeuvres").padEnd(11)}` +
+      `${row.policyVersion.padEnd(18)}` +
       `${row.wins}W-${row.losses}L-${row.draws}D  ` +
       `acc ${(row.accuracy * 100).toFixed(1)}%  ` +
       `on-target ${row.timeOnTargetS.toFixed(1)}s  ` +

@@ -62,7 +62,16 @@ export function LivePage() {
         const hasKey = Boolean(loadKey(agent.kind));
         const free = agent.free && agent.available && !budget?.exhausted;
         const note = hasKey ? "your key" : free ? "free" : budget?.exhausted ? "allowance spent" : "needs a key";
-        return { value: agent.kind, label: agent.name, note, usable: free || hasKey };
+        /**
+         * Which interface the model is flying through, named in the picker.
+         *
+         * The two are separate entrants with separate ratings, so this is not a
+         * setting hidden behind a gear icon -- it is the choice between two
+         * pilots, and naming it here is how anybody finds out the comparison
+         * exists at all.
+         */
+        const interfaceName = agent.schema === "raw" ? "stick" : "manoeuvres";
+        return { value: agent.kind, label: agent.name, interfaceName, note, usable: free || hasKey };
       });
     return { scripted, models };
   }, [roster.agents, roster.freeBudget, keyNonce]);
@@ -207,7 +216,7 @@ export function LivePage() {
             ))}
             {pilotOptions.models.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label} · {option.note}
+                {option.label} · {option.interfaceName} · {option.note}
               </option>
             ))}
           </select>
@@ -226,7 +235,7 @@ export function LivePage() {
             ))}
             {pilotOptions.models.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label} · {option.note}
+                {option.label} · {option.interfaceName} · {option.note}
               </option>
             ))}
           </select>

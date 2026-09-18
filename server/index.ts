@@ -427,6 +427,7 @@ app.post("/api/live/:id/result", async (context) => {
         provider: "scripted",
         model: scriptedName,
         policyVersion: "1",
+        schema: "tactical",
       }
     : competitorFor({
         // Identity comes from the server's own view of the provider, never from

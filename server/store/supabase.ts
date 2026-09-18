@@ -37,6 +37,7 @@ interface CompetitorRow {
   provider: string;
   model: string;
   policy_version: string;
+  schema: string;
   rating: number;
   provisional: boolean;
 }
@@ -156,7 +157,7 @@ export class SupabaseStore implements ResultsStore {
 
     let query = this.client
       .from("competitors")
-      .select("id, kind, display_name, provider, model, policy_version, rating, provisional")
+      .select("id, kind, display_name, provider, model, policy_version, schema, rating, provisional")
       .in("kind", wanted)
       .order("rating", { ascending: false });
     if (!options.includeProvisional) query = query.eq("provisional", false);
@@ -203,6 +204,7 @@ export class SupabaseStore implements ResultsStore {
           provider: competitor.provider,
           model: competitor.model,
           policyVersion: competitor.policy_version,
+          schema: (competitor.schema === "raw" ? "raw" : "tactical") as "raw" | "tactical",
           provisional: competitor.provisional,
           rating: competitor.rating,
           matches,

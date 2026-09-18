@@ -111,6 +111,7 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
             <th>#</th>
             <th>Entrant</th>
             <th>Model</th>
+            <th>Flies</th>
             <th className="num">Rating</th>
             <th className="num">W-L-D</th>
             <th className="num">Win rate</th>
@@ -135,13 +136,14 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
                 </span>
                 {row.provisional ? <span className="badge">guest</span> : null}
               </td>
-              {/* The policy version is part of the identity, so two rows for
-                  the same model are two different pilots and have to be
-                  told apart. */}
+              {/* The policy version and the interface are both part of the
+                  identity, so two rows for the same model are two different
+                  pilots and have to be told apart. */}
               <td className="muted">
                 {row.kind === "model" ? row.model : "—"}
                 {row.kind === "model" ? <div className="policy">prompt {row.policyVersion}</div> : null}
               </td>
+              <td className="muted">{row.schema === "raw" ? "stick" : "manoeuvres"}</td>
               <td className="num strong">{row.rating.toFixed(0)}</td>
               <td className="num">{`${row.wins}-${row.losses}-${row.draws}`}</td>
               <td className="num">
@@ -163,7 +165,9 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
       <p className="footnote">
         Rating is Elo, so beating a strong opponent counts for more than beating a weak one, and a model that several
         people beat loses rating once for each of them. Accuracy is hits per round fired. Failures count decisions that
-        errored or missed their deadline.
+        errored or missed their deadline. <strong>Flies</strong> is the interface: <em>manoeuvres</em> names a
+        manoeuvre and an autopilot flies it continuously, while <em>stick</em> moves the controls directly and nothing
+        interprets them — the same model at both is two entrants, ranked separately.
       </p>
     </>
   );

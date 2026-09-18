@@ -19,6 +19,14 @@ export function providers(options: ProviderOptions = {}): Map<string, ModelProvi
     ["anthropic", new AnthropicProvider(options)],
     ["openai", new OpenAiCompatibleProvider(options)],
     ["jev", new JevProvider(options)],
+    /**
+     * The same model flying the same aircraft through the other interface.
+     *
+     * Listed as its own entrant rather than hidden behind a setting, because
+     * that is what it is: a different pilot with its own rating. Naming it in
+     * the picker is also the only way somebody discovers the comparison exists.
+     */
+    ["jev-stick", new JevProvider({ ...options, schema: "raw" })],
   ]);
 }
 

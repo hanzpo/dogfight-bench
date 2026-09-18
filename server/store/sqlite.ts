@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS competitors (
   provider      TEXT NOT NULL,
   model         TEXT NOT NULL,
   policy_version TEXT NOT NULL,
+  schema        TEXT NOT NULL DEFAULT 'tactical',
   user_id       TEXT,
   rating        REAL NOT NULL DEFAULT 1500,
   provisional   INTEGER NOT NULL DEFAULT 0,
@@ -160,6 +161,11 @@ export class SqliteStore implements ResultsStore {
       this.db.exec("ALTER TABLE matches ADD COLUMN submitted_by TEXT");
     }
 
+    const competitors = names("competitors");
+    if (competitors.size && !competitors.has("schema")) {
+      this.db.exec("ALTER TABLE competitors ADD COLUMN schema TEXT NOT NULL DEFAULT 'tactical'");
+    }
+
     if (!tables.has("agents")) return;
 
     // Move the old rows across, then retire the table. Copied rather than
@@ -188,8 +194,8 @@ export class SqliteStore implements ResultsStore {
   private upsertCompetitor(competitor: Competitor): void {
     this.db
       .prepare(
-        `INSERT INTO competitors (id, kind, name, provider, model, policy_version, user_id, provisional, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO competitors (id, kind, name, provider, model, policy_version, schema, user_id, provisional, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, provisional = excluded.provisional`,
       )
       .run(
@@ -199,6 +205,7 @@ export class SqliteStore implements ResultsStore {
         competitor.provider,
         competitor.model,
         competitor.policyVersion,
+        competitor.schema,
         competitor.userId ?? null,
         competitor.provisional ? 1 : 0,
         new Date().toISOString(),
@@ -317,7 +324,7 @@ export class SqliteStore implements ResultsStore {
     const rows = this.db
       .prepare(
         `SELECT c.id AS competitorId, c.kind, c.name, c.provider, c.model,
-                c.policy_version AS policyVersion, c.rating, c.provisional,
+                c.policy_version AS policyVersion, c.schema, c.rating, c.provisional,
                 COUNT(p.match_id) AS matches,
                 SUM(CASE WHEN p.result = 'win' THEN 1 ELSE 0 END) AS wins,
                 SUM(CASE WHEN p.result = 'loss' THEN 1 ELSE 0 END) AS losses,
@@ -352,6 +359,7 @@ export class SqliteStore implements ResultsStore {
         provider: String(row["provider"]),
         model: String(row["model"]),
         policyVersion: String(row["policyVersion"]),
+        schema: (String(row["schema"] ?? "tactical") === "raw" ? "raw" : "tactical") as "raw" | "tactical",
         provisional: Number(row["provisional"] ?? 0) === 1,
         rating: Number(row["rating"] ?? 1500),
         matches,
