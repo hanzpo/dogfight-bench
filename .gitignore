@@ -18,5 +18,6 @@ artifacts/ui-check/
 # Blender auto-backup
 *.blend1
 
-# Stray tooling artefacts
-supabase/
+# Supabase CLI local state (the linked project lives in supabase/config.toml, which is tracked)
+supabase/.temp/
+supabase/.branches/

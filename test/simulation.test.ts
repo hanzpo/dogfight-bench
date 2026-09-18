@@ -34,7 +34,7 @@ describe("dogfight simulation", () => {
     for (let i = 0; i < 240; i += 1) sim.step();
 
     const observation = observationFor(sim.state, "blue-1", neutralMerge, 7);
-    expect(observation.schemaVersion).toBe(2);
+    expect(observation.schemaVersion).toBe(3);
     expect(observation.aircraft).toHaveLength(2);
     expect(observation.decisionSequence).toBe(7);
     expect(observation.relative.rangeM).toBeGreaterThan(0);

@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from "three";
 import { bodyAxes } from "../sim/flight-model";
 import { solveGunsight, wouldConnect } from "../sim/gunsight";
 import { availableLoadFactor } from "../sim/performance";
+import { terrainHeight } from "../sim/terrain";
 import type { AgentObservation, AircraftTelemetry } from "../sim/telemetry";
 import type { AircraftState, ControlInput } from "../sim/types";
 import { THROTTLE_VALUES, type Maneuver, type TacticalAction } from "./action";
@@ -266,6 +267,34 @@ function gunTrackingYaw(context: SteeringContext): number {
   return clamp(((bearing * 180) / Math.PI) / 15, -0.25, 0.25);
 }
 
+/** How far ahead the recovery logic projects the flight path, seconds. */
+const GROUND_LOOK_AHEAD_S = 12;
+const GROUND_LOOK_AHEAD_SAMPLES = 8;
+
+/**
+ * Worst clearance the current velocity vector would leave if it were held.
+ *
+ * Deliberately coarse: this runs on every tick for every aircraft, and eight
+ * samples over twelve seconds is enough to see a ridge coming while costing a
+ * few hundred nanoseconds. The observation handed to agents uses a finer
+ * projection.
+ */
+function projectedClearanceM(context: SteeringContext): number {
+  const speed = context.velocity.lengthSq();
+  if (speed < 1) return context.altitudeAglM;
+
+  let minimum = context.altitudeAglM;
+  for (let step = 1; step <= GROUND_LOOK_AHEAD_SAMPLES; step += 1) {
+    const t = (step / GROUND_LOOK_AHEAD_SAMPLES) * GROUND_LOOK_AHEAD_S;
+    const x = context.position.x + context.velocity.x * t;
+    const y = context.position.y + context.velocity.y * t;
+    const z = context.position.z + context.velocity.z * t;
+    const clearance = y - terrainHeight(x, z);
+    if (clearance < minimum) minimum = clearance;
+  }
+  return minimum;
+}
+
 /**
  * Automatic ground collision avoidance.
  *
@@ -276,21 +305,40 @@ function gunTrackingYaw(context: SteeringContext): number {
  * altitude a pull to level would cost, and if the jet does not have it, take
  * the nose up. It blends in rather than snatching, so a model can still fly
  * itself into the dirt by pointing straight down with plenty of speed.
+ *
+ * Two separate ways to hit the ground, so two terms. Descending toward it is
+ * the obvious one. The other is flying level into rising ground, which height
+ * above the surface directly underneath never reports -- by the time AGL falls,
+ * the ridge is already in the windscreen -- so that term looks along the flight
+ * path instead, and only fires when the ground is actually coming up to meet
+ * the aircraft.
  */
 export function groundAvoidanceUrgency(context: SteeringContext): number {
-  if (context.velocity.y >= 0) return 0;
-
   const speed = context.velocity.length();
   const pullG = Math.max(Math.min(context.availableLoadFactorG, 5), 1.5);
   const radius = (speed * speed) / (GRAVITY * (pullG - 1));
-  const recoveryLossM = radius * (1 - Math.cos(context.flightPathAngleRad));
 
   // Recover with room to spare: a pull that finishes exactly at the hard deck
   // has no margin for the manoeuvre the model asks for on the way out.
   const margin = Math.max(context.hardDeckAglM * 2, 400);
-  const needed = recoveryLossM * 2.5 + margin;
-  if (context.altitudeAglM > needed) return 0;
-  return clamp((needed - context.altitudeAglM) / Math.max(needed * 0.6, margin), 0, 1);
+
+  let urgency = 0;
+
+  if (context.velocity.y < 0) {
+    const recoveryLossM = radius * (1 - Math.cos(context.flightPathAngleRad));
+    const needed = recoveryLossM * 2.5 + margin;
+    if (context.altitudeAglM < needed) {
+      urgency = clamp((needed - context.altitudeAglM) / Math.max(needed * 0.6, margin), 0, 1);
+    }
+  }
+
+  const ahead = projectedClearanceM(context);
+  const groundRisingM = context.altitudeAglM - ahead;
+  if (groundRisingM > 0 && ahead < margin) {
+    urgency = Math.max(urgency, clamp((margin - ahead) / margin, 0, 1));
+  }
+
+  return urgency;
 }
 
 /**

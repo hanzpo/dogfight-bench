@@ -4,6 +4,7 @@ import { EARTH_RADIUS_M, FLCS, GEOMETRY, GUN, MIN_LETHAL_ENERGY_J } from "./conf
 import { hitThresholdM, solveGunsight, wouldConnect } from "./gunsight";
 import { bodyAxes } from "./flight-model";
 import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
+import { terrainAwareness, type TerrainAwareness } from "./terrain-awareness";
 import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
 
 /**
@@ -80,6 +81,8 @@ export interface AircraftTelemetry {
   subsystems: Record<Subsystem, number>;
   limiterActive: boolean;
   departed: boolean;
+  /** Where the ground is and whether there is room to recover from it. */
+  terrain: TerrainAwareness;
   /** What the aircraft is currently being commanded to do. */
   controls: { pitch: number; roll: number; yaw: number; throttle: number; fire: boolean };
 }
@@ -143,7 +146,7 @@ export interface RelativeTelemetry {
 }
 
 export interface AgentObservation {
-  schemaVersion: 2;
+  schemaVersion: 3;
   scenarioId: string;
   ownshipId: string;
   simTimeS: number;
@@ -183,6 +186,8 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
   const flightPathAngleDeg = speed > 1e-3 ? (Math.asin(aircraft.velocity.y / speed) * 180) / Math.PI : 0;
   const bank = Math.atan2(axes.up.dot(axes.nose.clone().cross(new Vector3(0, 1, 0)).normalize()), axes.up.y);
 
+  const availableG = availableLoadFactor(aircraft.position.y, speed, aircraft.massKg);
+
   const turnRateRadS = speed > 1e-3 ? (GRAVITY_MPS2 * Math.sqrt(Math.max(aircraft.loadFactor ** 2 - 1, 0))) / speed : 0;
 
   return {
@@ -216,7 +221,7 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     yawRateDegS: (aircraft.angularVelocity.z * 180) / Math.PI,
 
     loadFactorG: aircraft.loadFactor,
-    availableLoadFactorG: availableLoadFactor(aircraft.position.y, speed, aircraft.massKg),
+    availableLoadFactorG: availableG,
     sustainedLoadFactorG: sustainedLoadFactor(aircraft.position.y, speed, aircraft.massKg),
     turnRadiusM: turnRateRadS > 1e-6 ? speed / turnRateRadS : Infinity,
     turnRateDegS: (turnRateRadS * 180) / Math.PI,
@@ -244,6 +249,12 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     subsystems: { ...aircraft.damage.subsystems },
     limiterActive: aircraft.flcs.limiterActive,
     departed: aircraft.flcs.departed,
+    terrain: terrainAwareness({
+      positionM: [aircraft.position.x, aircraft.position.y, aircraft.position.z],
+      velocityMps: [aircraft.velocity.x, aircraft.velocity.y, aircraft.velocity.z],
+      availableLoadFactorG: availableG,
+      hardDeckAglM: config.hardDeckAglM,
+    }),
     controls: { ...aircraft.controls },
   };
 }
@@ -325,7 +336,7 @@ export function observationFor(
   const opponent = state.aircraft.find((aircraft) => aircraft.id !== ownshipId)!;
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     scenarioId: config.id,
     ownshipId,
     simTimeS: state.time,

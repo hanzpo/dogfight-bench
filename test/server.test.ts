@@ -1,4 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Provider credentials are read once, when the server's env module is first
+ * imported, so they have to be in place before any import below runs -- which
+ * is what `vi.hoisted` is for. Fixed fakes rather than whatever happens to be
+ * exported in the shell: these tests stub `fetch` and must pass or fail the
+ * same way on a machine that has real keys and one that does not.
+ */
+vi.hoisted(() => {
+  process.env["TYPESAFE_API_KEY"] = "test-typesafe-key";
+  process.env["OPENAI_API_KEY"] = "test-openai-key";
+  process.env["ANTHROPIC_API_KEY"] = "test-anthropic-key";
+});
 import { SCRIPTED_INFO } from "../src/agents/agent";
 import { neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";

@@ -35,7 +35,7 @@ How the fight is won:
 - Corner speed is the slowest speed at which you can pull the full 9 g, and therefore where you turn best. Far below it you cannot generate g; far above it your turn radius is huge.
 - Angle off tail near 0 means you are behind them, which is where you want to be. Near 180 means they are behind you, which is where you do not.
 - If the briefing says THREATENED, the bandit has or nearly has a gun solution on you. Defend first; you cannot shoot if you are dead.
-- The ground kills. Watch height above ground, and do not point at the dirt with no room to recover. Leaving the arena or going below the hard deck forfeits the match.
+- The ground kills, and it is not flat. The TERRAIN block tells you the clearance your current flight path would leave over the next twenty seconds, how much altitude a recovery would cost, and whether that recovery still fits. When it says PULL UP, nothing in the fight is worth pressing: recover first. Flying level at a ridge is a collision that height-above-ground alone will not warn you about. Leaving the arena or going below the hard deck forfeits the match.
 
 Pick the command that best improves your position over the next few seconds. Fire only when the predicted miss distance says the rounds will connect: ammunition is finite and a long burst at a bad angle wastes it.`;
 
@@ -91,6 +91,27 @@ export function buildBriefing(observation: AgentObservation): string {
     `  ${gun.trackingSolution ? "*** YOU HAVE A GUN SOLUTION - FIRE ***" : `aim is ${gun.aimErrorDeg.toFixed(1)} deg off; lead is ${gun.leadBearingDeg.toFixed(0)} deg ${gun.leadBearingDeg >= 0 ? "right" : "left"}, ${gun.leadElevationDeg.toFixed(0)} deg ${gun.leadElevationDeg >= 0 ? "up" : "down"}`}`,
   );
   if (relative.threatened) lines.push("  *** THREATENED: the bandit has a shot on you. Defend. ***");
+
+  const terrain = own.terrain;
+  lines.push(
+    "",
+    "TERRAIN:",
+    `  ground below is ${terrain.overWater ? "water" : `land at ${terrain.groundElevationM.toFixed(0)} m`}; you are ${terrain.clearanceM.toFixed(0)} m above it`,
+    terrain.minimumClearanceAheadM < terrain.clearanceM
+      ? `  holding this flight path, clearance drops to ${terrain.minimumClearanceAheadM.toFixed(0)} m in ${terrain.timeToMinimumClearanceS.toFixed(0)}s (the ground is rising into you)`
+      : `  holding this flight path, clearance stays at or above ${terrain.minimumClearanceAheadM.toFixed(0)} m`,
+    `  a recovery to level costs ${terrain.recoveryHeightLossM.toFixed(0)} m; that leaves ${terrain.recoveryMarginM.toFixed(0)} m of margin`,
+    `  highest ground within 12 km is ${terrain.highestNearbyM.toFixed(0)} m (${terrain.clearanceOverHighestNearbyM.toFixed(0)} m below you); lowest ground lies on heading ${terrain.safestHeadingDeg.toFixed(0)} deg`,
+  );
+  if (terrain.warning === "pull-up") {
+    lines.push(
+      terrain.timeToImpactS !== null
+        ? `  *** PULL UP: this flight path hits the ground in ${terrain.timeToImpactS.toFixed(0)}s ***`
+        : "  *** PULL UP: a recovery no longer fits in the height you have ***",
+    );
+  } else if (terrain.warning === "caution") {
+    lines.push("  CAUTION: little room left between you and the ground.");
+  }
 
   lines.push(
     "",

@@ -83,7 +83,10 @@ export class EnergyFighterAgent implements AgentAdapter {
     const corner = own.cornerSpeedMps;
     const sustained = Math.max(own.sustainedLoadFactorG, 2);
     const maximum = Math.min(own.availableLoadFactorG, 9);
-    const veryLow = own.altitudeAglM < 900;
+    // Terrain awareness, not just altitude: the clearance the current flight
+    // path would leave is what says whether there is a hill in the way.
+    const terrain = own.terrain;
+    const veryLow = own.altitudeAglM < 900 || terrain.minimumClearanceAheadM < 700;
     const behindThem = relative.angleOffTailDeg < 70;
     const theyAreBehindUs = relative.antennaTrainAngleDeg > 120;
     const nearArenaEdge = observation.arena.distanceFromCentreM > observation.arena.radiusM * 0.8;
@@ -94,7 +97,14 @@ export class EnergyFighterAgent implements AgentAdapter {
     /** True when the fight is worth spending energy on, rather than saving it. */
     let committed = false;
 
-    if (relative.threatened && relative.rangeM < 1_800) {
+    if (terrain.warning === "pull-up") {
+      // Nothing in the fight is worth the ground. The automatic recovery will
+      // already be pulling; committing the manoeuvre to it stops the agent
+      // fighting its own GCAS.
+      maneuver = "climb";
+      committed = true;
+      rationale = "Terrain: recovery does not fit, pulling up";
+    } else if (relative.threatened && relative.rangeM < 1_800) {
       maneuver = veryLow ? this.chooseBreak(observation) : "defensive_spiral";
       committed = true;
       rationale = "Defending a gun solution";
@@ -109,6 +119,11 @@ export class EnergyFighterAgent implements AgentAdapter {
     } else if (veryLow && own.verticalSpeedMps < -30) {
       maneuver = "climb";
       rationale = "Climbing off the deck";
+    } else if (terrain.warning === "caution" && !behindThem) {
+      // High ground ahead with no shot to give up for it: go over the top
+      // rather than press on and be forced into a recovery later.
+      maneuver = "climb";
+      rationale = "Terrain: climbing over high ground ahead";
     } else if (nearArenaEdge) {
       maneuver = "pure_pursuit";
       rationale = "Turning back toward the arena centre";
@@ -163,6 +178,7 @@ export class EnergyFighterAgent implements AgentAdapter {
       throttle = "mil";
     }
     if (own.fuelKg < 250 && throttle === "ab") throttle = "mil";
+    if (terrain.warning === "pull-up") throttle = "ab";
 
     return {
       action: {
