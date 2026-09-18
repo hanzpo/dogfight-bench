@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "tsx watch server/index.ts",
-    "server": "tsx server/index.ts",
-    "bench": "tsx server/cli.ts",
+    "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
+    "server": "tsx --env-file-if-exists=.env server/index.ts",
+    "bench": "tsx --env-file-if-exists=.env server/cli.ts",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
     "@hono/node-server": "^2.1.1",
+    "@supabase/supabase-js": "^2.116.0",
     "hono": "^4.13.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

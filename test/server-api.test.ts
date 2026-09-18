@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 import { observationFor } from "../src/sim/telemetry";
@@ -13,9 +13,55 @@ beforeAll(async () => {
   process.env["DOGFIGHT_DB"] = ":memory:";
   process.env["DOGFIGHT_API_TOKEN"] = "test-token";
   process.env["ANTHROPIC_API_KEY"] = "not-a-real-key";
+  process.env["SUPABASE_URL"] = "https://project.test";
+  process.env["SUPABASE_ANON_KEY"] = "anon-key";
   process.env["NODE_ENV"] = "test";
   ({ app } = await import("../server/index"));
 });
+
+/**
+ * Stands in for Supabase's token endpoint.
+ *
+ * The server verifies an access token by asking Supabase who it belongs to, so
+ * a test of the account-gated endpoints has to answer that question. Only the
+ * auth call is intercepted; anything else the server reaches for is a mistake
+ * this should make obvious rather than quietly satisfy.
+ */
+function withSignedInUser(id: string, metadata: Record<string, unknown> = {}) {
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) {
+      return new Response(JSON.stringify({ id, is_anonymous: true, user_metadata: metadata }), { status: 200 });
+    }
+    throw new Error(`unexpected outbound request to ${url}`);
+  });
+  // A distinct token per user: the server caches verified tokens, so reusing
+  // one across tests would hand back the previous test's account.
+  return { authorization: `Bearer ${id.replace(/-/g, "")}${"t".repeat(8)}` };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+const SAMPLE_RESULT = {
+  humanAircraftId: "blue-1",
+  summary: {
+    scenarioId: "neutral-merge",
+    seed: 1,
+    durationS: 60,
+    winnerId: "blue-1",
+    reason: "opponent destroyed",
+    aircraft: [
+      { id: "blue-1", team: "blue", alive: true, health: 1, hitsTaken: 0, hitsScored: 3, roundsFired: 90, ammoRemaining: 400, fuelRemainingKg: 900, timeOnTargetS: 4, timeInControlZoneS: 9 },
+      { id: "red-1", team: "red", alive: false, health: 0, hitsTaken: 3, hitsScored: 0, roundsFired: 10, ammoRemaining: 500, fuelRemainingKg: 900, timeOnTargetS: 0, timeInControlZoneS: 0 },
+    ],
+    agents: {},
+  },
+};
+
+async function startMatch(opponent: string, headers: Record<string, string>): Promise<string> {
+  const response = await post("/api/live/start", { opponent }, undefined, headers);
+  return (await response.json()).matchId as string;
+}
 
 function sampleObservation() {
   const sim = new DogfightSimulation(neutralMerge);
@@ -23,13 +69,14 @@ function sampleObservation() {
   return observationFor(sim.state, "blue-1", neutralMerge, 0);
 }
 
-const post = (path: string, body: unknown, token?: string) =>
+const post = (path: string, body: unknown, token?: string, headers: Record<string, string> = {}) =>
   app.fetch(
     new Request(`http://localhost${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...headers,
       },
       body: JSON.stringify(body),
     }),
@@ -117,6 +164,58 @@ describe("the benchmark API", () => {
     const response = await post("/api/matches", body, "test-token");
     expect(response.status).toBe(400);
     expect((await response.json()).error).toMatch(/rounds/i);
+  });
+
+  /**
+   * A browser-reported result is a claim, not a fact.
+   *
+   * The server issues a ticket when a match starts and counts the decisions it
+   * serves against it, so somebody cannot report a win over a model they never
+   * called. It cannot tell whether a real match was reported honestly -- a live
+   * match is not reproducible by construction -- so it records how far it
+   * checked rather than pretending otherwise.
+   */
+  it("will not record a result for somebody who is not signed in", async () => {
+    const response = await post("/api/live/some-id/result", SAMPLE_RESULT);
+    expect(response.status).toBe(401);
+  });
+
+  it("refuses a claimed win over a model it never flew", async () => {
+    const headers = withSignedInUser("11111111-1111-1111-1111-111111111111");
+    const matchId = await startMatch("jev", headers);
+    const response = await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.counted).toBe(false);
+    expect(body.error).toMatch(/0 decisions/);
+  });
+
+  it("records a match against a scripted opponent and ranks the player", async () => {
+    const headers = withSignedInUser("22222222-2222-2222-2222-222222222222", { name: "Ana" });
+    const matchId = await startMatch("basic", headers);
+
+    const first = await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
+    expect(first.status).toBe(200);
+    expect((await first.json()).counted).toBe(true);
+
+    // Reporting the same match again must not be accepted, or a single win
+    // could be banked repeatedly.
+    const again = await post(`/api/live/${matchId}/result`, SAMPLE_RESULT, undefined, headers);
+    expect(again.status).toBe(409);
+
+    const board = await (await app.fetch(new Request("http://localhost/api/leaderboard?kinds=human"))).json();
+    const player = board.leaderboard.find(
+      (row: { competitorId: string }) => row.competitorId === "human:22222222-2222-2222-2222-222222222222",
+    );
+    expect(player.wins).toBe(1);
+    expect(player.rating).toBeGreaterThan(1500);
+    // A guest is rated but flagged, so the visible board can leave them off.
+    expect(player.provisional).toBe(true);
+  });
+
+  it("keeps people off the default leaderboard", async () => {
+    const board = await (await app.fetch(new Request("http://localhost/api/leaderboard"))).json();
+    expect(board.leaderboard.every((row: { kind: string }) => row.kind !== "human")).toBe(true);
   });
 
   it("does not leak a provider credential through any endpoint", async () => {

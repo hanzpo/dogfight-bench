@@ -87,6 +87,23 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
 .nav a:hover { color: var(--text); background: #ffffff0a; }
 .nav a.active { color: var(--text); background: #ffffff12; }
 
+.account { position: relative; margin-left: 6px; }
+.account-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px;
+  background: transparent; border-color: var(--line-strong); color: var(--text-muted);
+}
+.account-chip:hover:not(:disabled) { color: var(--text); }
+.account-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 290px;
+  display: grid; gap: 12px; padding: 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 16px 40px #00000066;
+}
+.account-menu p { margin: 0; font-size: 12px; line-height: 1.55; }
+.account-menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 0; }
+.account-actions { display: grid; gap: 8px; }
+.account-error { color: var(--danger); }
+
 /* Below the heading tape, which owns the top centre. */
 .orbit-help {
   /* Clear of the heading scale, which owns the top centre down to about 130. */
@@ -158,6 +175,23 @@ label { color: var(--text-muted); font-size: 11px; }
 }
 #event { color: var(--accent); }
 .keymap { flex: 1; text-align: center; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Whether this match is going anywhere, said before it is flown rather than
+   after, so nobody discovers their best fight was not recorded. */
+.recording {
+  position: fixed; top: 68px; right: 16px; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface-raised); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12px; color: var(--text-muted);
+  box-shadow: 0 6px 20px #00000044;
+}
+.recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.recording-ranked .recording-dot { background: var(--good); }
+.recording-saving .recording-dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.recording-saved .recording-dot { background: var(--accent); }
+.recording-failed .recording-dot { background: var(--danger); }
+.recording-failed { border-color: #e08a8655; }
 
 /* Something went wrong with a model, said where the pilot can act on it. */
 .decision-error {
@@ -303,40 +337,17 @@ label { color: var(--text-muted); font-size: 11px; }
   paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
   text-anchor: middle;
 }
-.shoot-cue { animation: pulse .7s ease-in-out infinite; }
-
-
-/* ---------- Tactical overlay ----------
-   Gun symbology, which genuinely is something the pilot sees, so it keeps the
-   head-up display's treatment. Full viewport: the overlay projects in viewport
-   coordinates, and without an explicit size the SVG falls back to its intrinsic
-   300x150 and folds the whole thing into the top-left corner. */
-
-.tactical {
-  position: fixed; inset: 0; width: 100%; height: 100%;
-  z-index: 2; pointer-events: none;
-  --hud: #6bff9e;
-  --shoot: #b9ff6b;
-}
-.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
-
-.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
-.reticle circle { stroke: inherit; }
-.reticle .pip { fill: var(--hud); stroke: none; }
-
-.target-box { filter: drop-shadow(0 0 3px #000a); }
-.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
-.target-box text { fill: #ffd98a; }
-
-/* Dashed, so it reads as a correction to close rather than a solid object. */
-.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
-
-.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
-
-.shoot-cue text {
-  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
-  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
-  text-anchor: middle;
+/**
+ * The shoot cue pulses.
+ *
+ * It referenced this animation without it ever having been defined, so the cue
+ * appeared and then sat perfectly still -- which is the one thing a "fire now"
+ * prompt must not do, because a static caption reads as a label rather than as
+ * something happening right this second.
+ */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
 }
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
 

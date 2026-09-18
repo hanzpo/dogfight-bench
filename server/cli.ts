@@ -1,4 +1,4 @@
-import { MatchStore } from "./db";
+import { createStore } from "./store";
 import { runSeries } from "./match-runner";
 import { providers, SCRIPTED_NAMES } from "./providers";
 
@@ -25,7 +25,7 @@ for (const entrant of [blue, red]) {
   }
 }
 
-const store = new MatchStore();
+const store = createStore();
 console.log(`Running ${rounds} scenarios, both sides, ${blue} vs ${red}...`);
 
 const result = await runSeries(store, {
@@ -44,7 +44,7 @@ for (const match of result.matches) {
 for (const error of result.errors) console.error(`  error: ${error}`);
 
 console.log("\nLeaderboard:");
-for (const row of store.leaderboard()) {
+for (const row of await store.leaderboard(["model", "scripted", "human"])) {
   console.log(
     `  ${row.rating.toFixed(0).padStart(5)}  ${row.name.padEnd(28)} ` +
       `${row.wins}W-${row.losses}L-${row.draws}D  ` +

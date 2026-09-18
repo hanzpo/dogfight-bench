@@ -282,6 +282,19 @@ export function LivePage() {
         <span id="event">{event}</span>
       </div>
 
+      {match.recording.status !== "idle" ? (
+        <div className={`recording recording-${match.recording.status}`} role="status">
+          <span className="recording-dot" />
+          <span>
+            {match.recording.status === "ranked"
+              ? "Ranked match — the result will count"
+              : match.recording.status === "saving"
+                ? "Saving result…"
+                : (match.recording.message ?? "Not recorded")}
+          </span>
+        </div>
+      ) : null}
+
       {decisionError ? (
         <div className="decision-error" role="status">
           <strong>{followId.toUpperCase()}</strong>

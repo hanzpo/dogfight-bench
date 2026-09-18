@@ -4,6 +4,8 @@ dist/
 *.log
 .playwright-cli/
 .env*
+# The template carries no secrets and has to ship, or nobody knows what to set.
+!.env.example
 tools/browser-feedback/.venv/
 **/.pytest_cache/
 **/.ruff_cache/

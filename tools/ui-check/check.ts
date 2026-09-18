@@ -464,7 +464,7 @@ check(
 await page.screenshot({ path: `${OUT}/overlay-${engine.name}.png` });
 
 console.log("leaderboard");
-await page.click("text=LEADERBOARD");
+await page.getByRole("link", { name: "Leaderboard" }).click();
 // Wait for the data itself. Matching the loading notice as well resolves
 // immediately and then counts zero rows. A timeout here is a failed check, not
 // a reason to abandon every remaining check in the run.
@@ -473,7 +473,7 @@ check(leaderboardRows > 0, `leaderboard shows ${leaderboardRows} agents`);
 await page.screenshot({ path: `${OUT}/leaderboard-${engine.name}.png` });
 
 console.log("match history and replay");
-await page.click("text=MATCHES");
+await page.getByRole("link", { name: "Matches" }).click();
 const matchRows = await countRows(page);
 check(matchRows > 0, `match history shows ${matchRows} matches`);
 await page.screenshot({ path: `${OUT}/matches-${engine.name}.png` });
@@ -484,13 +484,30 @@ if (matchRows === 0) {
   await browser.close();
   continue;
 }
-await page.locator("text=WATCH").first().click();
-await page.waitForFunction(() => Number(document.querySelector(".timecode")?.textContent?.trim().split(" ")[0]) > 0.5, {
-  timeout: 30_000,
-});
-const replayTime = await page.locator(".timecode").textContent();
-check(Boolean(replayTime && parseFloat(replayTime) > 0.5), `replay is playing (${replayTime?.trim()})`);
-checkFraming("replay view", await framing(page));
+await page.getByRole("link", { name: "Watch" }).first().click();
+/**
+ * A replay that never starts must be one failed check, not a crashed run.
+ *
+ * Matches with no stored replay are a real case -- a result can be recorded
+ * without one -- and the page reports that rather than playing. Letting the
+ * wait throw takes every remaining check with it and hides whatever else was
+ * wrong.
+ */
+let replayTime: string | null = null;
+try {
+  await page.waitForFunction(
+    () => Number(document.querySelector(".timecode")?.textContent?.trim().split(" ")[0]) > 0.5,
+    { timeout: 20_000 },
+  );
+  replayTime = await page.locator(".timecode").textContent();
+} catch {
+  const notice = await page.locator(".notice").first().textContent().catch(() => null);
+  if (notice) console.error(`        page said: ${notice.trim().slice(0, 140)}`);
+}
+check(Boolean(replayTime && parseFloat(replayTime) > 0.5), `replay is playing (${replayTime?.trim() ?? "never started"})`);
+if (replayTime) {
+  checkFraming("replay view", await framing(page));
+}
 await page.screenshot({ path: `${OUT}/replay-${engine.name}.png` });
 
 check(errors.length === 0, `no console or page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`);

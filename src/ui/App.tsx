@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { AccountMenu } from "./components/AccountMenu";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import { LivePage } from "./pages/LivePage";
 import { MatchesPage } from "./pages/MatchesPage";
@@ -21,6 +22,7 @@ export function App() {
           <NavLink to="/leaderboard">Leaderboard</NavLink>
           <NavLink to="/matches">Matches</NavLink>
           <NavLink to="/replay">Replays</NavLink>
+          <AccountMenu />
         </nav>
       </header>
 

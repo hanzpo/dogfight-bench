@@ -16,7 +16,7 @@ import { SCRIPTED_INFO } from "../src/agents/agent";
 import { neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 import { observationFor } from "../src/sim/telemetry";
-import { MatchStore, agentKey } from "../server/db";
+import { SqliteStore, competitorFor, competitorIdFor, humanCompetitor } from "../server/store";
 import { costUsd, priceOf } from "../server/pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../server/prompt";
 import { JevProvider } from "../server/providers/jev";
@@ -93,12 +93,22 @@ describe("match store", () => {
     };
   }
 
-  it("stores matches and aggregates a leaderboard", () => {
-    const store = new MatchStore(":memory:");
-    const agents = { "blue-1": SCRIPTED_INFO("alpha"), "red-1": SCRIPTED_INFO("beta") };
-    store.recordMatch({ id: "m1", summary: summaryFor("blue-1"), agents, replayJson: '{"x":1}' });
+  it("stores matches and aggregates a leaderboard", async () => {
+    const store = new SqliteStore(":memory:");
+    const competitors = {
+      "blue-1": competitorFor(SCRIPTED_INFO("alpha")),
+      "red-1": competitorFor(SCRIPTED_INFO("beta")),
+    };
+    await store.recordMatch({
+      id: "m1",
+      summary: summaryFor("blue-1"),
+      competitors,
+      origin: "headless",
+      verified: true,
+      replayJson: '{"x":1}',
+    });
 
-    const board = store.leaderboard();
+    const board = await store.leaderboard(["scripted"]);
     expect(board).toHaveLength(2);
     const alpha = board.find((row) => row.name === "alpha")!;
     expect(alpha.wins).toBe(1);
@@ -108,45 +118,125 @@ describe("match store", () => {
     expect(board.find((row) => row.name === "beta")!.rating).toBeLessThan(1500);
     expect(board.find((row) => row.name === "beta")!.failureRate).toBeGreaterThan(0);
 
-    expect(store.getReplay("m1")).toBe('{"x":1}');
-    expect(store.listMatches()).toHaveLength(1);
+    expect(await store.getReplay("m1")).toBe('{"x":1}');
+    expect(await store.listMatches({ limit: 50 })).toHaveLength(1);
     store.close();
   });
 
-  it("gives a stronger rating boost for beating a stronger opponent", () => {
-    const beatWeak = new MatchStore(":memory:");
-    const beatStrong = new MatchStore(":memory:");
-    const challenger = SCRIPTED_INFO("challenger");
+  /**
+   * The point of a shared identity for a model.
+   *
+   * Two different people beating the same model must cost it twice. That only
+   * works because the model is one row rather than one row per opponent, and it
+   * is the whole reason a crowdsourced board is worth keeping.
+   */
+  it("charges a model for every human that beats it", async () => {
+    const store = new SqliteStore(":memory:");
+    const model = competitorFor({
+      name: "claude",
+      provider: "anthropic",
+      model: "claude-opus-5",
+      policyVersion: "v1",
+      schema: "tactical",
+    });
+    const ratingOf = async () =>
+      (await store.leaderboard(["model"])).find((row) => row.competitorId === model.id)!.rating;
+
+    await store.recordMatch({
+      id: "one",
+      summary: summaryFor("blue-1"),
+      competitors: { "blue-1": humanCompetitor("ana", "Ana", false), "red-1": model },
+      origin: "live",
+      verified: true,
+    });
+    const afterFirst = await ratingOf();
+
+    await store.recordMatch({
+      id: "two",
+      summary: summaryFor("blue-1"),
+      competitors: { "blue-1": humanCompetitor("ben", "Ben", false), "red-1": model },
+      origin: "live",
+      verified: true,
+    });
+    const afterSecond = await ratingOf();
+
+    expect(afterFirst).toBeLessThan(1500);
+    expect(afterSecond).toBeLessThan(afterFirst);
+
+    // And reporting the same match again must not move anything at all.
+    await store.recordMatch({
+      id: "two",
+      summary: summaryFor("blue-1"),
+      competitors: { "blue-1": humanCompetitor("ben", "Ben", false), "red-1": model },
+      origin: "live",
+      verified: true,
+    });
+    expect(await ratingOf()).toBe(afterSecond);
+    store.close();
+  });
+
+  it("keeps humans and models on separate boards unless both are asked for", async () => {
+    const store = new SqliteStore(":memory:");
+    await store.recordMatch({
+      id: "m",
+      summary: summaryFor("blue-1"),
+      competitors: {
+        "blue-1": humanCompetitor("ana", "Ana", false),
+        "red-1": competitorFor(SCRIPTED_INFO("beta")),
+      },
+      origin: "live",
+      verified: false,
+    });
+    expect((await store.leaderboard(["scripted"])).map((row) => row.name)).toEqual(["beta"]);
+    expect((await store.leaderboard(["human"])).map((row) => row.name)).toEqual(["Ana"]);
+    expect(await store.leaderboard(["human", "scripted"])).toHaveLength(2);
+    store.close();
+  });
+
+  it("gives a stronger rating boost for beating a stronger opponent", async () => {
+    const beatWeak = new SqliteStore(":memory:");
+    const beatStrong = new SqliteStore(":memory:");
+    const challenger = competitorFor(SCRIPTED_INFO("challenger"));
+    const headless = { origin: "headless" as const, verified: true };
 
     // Build a strong opponent first by letting it win several matches.
     for (let i = 0; i < 5; i += 1) {
-      beatStrong.recordMatch({
+      await beatStrong.recordMatch({
         id: `warm${i}`,
         summary: summaryFor("blue-1"),
-        agents: { "blue-1": SCRIPTED_INFO("strong"), "red-1": SCRIPTED_INFO(`fodder${i}`) },
+        competitors: {
+          "blue-1": competitorFor(SCRIPTED_INFO("strong")),
+          "red-1": competitorFor(SCRIPTED_INFO(`fodder${i}`)),
+        },
+        ...headless,
       });
     }
-    beatStrong.recordMatch({
+    await beatStrong.recordMatch({
       id: "final",
       summary: summaryFor("red-1"),
-      agents: { "blue-1": SCRIPTED_INFO("strong"), "red-1": challenger },
+      competitors: { "blue-1": competitorFor(SCRIPTED_INFO("strong")), "red-1": challenger },
+      ...headless,
     });
-    beatWeak.recordMatch({
+    await beatWeak.recordMatch({
       id: "final",
       summary: summaryFor("red-1"),
-      agents: { "blue-1": SCRIPTED_INFO("weak"), "red-1": challenger },
+      competitors: { "blue-1": competitorFor(SCRIPTED_INFO("weak")), "red-1": challenger },
+      ...headless,
     });
 
-    const strongGain = beatStrong.leaderboard().find((row) => row.name === "challenger")!.rating;
-    const weakGain = beatWeak.leaderboard().find((row) => row.name === "challenger")!.rating;
+    const boardStrong = await beatStrong.leaderboard(["scripted"]);
+    const boardWeak = await beatWeak.leaderboard(["scripted"]);
+    const strongGain = boardStrong.find((row) => row.name === "challenger")!.rating;
+    const weakGain = boardWeak.find((row) => row.name === "challenger")!.rating;
     expect(strongGain).toBeGreaterThan(weakGain);
     beatWeak.close();
     beatStrong.close();
   });
 
-  it("keys an agent by provider, model and policy version", () => {
-    expect(agentKey({ name: "x", provider: "anthropic", model: "claude-opus-5", policyVersion: "2", schema: "tactical" }))
-      .toBe("anthropic:claude-opus-5:2");
+  it("keys a model by provider, model and policy version", () => {
+    expect(
+      competitorIdFor({ name: "x", provider: "anthropic", model: "claude-opus-5", policyVersion: "2", schema: "tactical" }),
+    ).toBe("anthropic:claude-opus-5:2");
   });
 });
 

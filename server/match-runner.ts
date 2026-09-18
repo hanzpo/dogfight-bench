@@ -4,7 +4,7 @@ import { ReplayRecorder } from "../src/sim/replay";
 import { neutralMerge, scenarioSet } from "../src/sim/scenario";
 import { DogfightSimulation, type MatchSummary } from "../src/sim/simulation";
 import type { ScenarioConfig } from "../src/sim/types";
-import { MatchStore } from "./db";
+import { competitorFor, type ResultsStore } from "./store";
 import { env } from "./env";
 import { providerAgent, providers, scriptedAgent } from "./providers";
 
@@ -50,7 +50,7 @@ function buildAgent(kind: string, aircraftId: string): AgentAdapter {
 }
 
 export async function runMatch(
-  store: MatchStore,
+  store: ResultsStore,
   scenario: ScenarioConfig,
   blue: Entrant,
   red: Entrant,
@@ -75,16 +75,22 @@ export async function runMatch(
   recorder.finish(simulation.decisions, summary);
 
   const id = randomUUID();
-  store.recordMatch({
+  await store.recordMatch({
     id,
     summary,
-    agents,
+    competitors: {
+      "blue-1": competitorFor(blueAgent.info),
+      "red-1": competitorFor(redAgent.info),
+    },
+    // Run here, from the decision log, so it reproduces exactly.
+    origin: "headless",
+    verified: true,
     replayJson: options.storeReplay === false ? undefined : recorder.toJSON(),
   });
   return { id, summary };
 }
 
-export async function runSeries(store: MatchStore, request: SeriesRequest): Promise<SeriesResult> {
+export async function runSeries(store: ResultsStore, request: SeriesRequest): Promise<SeriesResult> {
   const rounds = Math.max(1, Math.min(request.rounds ?? 3, 50));
   const base: ScenarioConfig = { ...neutralMerge, maxTime: request.maxTimeS ?? neutralMerge.maxTime };
   const scenarios = scenarioSet(rounds, base);

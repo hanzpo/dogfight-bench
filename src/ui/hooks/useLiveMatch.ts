@@ -7,6 +7,8 @@ import { neutralMerge } from "../../sim/scenario";
 import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
 import type { MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
+import { api } from "../api";
+import { authHeaders } from "../auth";
 import { keyHeaders } from "../keys";
 import {
   PilotInput,
@@ -29,6 +31,18 @@ export type PilotChoice = string;
 
 export const HUMAN: PilotChoice = "human";
 
+/**
+ * Whether a finished match went anywhere.
+ *
+ * A result only counts when the server issued a ticket for the match and served
+ * the decisions itself, which is what stops anybody reporting a win against a
+ * model they never called.
+ */
+export interface RecordingState {
+  status: "idle" | "ranked" | "unranked" | "saving" | "saved" | "failed";
+  message?: string;
+}
+
 /** How often the readouts a person looks at are refreshed, milliseconds. */
 const UI_REFRESH_MS = 100;
 
@@ -43,6 +57,8 @@ export interface LiveMatch {
   liveStateRef: RefObject<MatchState | undefined>;
   /** Most recent decision per aircraft, for the observer panel. */
   decisions: Record<string, DecisionRecord | undefined>;
+  /** How the finished match was recorded, if it was. */
+  recording: RecordingState;
   paused: boolean;
   timeScale: number;
   followRed: boolean;
@@ -83,11 +99,25 @@ function infoFor(pilot: PilotChoice): AgentInfo {
  * A model agent reads its credentials at request time rather than capture time,
  * so entering a key mid-match takes effect on the next decision.
  */
-function buildAgent(pilot: PilotChoice, aircraftId: string): AgentAdapter | undefined {
+function buildAgent(
+  pilot: PilotChoice,
+  aircraftId: string,
+  matchId: () => string | undefined,
+): AgentAdapter | undefined {
   if (pilot === HUMAN) return undefined;
   if (pilot === "basic") return new EnergyFighterAgent(aircraftId);
   if (pilot === "basic-pursuit") return new BasicPursuitAgent(aircraftId);
-  return new HttpAgent(aircraftId, infoFor(pilot), "/api/decide", pilot, () => keyHeaders(pilot));
+  return new HttpAgent(aircraftId, infoFor(pilot), "/api/decide", pilot, () => {
+    const id = matchId();
+    // The ticket goes out with every decision, so the server can count what it
+    // actually flew for this match.
+    return { ...keyHeaders(pilot), ...(id ? { "x-match-id": id } : {}) };
+  });
+}
+
+/** True for anything the server has to be asked about. */
+function isModel(pilot: PilotChoice): boolean {
+  return pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit";
 }
 
 /**
@@ -123,6 +153,9 @@ export function useLiveMatch(): LiveMatch {
   const [inputSettings, setInputSettingsState] = useState<PilotInputSettings>(() => loadSettings());
   const [canCapturePointer, setCanCapturePointer] = useState(false);
   const [mouseMode, setMouseMode] = useState<MouseMode>("absolute");
+  const [recording, setRecording] = useState<RecordingState>({ status: "idle" });
+  const matchTicket = useRef<{ id: string; ranked: boolean } | undefined>(undefined);
+  const reported = useRef(false);
 
   const pausedRef = useRef(paused);
   const scaleRef = useRef(timeScale);
@@ -138,9 +171,10 @@ export function useLiveMatch(): LiveMatch {
     const blue = bluePilotRef.current;
     const red = redPilotRef.current;
 
-    const blueAgent = buildAgent(blue, "blue-1");
+    const ticketId = () => matchTicket.current?.id;
+    const blueAgent = buildAgent(blue, "blue-1", ticketId);
     if (blueAgent) sim.attachAgent("blue-1", blueAgent);
-    const redAgent = buildAgent(red, "red-1");
+    const redAgent = buildAgent(red, "red-1", ticketId);
     if (redAgent) sim.attachAgent("red-1", redAgent);
 
     simulation.current = sim;
@@ -151,8 +185,38 @@ export function useLiveMatch(): LiveMatch {
     accumulator.current = 0;
     lastEventIndex.current = 0;
     input.current.reset();
+    matchTicket.current = undefined;
+    reported.current = false;
     setDecisions({});
+    setRecording({ status: "idle" });
     setPaused(false);
+
+    /**
+     * Ask the server to open a match, but do not wait for it.
+     *
+     * The aircraft should be flying the instant the page is ready; a round trip
+     * to open a ticket is not a reason to stare at a frozen merge. Any decision
+     * that goes out before the ticket lands simply is not counted against it,
+     * which costs a fraction of a second of credit at the very start.
+     */
+    if (blue === HUMAN && isModel(red)) {
+      void authHeaders()
+        .then((headers) => api.startLiveMatch(red, headers))
+        .then((ticket) => {
+          matchTicket.current = { id: ticket.matchId, ranked: ticket.ranked };
+          setRecording({
+            status: ticket.ranked ? "ranked" : "unranked",
+            message: ticket.ranked
+              ? undefined
+              : "Sign in to have this count on the leaderboard and to keep the replay.",
+          });
+        })
+        .catch(() => {
+          // A server that cannot open a ticket is a server that cannot record
+          // the result either. The match still flies.
+          setRecording({ status: "unranked", message: "This match will not be recorded." });
+        });
+    }
   }, []);
 
   useEffect(() => restart(), [restart, bluePilot, redPilot]);
@@ -215,7 +279,10 @@ export function useLiveMatch(): LiveMatch {
           recorder.current?.capture(sim.state);
           accumulator.current -= neutralMerge.fixedDt;
         }
-        if (sim.state.finished) recorder.current?.finish(sim.decisions, sim.summary());
+        if (sim.state.finished) {
+          recorder.current?.finish(sim.decisions, sim.summary());
+          void reportResult(sim);
+        }
       }
 
       if (sim) {
@@ -238,6 +305,46 @@ export function useLiveMatch(): LiveMatch {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  /**
+   * Reports a finished match, once.
+   *
+   * Only for a match the server issued a ticket for: a scripted opponent has
+   * nothing to verify against, so recording it would put unverifiable results
+   * on a public board for no benefit.
+   */
+  const reportResult = useCallback(async (sim: DogfightSimulation) => {
+    const ticket = matchTicket.current;
+    if (!ticket || reported.current) return;
+    reported.current = true;
+
+    if (!ticket.ranked) {
+      setRecording({ status: "unranked", message: "Sign in to have your matches counted and kept." });
+      return;
+    }
+
+    setRecording({ status: "saving" });
+    try {
+      recorder.current?.finish(sim.decisions, sim.summary());
+      const outcome = await api.reportLiveMatch(
+        ticket.id,
+        {
+          summary: sim.summary(),
+          humanAircraftId: "blue-1",
+          ...(recorder.current ? { replay: recorder.current.toJSON() } : {}),
+        },
+        await authHeaders(),
+      );
+      setRecording({
+        status: "saved",
+        message: outcome.provisional
+          ? "Recorded. Attach an account to appear on the leaderboard."
+          : "Recorded on the leaderboard.",
+      });
+    } catch (cause: unknown) {
+      setRecording({ status: "failed", message: cause instanceof Error ? cause.message : String(cause) });
+    }
+  }, []);
+
   const downloadReplay = useCallback(() => {
     const sim = simulation.current;
     if (!recorder.current || !sim) return;
@@ -256,6 +363,7 @@ export function useLiveMatch(): LiveMatch {
     liveStateRef,
     state,
     decisions,
+    recording,
     paused,
     timeScale,
     followRed,

@@ -69,6 +69,24 @@ export const env = {
   typesafeModel: process.env["TYPESAFE_MODEL"] ?? "jev-latest",
   typesafeUrl: process.env["TYPESAFE_URL"] ?? "https://api.typesafe.ai/v1/systemone",
 
+  /**
+   * Supabase, for a deployment with accounts and a shared leaderboard.
+   *
+   * The service role key bypasses row level security, so it belongs here with
+   * the provider credentials and must never reach the browser. Without both of
+   * these the server falls back to the local SQLite file, which is what the
+   * tests and the command line benchmark use.
+   */
+  supabaseUrl: process.env["SUPABASE_URL"],
+  supabaseServiceRoleKey: process.env["SUPABASE_SERVICE_ROLE_KEY"],
+  /** Sent to the browser, and safe to: it only ever acts as the signed-in user. */
+  supabaseAnonKey: process.env["SUPABASE_ANON_KEY"],
+
+  /** Minimum decisions the server must have served before a live result counts. */
+  liveMatchMinimumDecisions: Number(process.env["DOGFIGHT_LIVE_MIN_DECISIONS"] ?? 8),
+  /** Live matches one account may report in a day. */
+  liveMatchesPerDay: Number(process.env["DOGFIGHT_LIVE_MATCHES_PER_DAY"] ?? 60),
+
   /** Per-decision wall-clock deadline handed to the simulation. */
   decisionTimeoutMs: Number(process.env["DECISION_TIMEOUT_MS"] ?? 4_000),
   /** Simulated seconds between decisions. Raise it for slower models. */
