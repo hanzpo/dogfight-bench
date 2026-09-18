@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { NOZZLE } from "./sim/config";
 import { SEA_LEVEL_M, TERRAIN_EXTENT_M, terrainElevation, terrainHeight } from "./sim/terrain";
 import { TRACER_TRAIL_SECONDS } from "./sim/tracer";
 import type { MatchState } from "./sim/types";
@@ -178,6 +179,12 @@ const MAX_TRACERS = 420;
 const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
+/** Length of the afterburner flame at rest, metres. */
+const PLUME_LENGTH_M = 7;
+
+/** Where the flame starts, in body axes: the nozzle exit, not the tail bumper. */
+const PLUME_ANCHOR = new THREE.Vector3(0, NOZZLE.centreYM, NOZZLE.exitZM);
 
 export class DogfightViewer {
   readonly renderer: THREE.WebGLRenderer;
@@ -626,9 +633,12 @@ export class DogfightViewer {
   private updatePlume(aircraft: ViewerAircraft): void {
     let plume = this.plumes.get(aircraft.id);
     if (!plume) {
-      const geometry = new THREE.ConeGeometry(0.62, 7, 12, 1, true);
+      // The cone is built with its base on the nozzle exit plane and its apex
+      // trailing aft, so scaling it in z stretches the flame backwards instead
+      // of pulling it out of the tailpipe.
+      const geometry = new THREE.ConeGeometry(NOZZLE.exitRadiusM, PLUME_LENGTH_M, 12, 1, true);
       geometry.rotateX(-Math.PI / 2);
-      geometry.translate(0, 0, -3.5);
+      geometry.translate(0, 0, -PLUME_LENGTH_M / 2);
       plume = new THREE.Mesh(geometry, this.plumeMaterial.clone());
       this.effectGroup.add(plume);
       this.plumes.set(aircraft.id, plume);
@@ -640,7 +650,7 @@ export class DogfightViewer {
     plume.quaternion.fromArray(aircraft.orientation);
     plume.position
       .fromArray(aircraft.position)
-      .addScaledVector(new THREE.Vector3(0, 0, 1).applyQuaternion(plume.quaternion), -6.4);
+      .add(PLUME_ANCHOR.clone().applyQuaternion(plume.quaternion));
     // A little flicker stops it reading as a solid plastic cone.
     const material = plume.material as THREE.MeshBasicMaterial;
     material.opacity = 0.42 + Math.random() * 0.22;

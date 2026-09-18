@@ -17,6 +17,22 @@ export const GEOMETRY = {
   aspectRatio: (9.96 * 9.96) / 27.87,
 } as const;
 
+/**
+ * Engine nozzle, in the asset's body axes.
+ *
+ * Measured from the mesh rather than eyeballed, because the afterburner plume
+ * is drawn from these numbers and a plume that does not start at the nozzle
+ * reads instantly as wrong. Checked against the asset in the tests, so a
+ * re-export that moves the tail cannot silently leave the fire behind.
+ */
+export const NOZZLE = {
+  /** Exit plane along the body's long axis; the nose is +z, so this is aft. */
+  exitZM: -7.21,
+  /** The exit is slightly below the body origin. */
+  centreYM: -0.087,
+  exitRadiusM: 0.47,
+} as const;
+
 export const MASS = {
   /** Operating empty weight plus two wingtip AIM-9 and full 20 mm load. */
   emptyKg: 9_200,

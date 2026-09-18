@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { NOZZLE } from "../src/sim/config";
 
 /**
  * The aircraft asset is load-bearing.
@@ -106,5 +107,27 @@ describe("the F-16 asset", () => {
     if (references.length) {
       expect(references.every((name) => /^REF\b/i.test(name))).toBe(true);
     }
+  });
+
+  it("has its engine nozzle where the afterburner plume is drawn", () => {
+    // The plume is positioned from constants, not from the mesh, because the
+    // renderer must not pay to search the geometry every frame. That makes the
+    // constants a copy of the asset, and a copy can go stale -- so check it.
+    const core = vertices.filter((vertex) => Math.hypot(vertex[0], vertex[1] - NOZZLE.centreYM) < 0.9);
+    const exitZ = Math.min(...core.map((vertex) => vertex[2]));
+    const ring = core.filter((vertex) => vertex[2] < exitZ + 0.05);
+    const xs = ring.map((vertex) => vertex[0]);
+    const ys = ring.map((vertex) => vertex[1]);
+    const centreX = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const centreY = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const radius = ring.reduce(
+      (widest, vertex) => Math.max(widest, Math.hypot(vertex[0] - centreX, vertex[1] - centreY)),
+      0,
+    );
+
+    expect(exitZ).toBeCloseTo(NOZZLE.exitZM, 1);
+    expect(centreX).toBeCloseTo(0, 2);
+    expect(centreY).toBeCloseTo(NOZZLE.centreYM, 2);
+    expect(radius).toBeCloseTo(NOZZLE.exitRadiusM, 1);
   });
 });

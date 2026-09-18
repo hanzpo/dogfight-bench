@@ -88,6 +88,7 @@ const LAYOUT_PROBE = `(() => {
     speed: box('.flight-display .speed-group .tape-box'),
     altitude: box('.flight-display .alt-group .tape-box'),
     heading: box('.flight-display .heading-group .tape-box'),
+    headingTicks: box('.flight-display .heading-group .tape-ticks'),
     throttle: box('.flight-display .engine-group')
   };
 })()`;
@@ -258,6 +259,7 @@ const viewport = placed["viewport"]!;
 const speed = placed["speed"]!;
 const altitude = placed["altitude"]!;
 const heading = placed["heading"]!;
+const headingTicks = placed["headingTicks"]!;
 const throttle = placed["throttle"]!;
 check(
   speed.x < viewport.w * 0.25 && Math.abs(speed.y - viewport.y / 2) < viewport.y * 0.2,
@@ -270,6 +272,22 @@ check(
 check(
   Math.abs(heading.x - viewport.w / 2) < viewport.w * 0.12 && heading.y < viewport.y * 0.25,
   `heading sits across the top centre (${Math.round(heading.x)}, ${Math.round(heading.y)})`,
+);
+/**
+ * The scale, not just the box above it.
+ *
+ * These are separate elements and only the box was ever measured, so a version
+ * shipped with the whole compass rose translated half a screen to the right and
+ * every heading assertion still passed. Marks drawn inside an already-positioned
+ * group are exactly the kind of thing that goes wrong twice.
+ */
+check(
+  Math.abs(headingTicks.x - viewport.w / 2) < viewport.w * 0.06,
+  `heading scale is centred under its box (${Math.round(headingTicks.x)} vs ${Math.round(viewport.w / 2)})`,
+);
+check(
+  headingTicks.w > 120 && headingTicks.x + headingTicks.w / 2 < viewport.w,
+  `heading scale is on screen, not off the right edge (${Math.round(headingTicks.w)} px wide)`,
 );
 check(
   throttle.x < viewport.w * 0.3 && throttle.y > viewport.y * 0.7,

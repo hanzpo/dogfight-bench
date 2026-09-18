@@ -405,6 +405,20 @@ function compass(direction: Vector3): number {
 }
 
 /**
+ * Swaps a group's contents only when they actually changed.
+ *
+ * Every renderer keeps its own slot. They used to share one, which meant none
+ * of them ever got a cache hit and all three re-parsed their markup on every
+ * animation frame.
+ */
+function setMarkup(group: SVGGElement, cache: Record<string, string>, key: string, markup: string): void {
+  const slot = `${key}:markup`;
+  if (cache[slot] === markup) return;
+  cache[slot] = markup;
+  group.innerHTML = markup;
+}
+
+/**
  * Draws a vertical tape: ticks that slide past a fixed box, so rate of change
  * is visible as motion rather than only as a changing number.
  */
@@ -442,10 +456,7 @@ function renderTape(
       );
     }
   }
-  const markup = marks.join("");
-  if (cache["ladder"] === markup) return;
-  cache["ladder"] = markup;
-  group.innerHTML = markup;
+  setMarkup(group, cache, key, marks.join(""));
 }
 
 function renderHeadingTape(
@@ -458,14 +469,17 @@ function renderHeadingTape(
   const signature = `${heading.toFixed(1)}|${Math.round(width)}`;
   if (cache["heading"] === signature) return;
   cache["heading"] = signature;
-  const centre = width / 2;
+  // The group this draws into is already translated to the top centre of the
+  // viewport, so every mark is placed relative to that origin. Adding half the
+  // width here as well -- which is what this used to do -- pushes the entire
+  // tape a further half-screen right, off the edge of the display.
   const pixelsPerDegree = Math.min(width * 0.32, 420) / 60;
   const marks: string[] = [];
   for (let offset = -35; offset <= 35; offset += 5) {
     const bearing = (Math.round(heading / 5) * 5 + offset + 360) % 360;
     const delta = ((bearing - heading + 540) % 360) - 180;
     if (Math.abs(delta) > 32) continue;
-    const x = centre + delta * pixelsPerDegree;
+    const x = delta * pixelsPerDegree;
     const major = bearing % 10 === 0;
     marks.push(`<line x1="${x.toFixed(1)}" y1="14" x2="${x.toFixed(1)}" y2="${major ? 26 : 21}" />`);
     if (major) {
@@ -474,10 +488,7 @@ function renderHeadingTape(
       );
     }
   }
-  const markup = marks.join("");
-  if (cache["ladder"] === markup) return;
-  cache["ladder"] = markup;
-  group.innerHTML = markup;
+  setMarkup(group, cache, "heading", marks.join(""));
 }
 
 /**
@@ -552,8 +563,5 @@ function drawLadder(
       }
     }
   }
-  const markup = marks.join("");
-  if (cache["ladder"] === markup) return;
-  cache["ladder"] = markup;
-  group.innerHTML = markup;
+  setMarkup(group, cache, "ladder", marks.join(""));
 }
