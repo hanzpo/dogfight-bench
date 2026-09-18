@@ -178,6 +178,16 @@ page.on("console", (message) => {
   }
   errors.push(message.text());
 });
+/**
+ * A failed request names the URL that failed.
+ *
+ * The console only says "Failed to load resource", which is the same message
+ * whether the API refused a decision or an image was missing, and chasing one
+ * of those on a deployed site with no URL to go on is not possible.
+ */
+page.on("response", (response) => {
+  if (response.status() >= 500) errors.push(`HTTP ${response.status()} from ${response.url()}`);
+});
 
 console.log("live page, untouched default state");
 await page.goto(BASE, { waitUntil: "networkidle" });

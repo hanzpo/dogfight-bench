@@ -67,8 +67,14 @@ ten kilometres apart. The rubric's rungs are not evenly spaced in g, because
 four of the five describe a jet that is turning and one does not. And the
 trigger is asked strictly but answered generously -- demanding a perfect
 solution rather than a plausible one cut the rounds fired by seventy per cent
-and the hits to none. Against the scripted energy fighter over six matches:
-3W-3L, 10.4% accuracy to its 9.0%.
+and the hits to none.
+
+Where that leaves it, over fourteen matches against `energy-fighter`: **3-11**,
+with 19 hits from 140 rounds. The scripted pilot manages 99 from 1,234. So Jev
+shoots about twice as well per round and gets a shot roughly a thirtieth as
+often -- it is not failing at gunnery, it is failing to arrive at a gun
+solution, which is the part of a dogfight that is actually hard. Before the two
+fixes above it was 0-10 and had never hit anything.
 
 ## Cameras
 

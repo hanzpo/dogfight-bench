@@ -184,6 +184,7 @@ export function LivePage() {
 
       <footer className="controls">
         <div className="keymap">{KEYMAP[match.scheme]}</div>
+        <div className="control-rows">
         <div className="control-group">
         <label>
           You
@@ -315,6 +316,7 @@ export function LivePage() {
         >
           <Gear />
         </button>
+        </div>
         </div>
       </footer>
 

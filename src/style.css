@@ -140,7 +140,9 @@ label { color: var(--text-muted); font-size: 11px; }
 .controls {
     position: fixed; left: 0; right: 0; bottom: 36px; z-index: 3;
   width: fit-content; margin-inline: auto;
-  display: flex; align-items: flex-end; gap: 0; flex-wrap: wrap; justify-content: center;
+  /* A column so the keymap is a caption row above the groups; centring the
+     items keeps the bar only as wide as the widest of them. */
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
   padding: 10px 4px;
   background: #16181bec; border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 8px 28px #00000055;
@@ -168,10 +170,13 @@ label { color: var(--text-muted); font-size: 11px; }
 }
 #event { color: var(--accent); }
 .keymap {
-  position: absolute; left: 0; right: 0; bottom: calc(100% + 9px);
-  text-align: center; color: var(--text-muted);
+  max-width: 100%;
+  text-align: center; color: var(--text-faint);
   font: 11px/1 "JetBrains Mono";
-    text-shadow: 0 1px 5px #0c0d0f, 0 0 12px #0c0d0fcc;
+}
+.control-rows {
+  display: flex; align-items: flex-end; flex-wrap: wrap; justify-content: center;
+  max-width: 100%;
 }
 
 .recording {

@@ -104,8 +104,19 @@ export function FlightDisplay({
         100,
         height,
         false,
+        panelScale(width, height),
       );
-      renderTape(altTicks.current, rendered.current, "alt", own.position.y * FEET, 500, 2_000, height, true);
+      renderTape(
+        altTicks.current,
+        rendered.current,
+        "alt",
+        own.position.y * FEET,
+        500,
+        2_000,
+        height,
+        true,
+        panelScale(width, height),
+      );
       renderHeadingTape(headingTicks.current, rendered.current, heading, width);
 
       if (cockpit) {
@@ -270,13 +281,28 @@ function throttleLabel(afterburner: boolean, throttle: number): string {
   return `${Math.round(throttle * 100)}%`;
 }
 
+/** How much the panel instruments shrink on a small window. */
+function panelScale(width: number, height: number): number {
+  return clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
+}
+
+/**
+ * The band the airspeed and altitude readouts occupy, either side of centre.
+ *
+ * The tape runs behind them, so a tick label landing inside this would be drawn
+ * across the Mach number or the angle of attack.
+ */
+function readoutBand(scale: number): { top: number; bottom: number } {
+  return { top: -30 * scale, bottom: 84 * scale };
+}
+
 function layout(
   groups: Record<string, SVGGElement | null>,
   width: number,
   height: number,
   detailsOpen: boolean,
 ): void {
-  const scale = clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
+  const scale = panelScale(width, height);
   const margin = clamp(width * 0.05, 26, 92);
   const rightEdge = width - (detailsOpen ? 318 : margin);
   const place = (key: string, x: number, y: number, scaled = true) =>
@@ -290,8 +316,13 @@ function layout(
   place("alt", rightEdge, 0, false);
   place("altReadout", 0, height / 2);
   place("heading", width / 2, 86);
-  place("engine", margin, height - 152);
-  place("stores", rightEdge, height - 152);
+  // Measured off the control bar rather than assumed: the bar wraps to two rows
+  // on a narrow window, and a fixed offset put the throttle and the ammunition
+  // count underneath it.
+  const bar = document.querySelector(".controls")?.getBoundingClientRect().top;
+  const bottom = (bar && bar > height * 0.4 ? bar : height - 132) - 42;
+  place("engine", margin, bottom);
+  place("stores", rightEdge, bottom);
 }
 
 function sizeHudField(
@@ -333,9 +364,10 @@ function renderTape(
   span: number,
   height: number,
   right: boolean,
+  scale: number,
 ): void {
   if (!group) return;
-  const signature = `${Math.round(value)}|${Math.round(height)}`;
+  const signature = `${Math.round(value)}|${Math.round(height)}|${scale.toFixed(2)}`;
   if (cache[key] === signature) return;
   cache[key] = signature;
   const centre = height / 2;
@@ -351,7 +383,8 @@ function renderTape(
         ? `<line x1="0" y1="${y.toFixed(1)}" x2="${-length}" y2="${y.toFixed(1)}" />`
         : `<line x1="0" y1="${y.toFixed(1)}" x2="${length}" y2="${y.toFixed(1)}" />`,
     );
-    if (major) {
+    const band = readoutBand(scale);
+    if (major && (y - centre < band.top || y - centre > band.bottom)) {
       marks.push(
         `<text x="${right ? -20 : 20}" y="${(y + 4).toFixed(1)}" text-anchor="${right ? "end" : "start"}">${Math.round(tick)}</text>`,
       );
