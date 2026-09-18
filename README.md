@@ -208,13 +208,18 @@ what only the benchmark knows. Mixing them produces something that looks like a
 cockpit and lies about what a cockpit contains.
 
 **Flight display** is head-up green and laid out where a fighter puts it:
-calibrated airspeed left, altitude right, heading across the top, throttle and
-stores along the bottom. In the cockpit view (`VIEW · COCKPIT`) the pitch
-ladder, horizon and flight path marker are drawn *conformally* -- each rung is
-placed in the world at its own pitch angle and projected, so it lies along the
-real horizon, banks with the aircraft, and is clipped to a combiner-sized field
-of view rather than sprayed across the canopy. From an external view that would
-be a lie, so the same information appears as a compact attitude indicator.
+calibrated airspeed left, altitude right, heading and track across the top,
+throttle, control position and stores along the bottom. In the cockpit view the
+pitch ladder, horizon and flight path marker are drawn *conformally* -- each
+rung is placed in the world at its own pitch angle and projected, so it lies
+along the real horizon, banks with the aircraft, and is clipped to a
+combiner-sized field of view rather than sprayed across the canopy. From an
+external view there is no attitude symbology at all: an artificial horizon is
+an instrument for a pilot who cannot see the aeroplane they are sitting in, and
+drawn beside a picture of the aircraft it only repeats it.
+
+The panel instruments scale with the window. The conformal symbology never
+does: it is projected into the world, and its size is the geometry.
 
 **Tactical overlay** is the gun symbology: a reticle marking where the rounds
 will be at the bandit's range with drop included, ringed by the dispersion cone
@@ -229,7 +234,7 @@ on every tick. It has coastline, inland water and snow above the treeline, and
 three cloud decks, because altitude over featureless ground is unreadable.
 Water is a floor rather than a hole: sea level is as low as anything flies.
 
-**Observer panel** is everything else -- angle off the bandit's tail, the energy
+**Details panel** is everything else -- angle off the bandit's tail, the energy
 ledger, predicted miss distance, their fuel and damage, and where the ground is.
 None of that is on an instrument in any cockpit, so it is presented as data: one
 plain monospace block, in one place, with none of the head-up display's styling.
