@@ -367,9 +367,13 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .page {
   position: fixed; inset: 56px 0 0 0; z-index: 4; overflow: auto;
   padding: 32px 32px 72px; background: var(--bg);
+  /* A centred content column that children align to the left of. Auto margins
+     centred every child instead, so a narrow block -- the footnote, at ninety
+     characters -- floated to the middle of the window while the table beside it
+     started at the column's edge. */
+  display: grid; grid-template-columns: minmax(0, 1280px); justify-content: center;
+  align-content: start;
 }
-.page > * { max-width: 1280px; margin-inline: auto; }
-.page > .page-head { width: 100%; }
 .page.overlay-page { background: #0c0d0fe8; backdrop-filter: blur(8px); }
 .page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
 .page-intro { margin: 0 0 26px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
