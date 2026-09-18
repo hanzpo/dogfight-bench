@@ -400,8 +400,9 @@ function layout(
   place("alt", rightEdge, 0);
   place("altReadout", 0, height / 2);
   place("heading", width / 2, 86);
-  place("engine", margin, height - 96);
-  place("stores", rightEdge, height - 96);
+  // Clear of the control bar, which is 72 tall and sits 20 from the bottom.
+  place("engine", margin, height - 132);
+  place("stores", rightEdge, height - 132);
   // The attitude indicator is 100 across and needs room beside the airspeed
   // tape. On a narrow screen there is none, so it goes rather than overlapping
   // the tape it sits next to.

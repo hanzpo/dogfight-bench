@@ -187,7 +187,11 @@ export function LivePage() {
         onToggle={() => setObserverOpen(!observerOpen)}
       />
 
+      {/* Three groups, because they answer three different questions: who is
+          flying, how you are watching, and what to do now. Wrapped together as
+          one row they read as a pile of controls. */}
       <footer className="controls">
+        <div className="control-group">
         <label>
           You
           <select
@@ -227,6 +231,9 @@ export function LivePage() {
             ))}
           </select>
         </label>
+        </div>
+
+        <div className="control-group">
         <label>
           Controls
           <select
@@ -266,6 +273,9 @@ export function LivePage() {
             <option value="16">16×</option>
           </select>
         </label>
+        </div>
+
+        <div className="control-group">
         <button id="restart" onClick={match.restart}>
           Restart
         </button>
@@ -275,6 +285,7 @@ export function LivePage() {
         <button id="model-keys" onClick={() => setKeysOpen(true)}>
           Model keys
         </button>
+        </div>
       </footer>
 
       <div className="flight-strip">

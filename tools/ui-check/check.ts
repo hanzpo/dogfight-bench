@@ -545,6 +545,42 @@ await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
 await page.selectOption("#view", "orbit");
 await page.waitForTimeout(1_500);
 
+/**
+ * Nothing sits on top of anything else.
+ *
+ * This is the fault that keeps coming back in different clothes: a panel over
+ * the account menu eating its clicks, a recording banner under the observer
+ * panel, instruments behind the control bar. Each was found by a person looking
+ * at a screenshot. Measuring the rectangles is cheaper.
+ */
+const rectangles = (await page.evaluate(`(() => {
+  const box = (name, sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return r.width && r.height ? { name, l: r.left, t: r.top, r: r.right, b: r.bottom } : null;
+  };
+  return [
+    box('control bar', '.controls'),
+    box('throttle', '.flight-display .engine-group'),
+    box('stores', '.flight-display .stores-group'),
+    box('observer panel', '.observer'),
+    box('status strip', '.flight-strip'),
+  ].filter(Boolean);
+})()`)) as Array<{ name: string; l: number; t: number; r: number; b: number }>;
+
+for (let i = 0; i < rectangles.length; i += 1) {
+  for (let j = i + 1; j < rectangles.length; j += 1) {
+    const a = rectangles[i]!;
+    const b = rectangles[j]!;
+    // The status strip runs the full width behind everything, so it is allowed
+    // to pass under the control bar; nothing else may overlap.
+    if (a.name === "status strip" || b.name === "status strip") continue;
+    const overlaps = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    check(!overlaps, `${a.name} does not sit on ${b.name}`);
+  }
+}
+
 console.log("tactical overlay");
 // The gunsight is the whole point of a guns-only game: prove it draws, that it
 // tracks the bandit, and that the shoot cue is gated rather than always on.

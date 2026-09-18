@@ -154,16 +154,34 @@ input::placeholder { color: var(--text-faint); }
 /* A control's label sits above it, in the same small muted voice everywhere. */
 label { color: var(--text-muted); font-size: 11px; }
 
+/**
+ * Centred with auto margins, not with `left: 50%`.
+ *
+ * A fixed element with `left: 50%` and no right edge has only half the viewport
+ * available to it, so a shrink-to-fit box can never be wider than 50vw however
+ * much room is on screen. This bar was therefore wrapping into three stacked
+ * rows on a widescreen monitor with half the width unused.
+ */
 .controls {
-  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3;
-  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; justify-content: center;
-  padding: 10px 12px;
+  position: fixed; left: 0; right: 0; bottom: 20px; z-index: 3;
+  width: fit-content; margin-inline: auto;
+  display: flex; align-items: flex-end; gap: 0; flex-wrap: wrap; justify-content: center;
+  padding: 10px 4px;
   background: #16181bec; border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 8px 28px #00000055;
   max-width: calc(100vw - 32px);
 }
+/* A hairline between groups rather than a gap, so the bar stays one object. */
+.control-group {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  padding: 0 12px;
+}
+.control-group + .control-group { border-left: 1px solid var(--line); }
 .controls label { display: grid; gap: 4px; }
-.controls > button { align-self: end; }
+/* A select is as wide as its longest option, and "openai-compatible/gpt-4.1-mini
+   - needs a key" is very long, which pushed the whole bar into stacked rows. */
+.controls select { max-width: 200px; text-overflow: ellipsis; }
+.control-group > button { align-self: end; }
 
 /* One status line along the bottom edge. The keyboard hints used to be a
    separate fixed element sitting directly on top of it. */
@@ -198,7 +216,8 @@ label { color: var(--text-muted); font-size: 11px; }
 
 /* Something went wrong with a model, said where the pilot can act on it. */
 .decision-error {
-  position: fixed; top: 68px; left: 50%; transform: translateX(-50%); z-index: 5;
+  position: fixed; top: 68px; left: 0; right: 0; z-index: 5;
+  width: fit-content; margin-inline: auto;
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px 8px 14px; max-width: min(620px, calc(100vw - 40px));
   background: var(--surface-raised); border: 1px solid #e08a8655; border-radius: var(--radius);
@@ -539,6 +558,6 @@ table.data a:hover { text-decoration: underline; }
   .nav { gap: 0; font-size: 12px; }
   .nav a { padding: 6px 8px; }
   .account-menu { width: min(290px, calc(100vw - 24px)); }
-  .recording, .decision-error { left: 8px; right: 8px; transform: none; max-width: none; }
+  .recording, .decision-error { left: 8px; right: 8px; width: auto; max-width: none; }
   .orbit-help, .pointer-hint { display: none; }
 }
