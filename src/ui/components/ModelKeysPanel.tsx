@@ -14,6 +14,18 @@ import { clearKey, loadKey, maskKey, saveKey, type KeyScope } from "../keys";
  * only" is the default and the safe answer; remembering it is a convenience
  * with a real cost, stated plainly rather than buried.
  */
+/**
+ * Providers written the way they write themselves.
+ *
+ * Capitalising the identifier turns "openai" into "Openai", which reads as a
+ * misspelling of a company's name rather than as a label.
+ */
+const DISPLAY_NAMES: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  jev: "Jev",
+};
+
 export function ModelKeysPanel({
   agents,
   onClose,
@@ -74,8 +86,9 @@ function KeyRow({ agent, onChanged }: { agent: AgentRow; onChanged: () => void }
   return (
     <div className="key-row">
       <div className="key-row-head">
-        <span className="key-provider">{agent.provider}</span>
+        <span className="key-provider">{DISPLAY_NAMES[agent.provider] ?? agent.provider}</span>
         <span className="muted">{agent.model}</span>
+        {agent.free ? <span className="badge">free here</span> : null}
       </div>
 
       {existing && !editing ? (
