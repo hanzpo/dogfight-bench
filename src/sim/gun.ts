@@ -1,76 +1,169 @@
 import { Vector3 } from "three";
-import { F16 } from "./config";
-import { airDensity } from "./flight-model";
-import { Random } from "./random";
+import { atmosphere } from "./atmosphere";
+import { kineticEnergyJ, projectileDeceleration } from "./ballistics";
+import { GUN, MIN_LETHAL_ENERGY_J } from "./config";
+import { HIT_VOLUMES, HULL_RADIUS_M, applyHit, isDestroyed, volumeCenter } from "./damage";
+import { bodyAxes } from "./flight-model";
+import type { Random } from "./random";
 import type { AircraftState, MatchState, ProjectileState } from "./types";
 
-const BODY_FORWARD = new Vector3(0, 0, 1);
-const BODY_RIGHT = new Vector3(1, 0, 0);
-const BODY_UP = new Vector3(0, 1, 0);
+const MUZZLE_ENERGY_J = kineticEnergyJ(GUN.muzzleVelocityMps);
 
-export function fireGun(state: MatchState, aircraft: AircraftState, dt: number, rng: Random, nextId: () => number): void {
-  if (!aircraft.alive || !aircraft.controls.fire || aircraft.ammo <= 0) {
+/**
+ * Fires the M61A1 for one tick.
+ *
+ * The barrel cluster has to spin up before the first round leaves the muzzle,
+ * rounds inherit the aircraft's velocity, and dispersion is seeded so a match
+ * replays bit-for-bit.
+ */
+export function fireGun(
+  state: MatchState,
+  aircraft: AircraftState,
+  dt: number,
+  rng: Random,
+  nextId: () => number,
+): void {
+  const wantsToFire = aircraft.alive && aircraft.controls.fire && aircraft.ammo > 0;
+  if (!wantsToFire) {
+    aircraft.gunSpin = Math.max(0, aircraft.gunSpin - dt / GUN.spinUpSeconds);
     aircraft.gunAccumulator = Math.min(aircraft.gunAccumulator, 1);
+    if (aircraft.roundsThisBurst > 0 && !aircraft.controls.fire) aircraft.roundsThisBurst = 0;
     return;
   }
 
-  aircraft.gunAccumulator += F16.gun.ratePerSecond * dt;
+  aircraft.gunSpin = Math.min(1, aircraft.gunSpin + dt / GUN.spinUpSeconds);
+  if (aircraft.gunSpin < 1) return;
+
+  const axes = bodyAxes(aircraft.orientation);
+  aircraft.gunAccumulator += GUN.ratePerSecond * dt;
   let fired = 0;
   while (aircraft.gunAccumulator >= 1 && aircraft.ammo > 0) {
     aircraft.gunAccumulator -= 1;
     aircraft.ammo -= 1;
+    aircraft.roundsThisBurst += 1;
     fired += 1;
-    const forward = BODY_FORWARD.clone().applyQuaternion(aircraft.orientation);
-    const right = BODY_RIGHT.clone().applyQuaternion(aircraft.orientation);
-    const up = BODY_UP.clone().applyQuaternion(aircraft.orientation);
-    forward.addScaledVector(right, rng.normal() * F16.gun.dispersionRad1Sigma);
-    forward.addScaledVector(up, rng.normal() * F16.gun.dispersionRad1Sigma).normalize();
-    const muzzle = aircraft.position.clone()
-      .addScaledVector(forward, 7.2)
-      .addScaledVector(right, -0.25)
-      .addScaledVector(up, -0.35);
+
+    const direction = axes.nose
+      .clone()
+      .addScaledVector(axes.up, Math.tan(GUN.boresightElevationRad))
+      .addScaledVector(axes.right, rng.normal() * GUN.dispersionRad1Sigma)
+      .addScaledVector(axes.up, rng.normal() * GUN.dispersionRad1Sigma)
+      .normalize();
+    const muzzle = aircraft.position
+      .clone()
+      .addScaledVector(axes.right, GUN.muzzleOffsetM[0])
+      .addScaledVector(axes.up, GUN.muzzleOffsetM[1])
+      .addScaledVector(axes.nose, GUN.muzzleOffsetM[2]);
+
     state.projectiles.push({
-      id: nextId(), ownerId: aircraft.id, position: muzzle,
+      id: nextId(),
+      ownerId: aircraft.id,
+      position: muzzle,
       previousPosition: muzzle.clone(),
-      velocity: aircraft.velocity.clone().addScaledVector(forward, F16.gun.muzzleVelocityMps),
+      velocity: aircraft.velocity.clone().addScaledVector(direction, GUN.muzzleVelocityMps),
       age: 0,
     });
   }
-  if (fired > 0) state.events.push({ time: state.time, type: "gun-fired", actorId: aircraft.id, detail: `${fired} rounds` });
+
+  if (fired > 0) {
+    state.events.push({
+      time: state.time,
+      type: "gun-fired",
+      actorId: aircraft.id,
+      detail: `${fired} rounds, ${aircraft.ammo} remaining`,
+    });
+  }
+  if (aircraft.ammo === 0) {
+    state.events.push({ time: state.time, type: "winchester", actorId: aircraft.id });
+  }
 }
 
-function segmentSphereHit(a: Vector3, b: Vector3, center: Vector3, radius: number): boolean {
+/** Closest approach between a segment and a point, as a squared distance. */
+function segmentPointDistanceSq(a: Vector3, b: Vector3, point: Vector3): number {
   const ab = b.clone().sub(a);
-  const t = Math.max(0, Math.min(1, center.clone().sub(a).dot(ab) / Math.max(ab.lengthSq(), 1e-9)));
-  return a.clone().addScaledVector(ab, t).distanceToSquared(center) <= radius * radius;
+  const lengthSq = Math.max(ab.lengthSq(), 1e-9);
+  const t = Math.max(0, Math.min(1, point.clone().sub(a).dot(ab) / lengthSq));
+  return a.clone().addScaledVector(ab, t).distanceToSquared(point);
 }
 
-export function stepProjectiles(state: MatchState, dt: number): void {
+/**
+ * Advances every round and resolves hits.
+ *
+ * Collision is evaluated in the *target's* frame so that closure speed does not
+ * let rounds tunnel through the jet between ticks, and the segment is tested
+ * against the individual hit volumes rather than one hull sphere.
+ */
+export function stepProjectiles(state: MatchState, dt: number, rng: Random): void {
   const survivors: ProjectileState[] = [];
+
   for (const shot of state.projectiles) {
     shot.previousPosition.copy(shot.position);
+    const air = atmosphere(shot.position.y);
     const speed = shot.velocity.length();
-    const area = Math.PI * (F16.gun.projectileDiameterM * 0.5) ** 2;
-    const dragN = 0.5 * airDensity(shot.position.y) * speed * speed * F16.gun.dragCoefficient * area;
-    shot.velocity.addScaledVector(shot.velocity.clone().normalize(), -(dragN / F16.gun.projectileMassKg) * dt);
+    const decel = projectileDeceleration(speed, air.densityKgM3, air.speedOfSoundMps);
+    shot.velocity.addScaledVector(shot.velocity.clone().normalize(), -decel * dt);
     shot.velocity.y -= 9.80665 * dt;
     shot.position.addScaledVector(shot.velocity, dt);
     shot.age += dt;
 
-    let hit = false;
+    let consumed = false;
     for (const target of state.aircraft) {
       if (!target.alive || target.id === shot.ownerId) continue;
-      if (!segmentSphereHit(shot.previousPosition, shot.position, target.position, 4.2)) continue;
-      hit = true;
-      target.health = Math.max(0, target.health - 0.4);
-      state.events.push({ time: state.time, type: "hit", actorId: shot.ownerId, targetId: target.id });
-      if (target.health <= 0) {
+
+      // Work relative to the target so both bodies' motion is accounted for.
+      const targetPrevious = target.position.clone().addScaledVector(target.velocity, -dt);
+      const relativeStart = shot.previousPosition.clone().sub(targetPrevious);
+      const relativeEnd = shot.position.clone().sub(target.position);
+      if (segmentPointDistanceSq(relativeStart, relativeEnd, new Vector3()) > HULL_RADIUS_M * HULL_RADIUS_M) {
+        continue;
+      }
+
+      const axes = bodyAxes(target.orientation);
+      let best: (typeof HIT_VOLUMES)[number] | undefined;
+      let bestDistanceSq = Infinity;
+      for (const volume of HIT_VOLUMES) {
+        const center = volumeCenter(volume, new Vector3(), axes.right, axes.up, axes.nose);
+        const distanceSq = segmentPointDistanceSq(relativeStart, relativeEnd, center);
+        if (distanceSq <= volume.radiusM * volume.radiusM && distanceSq < bestDistanceSq) {
+          best = volume;
+          bestDistanceSq = distanceSq;
+        }
+      }
+      if (!best) continue;
+
+      consumed = true;
+      const impactEnergy = kineticEnergyJ(shot.velocity.clone().sub(target.velocity).length());
+      if (impactEnergy < MIN_LETHAL_ENERGY_J) break;
+
+      applyHit(target.damage, best, impactEnergy / MUZZLE_ENERGY_J, rng.next());
+      target.health = target.damage.integrity;
+      state.events.push({
+        time: state.time,
+        type: "hit",
+        actorId: shot.ownerId,
+        targetId: target.id,
+        subsystem: best.subsystem,
+        detail: `${Math.round(impactEnergy / 1000)} kJ`,
+      });
+
+      if (isDestroyed(target.damage)) {
         target.alive = false;
-        state.events.push({ time: state.time, type: "kill", actorId: shot.ownerId, targetId: target.id });
+        target.destroyedBy = shot.ownerId;
+        target.destroyedReason = target.damage.pilotIncapacitated ? "pilot incapacitated" : "airframe destroyed";
+        state.events.push({
+          time: state.time,
+          type: "kill",
+          actorId: shot.ownerId,
+          targetId: target.id,
+          detail: target.destroyedReason,
+        });
       }
       break;
     }
-    if (!hit && shot.age < F16.gun.maxLifeSeconds && shot.position.y > 0) survivors.push(shot);
+
+    const aboveGround = shot.position.y > 0;
+    if (!consumed && shot.age < GUN.maxLifeSeconds && aboveGround) survivors.push(shot);
   }
+
   state.projectiles = survivors;
 }

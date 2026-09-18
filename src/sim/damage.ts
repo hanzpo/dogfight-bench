@@ -1,0 +1,144 @@
+import { Vector3 } from "three";
+import type { DamageState, Subsystem } from "./types";
+
+/**
+ * Hit volumes in aero body axes (right, up, forward) relative to the CG.
+ *
+ * Replacing the old single 4.2 m sphere matters for the benchmark: a snapshot
+ * that clips a wingtip should not score the same as rounds through the intake.
+ */
+export interface HitVolume {
+  subsystem: Subsystem;
+  offset: readonly [number, number, number];
+  radiusM: number;
+  /** Structural integrity removed by one full-energy round. */
+  integrityLoss: number;
+  /** Condition removed from this subsystem by one full-energy round. */
+  subsystemLoss: number;
+  /** Fuel leak opened by one full-energy round, kg/s. */
+  fuelLeakKgS: number;
+  /** Probability that a round through here takes the pilot out. */
+  pilotKillChance: number;
+}
+
+export const HIT_VOLUMES: readonly HitVolume[] = [
+  {
+    subsystem: "cockpit",
+    offset: [0, 0.55, 3.2],
+    radiusM: 1.05,
+    integrityLoss: 0.2,
+    subsystemLoss: 0.25,
+    fuelLeakKgS: 0,
+    pilotKillChance: 0.35,
+  },
+  {
+    subsystem: "forward-fuselage",
+    offset: [0, 0.15, 1.0],
+    radiusM: 1.5,
+    integrityLoss: 0.12,
+    subsystemLoss: 0.18,
+    fuelLeakKgS: 0.8,
+    pilotKillChance: 0,
+  },
+  {
+    subsystem: "left-wing",
+    offset: [-2.9, -0.05, -0.6],
+    radiusM: 1.7,
+    integrityLoss: 0.08,
+    subsystemLoss: 0.22,
+    fuelLeakKgS: 0.6,
+    pilotKillChance: 0,
+  },
+  {
+    subsystem: "right-wing",
+    offset: [2.9, -0.05, -0.6],
+    radiusM: 1.7,
+    integrityLoss: 0.08,
+    subsystemLoss: 0.22,
+    fuelLeakKgS: 0.6,
+    pilotKillChance: 0,
+  },
+  {
+    subsystem: "engine",
+    offset: [0, 0, -4.2],
+    radiusM: 1.35,
+    integrityLoss: 0.16,
+    subsystemLoss: 0.3,
+    fuelLeakKgS: 0.4,
+    pilotKillChance: 0,
+  },
+  {
+    subsystem: "tail",
+    offset: [0, 1.5, -5.3],
+    radiusM: 1.3,
+    integrityLoss: 0.09,
+    subsystemLoss: 0.28,
+    fuelLeakKgS: 0,
+    pilotKillChance: 0,
+  },
+];
+
+/** Radius of the sphere that encloses every hit volume, for broad-phase culling. */
+export const HULL_RADIUS_M = HIT_VOLUMES.reduce(
+  (max, volume) => Math.max(max, Math.hypot(...volume.offset) + volume.radiusM),
+  0,
+);
+
+export function createDamageState(): DamageState {
+  return {
+    integrity: 1,
+    subsystems: {
+      cockpit: 1,
+      "forward-fuselage": 1,
+      "left-wing": 1,
+      "right-wing": 1,
+      engine: 1,
+      tail: 1,
+    },
+    fuelLeakKgS: 0,
+    pilotIncapacitated: false,
+    hitsTaken: 0,
+  };
+}
+
+/** Hit-volume centre expressed in world coordinates. */
+export function volumeCenter(
+  volume: HitVolume,
+  position: Vector3,
+  right: Vector3,
+  up: Vector3,
+  nose: Vector3,
+): Vector3 {
+  return position
+    .clone()
+    .addScaledVector(right, volume.offset[0])
+    .addScaledVector(up, volume.offset[1])
+    .addScaledVector(nose, volume.offset[2]);
+}
+
+/**
+ * Applies one round. `energyFraction` scales the damage by how much of the
+ * muzzle energy the round still carries, so long-range snapshots hurt less.
+ */
+export function applyHit(damage: DamageState, volume: HitVolume, energyFraction: number, roll: number): void {
+  const scale = Math.max(0.25, Math.min(1, energyFraction));
+  damage.hitsTaken += 1;
+  damage.integrity = Math.max(0, damage.integrity - volume.integrityLoss * scale);
+  damage.subsystems[volume.subsystem] = Math.max(
+    0,
+    damage.subsystems[volume.subsystem] - volume.subsystemLoss * scale,
+  );
+  damage.fuelLeakKgS += volume.fuelLeakKgS * scale;
+  if (volume.pilotKillChance > 0 && roll < volume.pilotKillChance * scale) {
+    damage.pilotIncapacitated = true;
+  }
+}
+
+/** A jet is finished when it comes apart, loses its pilot, or loses both wings. */
+export function isDestroyed(damage: DamageState): boolean {
+  return (
+    damage.integrity <= 0 ||
+    damage.pilotIncapacitated ||
+    (damage.subsystems["left-wing"] <= 0 && damage.subsystems["right-wing"] <= 0)
+  );
+}

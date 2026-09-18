@@ -1,88 +1,238 @@
 import { Quaternion, Vector3 } from "three";
-import { F16 } from "./config";
+import { coefficients, momentCoefficients } from "./aero";
+import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
+import { AERO, GEOMETRY, MASS } from "./config";
+import { stepEngine } from "./engine";
+import { stepFlcs } from "./flcs";
+import { heightAboveGround } from "./terrain";
 import type { AircraftState, ControlInput } from "./types";
 
-const BODY_RIGHT = new Vector3(1, 0, 0);
-const BODY_UP = new Vector3(0, 1, 0);
-const BODY_FORWARD = new Vector3(0, 0, 1);
-const GRAVITY = new Vector3(0, -9.80665, 0);
+const BODY_X = new Vector3(1, 0, 0);
+const BODY_Y = new Vector3(0, 1, 0);
+const BODY_Z = new Vector3(0, 0, 1);
+const WORLD_DOWN = new Vector3(0, -1, 0);
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
 export function sanitizeControls(input: ControlInput): ControlInput {
+  const finite = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
   return {
-    pitch: clamp(Number.isFinite(input.pitch) ? input.pitch : 0, -1, 1),
-    roll: clamp(Number.isFinite(input.roll) ? input.roll : 0, -1, 1),
-    yaw: clamp(Number.isFinite(input.yaw) ? input.yaw : 0, -1, 1),
-    throttle: clamp(Number.isFinite(input.throttle) ? input.throttle : 0, 0, 1),
+    pitch: clamp(finite(input.pitch, 0), -1, 1),
+    roll: clamp(finite(input.roll, 0), -1, 1),
+    yaw: clamp(finite(input.yaw, 0), -1, 1),
+    throttle: clamp(finite(input.throttle, 0), 0, 1),
     fire: input.fire === true,
   };
 }
 
-export function airDensity(altitudeM: number): number {
-  return 1.225 * Math.exp(-Math.max(altitudeM, 0) / 8_500);
+export { airDensity, speedOfSound } from "./atmosphere";
+
+/** Current all-up mass: empty weight plus whatever fuel is still aboard. */
+export function currentMass(aircraft: AircraftState): number {
+  return MASS.emptyKg + aircraft.engine.fuelKg;
 }
 
-export function speedOfSound(altitudeM: number): number {
-  return Math.max(295, 340.3 - 0.003 * Math.max(altitudeM, 0));
+/**
+ * Body-axis inertia, scaled with fuel load. Ixz is the only significant
+ * product of inertia on an F-16 and it drives the inertia coupling that makes
+ * a rolling pull depart.
+ */
+export function inertia(fuelKg: number): { ixx: number; iyy: number; izz: number; ixz: number } {
+  const fill = clamp(fuelKg / MASS.internalFuelKg, 0, 1);
+  const scale = 1 - MASS.fuelInertiaFraction * (1 - fill);
+  return {
+    ixx: MASS.ixxKgM2 * scale,
+    iyy: MASS.iyyKgM2 * scale,
+    izz: MASS.izzKgM2 * scale,
+    ixz: MASS.ixzKgM2 * scale,
+  };
 }
 
+export interface BodyAxes {
+  /** Unit vectors expressed in world coordinates. */
+  nose: Vector3;
+  right: Vector3;
+  down: Vector3;
+  up: Vector3;
+}
+
+export function bodyAxes(orientation: Quaternion): BodyAxes {
+  const nose = BODY_Z.clone().applyQuaternion(orientation);
+  const up = BODY_Y.clone().applyQuaternion(orientation);
+  const left = BODY_X.clone().applyQuaternion(orientation);
+  return { nose, right: left.clone().negate(), down: up.clone().negate(), up };
+}
+
+/** Converts an aero body-rate triple (p, q, r) into a three.js rotation vector. */
+export function aeroRatesToRotationVector(p: number, q: number, r: number): Vector3 {
+  // omega = p * nose + q * right + r * down, expressed in the model basis.
+  return new Vector3(-q, -r, p);
+}
+
+/**
+ * Advances one aircraft by `dt` using six-degree-of-freedom rigid-body
+ * dynamics: aerodynamic forces in wind axes rotated into the body, Euler's
+ * equations with a full inertia tensor, and a quaternion attitude update.
+ */
 export function stepAircraft(aircraft: AircraftState, dt: number): void {
   if (!aircraft.alive) return;
 
   const controls = sanitizeControls(aircraft.controls);
   aircraft.controls = controls;
-  const inv = aircraft.orientation.clone().invert();
-  const bodyVelocity = aircraft.velocity.clone().applyQuaternion(inv);
-  const speed = Math.max(aircraft.velocity.length(), 1);
-  aircraft.aoaRad = Math.atan2(-bodyVelocity.y, Math.max(bodyVelocity.z, 0.1));
-  aircraft.sideslipRad = Math.atan2(bodyVelocity.x, Math.max(bodyVelocity.z, 0.1));
 
-  const rho = airDensity(aircraft.position.y);
-  const qbar = 0.5 * rho * speed * speed;
-  const controlAuthority = clamp(qbar / 12_000, 0.12, 1);
-  const aoaLimiter = clamp((F16.maxAoARad - Math.abs(aircraft.aoaRad)) / 0.12, 0.1, 1);
-  const targetRates = new Vector3(
-    controls.pitch * F16.maxPitchRate * controlAuthority * aoaLimiter,
-    controls.yaw * F16.maxYawRate * controlAuthority,
-    -controls.roll * F16.maxRollRate * controlAuthority,
+  const axes = bodyAxes(aircraft.orientation);
+  const agl = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);
+  aircraft.heightAboveGroundM = agl;
+  const air = atmosphere(aircraft.position.y);
+
+  // --- Air data ------------------------------------------------------------
+  const speed = aircraft.velocity.length();
+  const vTrue = Math.max(speed, 1e-3);
+  const u = aircraft.velocity.dot(axes.nose);
+  const v = aircraft.velocity.dot(axes.right);
+  const w = aircraft.velocity.dot(axes.down);
+  const alpha = Math.atan2(w, Math.abs(u) < 1e-3 ? 1e-3 : u);
+  const beta = Math.asin(clamp(v / vTrue, -1, 1));
+  aircraft.aoaRad = alpha;
+  aircraft.sideslipRad = beta;
+  aircraft.mach = vTrue / air.speedOfSoundMps;
+  const qbar = 0.5 * air.densityKgM3 * vTrue * vTrue;
+
+  const p = aircraft.angularVelocity.x;
+  const q = aircraft.angularVelocity.y;
+  const r = aircraft.angularVelocity.z;
+
+  // --- Flight-control system ----------------------------------------------
+  const controlHealth = clamp(
+    0.35 + 0.65 * Math.min(aircraft.damage.subsystems.tail, aircraft.damage.subsystems["forward-fuselage"]),
+    0.2,
+    1,
   );
-  const rateResponse = 1 - Math.exp(-dt * 5.5);
-  aircraft.angularVelocity.lerp(targetRates, rateResponse);
+  stepFlcs(
+    aircraft.flcs,
+    {
+      pitchStick: controls.pitch,
+      rollStick: controls.roll,
+      yawPedal: controls.yaw,
+      alphaRad: alpha,
+      betaRad: beta,
+      p,
+      q,
+      r,
+      trueAirspeedMps: vTrue,
+      dynamicPressurePa: qbar,
+      loadFactor: aircraft.loadFactor,
+      massKg: aircraft.massKg,
+      gravityAlongBodyUp: WORLD_DOWN.dot(axes.up),
+    },
+    dt,
+  );
 
-  const omega = aircraft.angularVelocity;
+  // --- Propulsion ----------------------------------------------------------
+  stepEngine(aircraft.engine, controls.throttle, aircraft.position.y, aircraft.mach, dt);
+  aircraft.engine.fuelKg = Math.max(0, aircraft.engine.fuelKg - aircraft.damage.fuelLeakKgS * dt);
+  const thrustN = aircraft.engine.thrustN * aircraft.damage.subsystems.engine;
+  aircraft.massKg = currentMass(aircraft);
+
+  // --- Aerodynamic forces --------------------------------------------------
+  const wingHealth = 0.5 * (aircraft.damage.subsystems["left-wing"] + aircraft.damage.subsystems["right-wing"]);
+  const aero = coefficients(alpha, beta, aircraft.mach, agl);
+  const cl = aero.cl * (0.55 + 0.45 * wingHealth);
+  const cd = aero.cd + (1 - wingHealth) * 0.05;
+  const scale = qbar * GEOMETRY.wingAreaM2;
+  const lift = scale * cl;
+  const drag = scale * cd;
+  const side = scale * aero.cy;
+
+  const sa = Math.sin(alpha);
+  const ca = Math.cos(alpha);
+  const sb = Math.sin(beta);
+  const cb = Math.cos(beta);
+  // Wind axes -> body axes.
+  const forceNose = -drag * ca * cb - side * ca * sb + lift * sa;
+  const forceRight = -drag * sb + side * cb;
+  const forceDown = -drag * sa * cb - side * sa * sb - lift * ca;
+
+  const aeroForce = axes.nose
+    .clone()
+    .multiplyScalar(forceNose)
+    .addScaledVector(axes.right, forceRight)
+    .addScaledVector(axes.down, forceDown);
+  const thrustForce = axes.nose.clone().multiplyScalar(thrustN);
+  const specificForce = aeroForce.clone().add(thrustForce).multiplyScalar(1 / aircraft.massKg);
+
+  aircraft.loadFactor = specificForce.dot(axes.up) / GRAVITY_MPS2;
+  // Ps = V (T - D) / W, the energy rate that decides every merge.
+  aircraft.specificExcessPowerMps = (vTrue * (thrustN - drag)) / (aircraft.massKg * GRAVITY_MPS2);
+
+  const acceleration = specificForce.clone().add(new Vector3(0, -GRAVITY_MPS2, 0));
+  aircraft.acceleration.copy(acceleration);
+
+  // --- Moments and Euler's equations --------------------------------------
+  const halfSpan = GEOMETRY.wingSpanM / (2 * vTrue);
+  const halfChord = GEOMETRY.meanChordM / (2 * vTrue);
+  const moments = momentCoefficients(
+    alpha,
+    beta,
+    p * halfSpan,
+    q * halfChord,
+    r * halfSpan,
+    aircraft.flcs.pitch * controlHealth,
+    aircraft.flcs.roll * controlHealth,
+    aircraft.flcs.yaw * controlHealth,
+    aircraft.flcs.departed,
+  );
+  // A shot-off wing pulls the jet toward the damaged side.
+  const asymmetricRoll =
+    (aircraft.damage.subsystems["right-wing"] - aircraft.damage.subsystems["left-wing"]) * 0.045;
+
+  const rollMoment = scale * GEOMETRY.wingSpanM * (moments.roll + asymmetricRoll);
+  const pitchMoment = scale * GEOMETRY.meanChordM * moments.pitch;
+  const yawMoment = scale * GEOMETRY.wingSpanM * moments.yaw;
+
+  const { ixx, iyy, izz, ixz } = inertia(aircraft.engine.fuelKg);
+  const gamma = ixx * izz - ixz * ixz;
+  const a = rollMoment - (izz - iyy) * q * r + ixz * p * q;
+  const b = yawMoment - (iyy - ixx) * p * q - ixz * q * r;
+  const pDot = (izz * a + ixz * b) / gamma;
+  const rDot = (ixz * a + ixx * b) / gamma;
+  const qDot = (pitchMoment - (ixx - izz) * p * r - ixz * (p * p - r * r)) / iyy;
+
+  aircraft.angularVelocity.set(p + pDot * dt, q + qDot * dt, r + rDot * dt);
+
+  // --- Integrate attitude, velocity and position --------------------------
+  const omega = aeroRatesToRotationVector(
+    aircraft.angularVelocity.x,
+    aircraft.angularVelocity.y,
+    aircraft.angularVelocity.z,
+  );
   const angle = omega.length() * dt;
-  if (angle > 1e-9) {
-    const dq = new Quaternion().setFromAxisAngle(omega.clone().normalize(), angle);
-    aircraft.orientation.multiply(dq).normalize();
+  if (angle > 1e-12) {
+    const delta = new Quaternion().setFromAxisAngle(omega.normalize(), angle);
+    aircraft.orientation.multiply(delta).normalize();
   }
 
-  const right = BODY_RIGHT.clone().applyQuaternion(aircraft.orientation);
-  const up = BODY_UP.clone().applyQuaternion(aircraft.orientation);
-  const forward = BODY_FORWARD.clone().applyQuaternion(aircraft.orientation);
-  const alpha = aircraft.aoaRad;
-  const stallRatio = Math.abs(alpha) / F16.maxAoARad;
-  const stallFactor = stallRatio <= 1 ? 1 : Math.max(0.22, 1 - (stallRatio - 1) * 1.8);
-  const cl = clamp(0.18 + 4.2 * alpha, -1.1, 1.55) * stallFactor;
-  const cd = 0.022 + 0.085 * cl * cl + (stallRatio > 1 ? 0.35 * (stallRatio - 1) : 0);
-  const liftN = qbar * F16.wingAreaM2 * cl;
-  const dragN = qbar * F16.wingAreaM2 * cd;
-  const sideN = -qbar * F16.wingAreaM2 * 0.55 * aircraft.sideslipRad;
-
-  const throttle = controls.throttle;
-  const dryFraction = Math.min(throttle / 0.85, 1);
-  const burnerFraction = throttle > 0.85 ? (throttle - 0.85) / 0.15 : 0;
-  const thrustN = F16.maxThrustN * dryFraction
-    + (F16.afterburnerThrustN - F16.maxThrustN) * burnerFraction;
-
-  const force = forward.multiplyScalar(thrustN)
-    .add(up.multiplyScalar(liftN))
-    .add(right.multiplyScalar(sideN))
-    .add(aircraft.velocity.clone().normalize().multiplyScalar(-dragN));
-  const acceleration = force.multiplyScalar(1 / F16.massKg).add(GRAVITY);
-  aircraft.loadFactor = Math.abs(liftN) / (F16.massKg * 9.80665);
   aircraft.velocity.addScaledVector(acceleration, dt);
   aircraft.position.addScaledVector(aircraft.velocity, dt);
+}
+
+/** Rebuilds `alpha`, `beta`, mach and load factor without advancing time. */
+export function refreshAirData(aircraft: AircraftState): void {
+  const axes = bodyAxes(aircraft.orientation);
+  const air = atmosphere(aircraft.position.y);
+  const vTrue = Math.max(aircraft.velocity.length(), 1e-3);
+  aircraft.aoaRad = Math.atan2(aircraft.velocity.dot(axes.down), aircraft.velocity.dot(axes.nose));
+  aircraft.sideslipRad = Math.asin(clamp(aircraft.velocity.dot(axes.right) / vTrue, -1, 1));
+  aircraft.mach = vTrue / air.speedOfSoundMps;
+  aircraft.heightAboveGroundM = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);
+}
+
+/** Maximum instantaneous load factor available right now, for telemetry. */
+export function availableLoadFactor(aircraft: AircraftState): number {
+  const air = atmosphere(aircraft.position.y);
+  const qbar = 0.5 * air.densityKgM3 * aircraft.velocity.lengthSq();
+  const maxLift = qbar * GEOMETRY.wingAreaM2 * AERO.clMax;
+  return Math.min(9, maxLift / (aircraft.massKg * GRAVITY_MPS2));
 }

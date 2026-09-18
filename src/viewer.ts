@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TERRAIN_EXTENT_M, terrainHeight } from "./sim/terrain";
 import type { MatchState } from "./sim/types";
 
 export class DogfightViewer {
@@ -58,28 +59,26 @@ export class DogfightViewer {
   }
 
   private createTerrain(): void {
-    const size = 80_000;
-    const segments = 100;
-    const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+    // The mesh samples the same height field the simulation collides against,
+    // so what the viewer draws as ground is exactly what the physics treats as
+    // ground.
+    const segments = 220;
+    const geometry = new THREE.PlaneGeometry(TERRAIN_EXTENT_M, TERRAIN_EXTENT_M, segments, segments);
     geometry.rotateX(-Math.PI / 2);
     const positions = geometry.attributes.position;
     if (positions) {
       for (let i = 0; i < positions.count; i++) {
-        const x = positions.getX(i);
-        const z = positions.getZ(i);
-        const edge = Math.min(1, Math.hypot(x, z) / 5_000);
-        const hills = (Math.sin(x / 2_900) * Math.cos(z / 3_700) * 170
-          + Math.sin((x + z) / 1_450) * 55) * edge;
-        positions.setY(i, Math.max(-20, hills));
+        positions.setY(i, terrainHeight(positions.getX(i), positions.getZ(i)));
       }
     }
     geometry.computeVertexNormals();
-    const terrain = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-      color: 0x6e7350, roughness: 1, metalness: 0,
-    }));
+    const terrain = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ color: 0x6e7350, roughness: 1, metalness: 0 }),
+    );
     this.scene.add(terrain);
 
-    const grid = new THREE.GridHelper(size, 80, 0x6b684c, 0x7c7857);
+    const grid = new THREE.GridHelper(TERRAIN_EXTENT_M, 80, 0x6b684c, 0x7c7857);
     grid.position.y = 2;
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.28;
