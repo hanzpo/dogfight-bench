@@ -63,6 +63,11 @@ export function ObserverPanel({
         <span className="observer-note">perfect information · not visible to the pilot</span>
       </header>
 
+      {/* First, when there is one. Watching a model fly, how sure it was of
+          what it just did is the most interesting thing on the panel, and it
+          was previously below four other sections and off the bottom. */}
+      {decision ? <DecisionSection decision={decision} /> : null}
+
       <Section title="ENGAGEMENT">
         <Row label="clock" value={clock} />
         <Row label="range" value={formatRange(relative.rangeM)} />
@@ -129,8 +134,6 @@ export function ObserverPanel({
         <Row label="bandit ammo" value={String(bandit.ammoRemaining)} />
         <Row label="bandit fuel" value={`${Math.round(bandit.fuelKg)} kg`} />
       </Section>
-
-      {decision ? <DecisionSection decision={decision} /> : null}
     </aside>
   );
 }
@@ -166,7 +169,9 @@ function DecisionSection({ decision }: { decision: DecisionRecord }) {
         <div className="distribution" key={distribution.question}>
           <div className="distribution-head">
             <span>{distribution.question.replace(/_/g, " ")}</span>
-            <span className="observer-sub">{(distribution.confidence * 100).toFixed(0)}%</span>
+            {/* The model's own calibrated confidence, which is not the same
+                number as the winning option's probability. */}
+            <span className="observer-sub">conf {(distribution.confidence * 100).toFixed(0)}%</span>
           </div>
           {distribution.options.slice(0, 6).map((option) => (
             <div

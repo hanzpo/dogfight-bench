@@ -314,6 +314,29 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
   }
 }
 
+/**
+ * A calibrated model's probabilities, when this deployment can reach one.
+ *
+ * Skipped without a credential rather than failing, because the check has to
+ * keep working on a machine with no keys -- but when a key is there, the whole
+ * path from the provider's response to the bars on screen is exercised.
+ */
+const roster = (await page.evaluate(`fetch('/api/agents').then((r) => r.json())`)) as {
+  agents: Array<{ kind: string; free: boolean; available: boolean }>;
+};
+const calibrated = roster.agents.find((agent) => agent.kind === "jev" && agent.free && agent.available);
+if (calibrated && engine.scale === 1) {
+  console.log("calibrated model");
+  await page.selectOption("#blue-pilot", "jev");
+  await page.waitForTimeout(6_000);
+  const questions = await page.locator(".distribution-head").count();
+  const bars = await page.locator(".distribution-row").count();
+  check(questions >= 3, `the model's probabilities are shown for each question (${questions})`);
+  check(bars > questions, `every option gets a bar, not just the chosen one (${bars})`);
+  await page.selectOption("#blue-pilot", "basic");
+  await page.waitForTimeout(800);
+}
+
 console.log("render budget");
 /**
  * A standing budget, so a scene change cannot quietly double what every frame

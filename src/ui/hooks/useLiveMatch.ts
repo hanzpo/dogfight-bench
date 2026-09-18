@@ -164,9 +164,23 @@ export function useLiveMatch(): LiveMatch {
   redPilotRef.current = redPilot;
 
   const restart = useCallback(() => {
-    const sim = new DogfightSimulation(neutralMerge, { decisionIntervalS: 0.25 });
     const blue = bluePilotRef.current;
     const red = redPilotRef.current;
+
+    /**
+     * How often a model is asked what to do.
+     *
+     * The scripted baselines are free and local, so they decide four times a
+     * second. A model is a paid network round trip, and four a second is
+     * roughly twelve hundred calls in a single match -- enough for one person
+     * to spend the day's shared allowance in one sitting. Once a second is what
+     * the headless benchmark uses and what the tactical schema is designed for:
+     * the autopilot flies the standing order continuously in between.
+     */
+    const usesModel = [blue, red].some(
+      (pilot) => pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit",
+    );
+    const sim = new DogfightSimulation(neutralMerge, { decisionIntervalS: usesModel ? 1 : 0.25 });
 
     const ticketId = () => matchTicket.current?.id;
     const blueAgent = buildAgent(blue, "blue-1", ticketId);
