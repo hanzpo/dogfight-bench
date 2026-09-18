@@ -387,6 +387,26 @@ app.post("/api/live/:id/result", async (context) => {
     );
   }
 
+  /**
+   * A scripted opponent leaves no trace on the server, so the only thing left
+   * to check is the clock: a match cannot be reported sooner than it could
+   * possibly have been flown, even at the fastest time scale the page offers.
+   * It is a weak check and it is the honest one available.
+   */
+  if (scripted) {
+    const elapsedS = (Date.now() - Date.parse(ticket.createdAt)) / 1_000;
+    const fastestPossibleS = (summary.durationS / MAX_TIME_SCALE) * 0.5;
+    if (Number.isFinite(elapsedS) && elapsedS < fastestPossibleS) {
+      return context.json(
+        {
+          error: `that match is reported as ${summary.durationS.toFixed(0)}s of flying but was started ${elapsedS.toFixed(0)}s ago`,
+          counted: false,
+        },
+        409,
+      );
+    }
+  }
+
   const opponentInfo = body.opponentInfo;
   const opponent: Competitor = scripted
     ? {
@@ -427,6 +447,9 @@ app.post("/api/live/:id/result", async (context) => {
 
   return context.json({ counted: true, matchId: ticket.id, provisional: human.provisional === true });
 });
+
+/** The fastest the live page will run a match, used to sanity-check the clock. */
+const MAX_TIME_SCALE = 16;
 
 /** Caps a caller-supplied page size, so one request cannot ask for everything. */
 function boundedLimit(raw: string | undefined): number {

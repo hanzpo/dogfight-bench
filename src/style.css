@@ -63,7 +63,9 @@ code { font: 12px/1.5 "JetBrains Mono"; color: var(--text); }
   position: fixed;
   inset: 0 0 auto 0;
   height: 56px;
-  z-index: 3;
+  /* Above the observer panel, which shares the top right corner and would
+     otherwise swallow every click meant for the account menu below it. */
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -179,7 +181,8 @@ label { color: var(--text-muted); font-size: 11px; }
 /* Whether this match is going anywhere, said before it is flown rather than
    after, so nobody discovers their best fight was not recorded. */
 .recording {
-  position: fixed; top: 68px; right: 16px; z-index: 5;
+  /* Top left: the top right belongs to the observer panel. */
+  position: fixed; top: 68px; left: 16px; z-index: 5;
   display: flex; align-items: center; gap: 8px;
   padding: 7px 12px;
   background: var(--surface-raised); border: 1px solid var(--line); border-radius: 999px;

@@ -23,7 +23,9 @@ export function AccountMenu() {
       <div className="account">
         <button className="account-chip" onClick={() => setOpen(!open)}>
           {account.displayName}
-          {account.isGuest ? <span className="badge">guest</span> : null}
+          {/* A guest's display name is already "Guest"; badging it too reads as
+              "Guest guest". */}
+          {account.isGuest ? null : <span className="badge">signed in</span>}
         </button>
         {open ? (
           <div className="account-menu">

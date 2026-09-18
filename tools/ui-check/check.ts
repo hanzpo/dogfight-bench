@@ -241,6 +241,79 @@ check(
   "pause control applied",
 );
 
+/**
+ * Signing in, flying a ranked match, and finding it afterwards.
+ *
+ * The flow that broke twice while being built: the observer panel covered the
+ * account menu and ate its clicks, and signing in did not re-open the match
+ * ticket, so every match a newly signed-in player flew was quietly unranked.
+ * Neither was visible in any other check.
+ *
+ * Only at device pixel ratio 1, so one run creates two guest accounts rather
+ * than four, and skipped entirely when the deployment has no accounts.
+ */
+if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
+  console.log("accounts and ranked matches");
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if ((await signIn.count()) === 0) {
+    console.log("  note  accounts are not configured; skipping");
+  } else {
+    // Earlier checks left the baseline flying and the match paused; a ranked
+    // match needs a person at the controls.
+    await page.selectOption("#blue-pilot", "human");
+    await page.waitForTimeout(500);
+    if ((await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused") {
+      await page.click("#pause");
+    }
+
+    await signIn.click();
+    await page.getByRole("button", { name: "Play as a guest" }).click();
+    await page.waitForTimeout(2_500);
+    const chip = (await page.locator(".account-chip").first().textContent())?.trim();
+    check(chip === "Guest", `signed in as a guest (${chip})`);
+
+    await page.selectOption("#speed", "16");
+    await page.waitForTimeout(1_500);
+    /**
+     * At sixteen times real time an unattended match can be over before this
+     * line runs, so the banner may already have moved on to the result. What
+     * must never appear is the prompt to sign in -- that is the regression this
+     * guards, and it survives the race.
+     */
+    const banner = (await page.locator(".recording").textContent().catch(() => null))?.trim();
+    check(
+      Boolean(banner) && !banner!.includes("Sign in"),
+      `the match is ranked once signed in (${banner ?? "no banner"})`,
+    );
+
+    const settled = await page
+      .waitForFunction(
+        () => {
+          const element = document.querySelector(".recording");
+          return element?.className.includes("recording-saved") || element?.className.includes("recording-failed");
+        },
+        { timeout: 120_000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    const outcome = (await page.locator(".recording").textContent().catch(() => null))?.trim();
+    check(settled, `the finished match reports a result (${outcome ?? "never settled"})`);
+    check(Boolean(outcome?.includes("Recorded")), `the result was recorded (${outcome ?? "none"})`);
+
+    await page.getByRole("link", { name: "Matches" }).click();
+    await page.waitForTimeout(1_000);
+    await page.getByRole("button", { name: "Mine" }).click();
+    // The list is refetched when the scope changes, so the old table is still
+    // on screen for a moment. Counting it would pass on somebody else's rows.
+    await page.waitForFunction(() => !document.querySelector("table.data"), { timeout: 10_000 }).catch(() => {});
+    const mine = await countRows(page);
+    check(mine > 0, `the match appears under the player's own history (${mine})`);
+
+    await page.getByRole("link", { name: "Fly" }).click();
+    await page.waitForTimeout(2_000);
+  }
+}
+
 console.log("render budget");
 /**
  * A standing budget, so a scene change cannot quietly double what every frame

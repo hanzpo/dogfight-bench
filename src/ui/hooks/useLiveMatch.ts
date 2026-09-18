@@ -10,6 +10,7 @@ import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
 import { api } from "../api";
 import { authHeaders } from "../auth";
 import { keyHeaders } from "../keys";
+import { useAccount } from "./useAccount";
 import {
   PilotInput,
   loadSettings,
@@ -115,11 +116,6 @@ function buildAgent(
   });
 }
 
-/** True for anything the server has to be asked about. */
-function isModel(pilot: PilotChoice): boolean {
-  return pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit";
-}
-
 /**
  * Owns the live simulation and its animation loop.
  *
@@ -130,6 +126,7 @@ function isModel(pilot: PilotChoice): boolean {
  * is not the most expensive thing on the page.
  */
 export function useLiveMatch(): LiveMatch {
+  const account = useAccount();
   const simulation = useRef<DogfightSimulation>(undefined);
   const recorder = useRef<ReplayRecorder>(undefined);
   const accumulator = useRef(0);
@@ -199,7 +196,10 @@ export function useLiveMatch(): LiveMatch {
      * that goes out before the ticket lands simply is not counted against it,
      * which costs a fraction of a second of credit at the very start.
      */
-    if (blue === HUMAN && isModel(red)) {
+    // Any opponent that is not another person: beating the scripted baseline is
+    // a real result and the obvious way onto the ladder without spending
+    // anything on inference.
+    if (blue === HUMAN && red !== HUMAN) {
       void authHeaders()
         .then((headers) => api.startLiveMatch(red, headers))
         .then((ticket) => {
@@ -219,7 +219,15 @@ export function useLiveMatch(): LiveMatch {
     }
   }, []);
 
-  useEffect(() => restart(), [restart, bluePilot, redPilot]);
+  /**
+   * Restart when the pilots change, and when who is flying changes.
+   *
+   * A ticket is issued once, at the start, and carries whether the result will
+   * count. Signing in half way through a match cannot retroactively make that
+   * match ranked, so start a fresh one -- otherwise somebody signs in, flies a
+   * good fight and is told at the end that it did not count.
+   */
+  useEffect(() => restart(), [restart, bluePilot, redPilot, account.user?.id]);
 
   /**
    * Bind the devices to the viewport.
