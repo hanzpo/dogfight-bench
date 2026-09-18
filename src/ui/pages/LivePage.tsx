@@ -130,7 +130,7 @@ export function LivePage() {
         </span>
         <span id="event">{event}</span>
       </div>
-      <div className="keymap">W PULL · S PUSH · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE</div>
+      <div className="keymap">W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE</div>
     </>
   );
 }

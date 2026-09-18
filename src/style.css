@@ -16,7 +16,9 @@
 * { box-sizing: border-box; }
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 #viewport { position: fixed; inset: 0; }
-canvas { display: block; cursor: grab; }
+/* Belt and braces with the renderer's own sizing: whatever the backing store
+   is, the element must never be larger than its container. */
+canvas { display: block; cursor: grab; width: 100%; height: 100%; }
 canvas:active { cursor: grabbing; }
 code { font: 11px "JetBrains Mono"; color: var(--accent); }
 
@@ -44,6 +46,7 @@ code { font: 11px "JetBrains Mono"; color: var(--accent); }
 .nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .orbit-help {
+  text-shadow: 0 1px 3px #000c;
   position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
   color: #d8e5e099; font: 9px "JetBrains Mono"; letter-spacing: .12em; pointer-events: none; z-index: 2;
 }
@@ -69,6 +72,7 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 }
 
 .flight-strip {
+  text-shadow: 0 1px 3px #000c;
   position: fixed; left: 50%; bottom: 22px; width: min(680px, calc(100% - 32px));
   transform: translateX(-50%); display: flex; justify-content: space-between;
   color: #b8c8c5; font: 9px "JetBrains Mono"; letter-spacing: .07em; pointer-events: none; z-index: 2;
@@ -76,22 +80,30 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 #event { color: var(--accent); }
 
 .keymap {
+  text-shadow: 0 1px 3px #000c;
   position: fixed; left: 20px; bottom: 22px;
   color: #d8e5e077; font: 8px "JetBrains Mono"; letter-spacing: .08em; pointer-events: none; z-index: 2;
 }
 
 /* ---------- HUD ---------- */
 
-.hud { position: fixed; inset: 82px 0 auto 0; display: flex; justify-content: space-between; padding: 0 20px; pointer-events: none; z-index: 2; }
+/* The HUD sits over sky that ranges from near-white to deep blue, so every
+   glyph carries its own shadow rather than relying on the background. */
+.hud {
+  position: fixed; inset: 82px 0 auto 0; display: flex; justify-content: space-between;
+  padding: 0 20px; pointer-events: none; z-index: 2;
+  text-shadow: 0 1px 3px #000c, 0 0 10px #0009;
+}
 .hud-panel { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
 .hud-right { text-align: right; }
 .hud-row { display: grid; gap: 1px; }
-.hud-label { font: 8px "JetBrains Mono"; letter-spacing: .16em; color: #7f9490; }
-.hud-value { font: 600 15px "Barlow Condensed"; letter-spacing: .06em; color: var(--ink); }
-.hud-sub { font: 8px "JetBrains Mono"; letter-spacing: .1em; color: #93a6a3; }
+.hud-label { font: 8px "JetBrains Mono"; letter-spacing: .16em; color: #cfe0dd; opacity: .85; }
+.hud-value { font: 600 16px "Barlow Condensed"; letter-spacing: .06em; color: #fff; }
+.hud-sub { font: 8px "JetBrains Mono"; letter-spacing: .1em; color: #dbe8e5; opacity: .8; }
 .hud-row.warn .hud-value { color: var(--warn); }
 .hud-row.good .hud-value { color: var(--good); }
 .hud-alert {
+  background: #1a0a06cc;
   margin-top: 6px; padding: 3px 8px; border: 1px solid var(--warn); color: var(--warn);
   font: 9px "JetBrains Mono"; letter-spacing: .16em; animation: pulse 1s steps(2, end) infinite;
 }

@@ -78,7 +78,21 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
     const span = next.t - current.t;
     const blend = span > 1e-6 ? Math.min(1, Math.max(0, (time - current.t) / span)) : 0;
 
+    // Impacts land within a frame of the event, so effects fire in playback too.
+    const window = 0.2;
+    const positions = new Map(current.aircraft.map((aircraft) => [aircraft.id, aircraft.p]));
+    const impacts = replay.events
+      .filter(
+        (event) =>
+          (event.type === "hit" || event.type === "kill" || event.type === "ground-impact") &&
+          Math.abs(event.time - time) < window,
+      )
+      .map((event) => positions.get(event.targetId ?? event.actorId ?? ""))
+      .filter((position): position is [number, number, number] => position !== undefined);
+
     return {
+      time,
+      impacts,
       aircraft: current.aircraft.map((aircraft, position) => {
         const later = next.aircraft[position] ?? aircraft;
         return {
@@ -87,6 +101,7 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
           position: lerp3(aircraft.p, later.p, blend),
           orientation: slerpish(aircraft.q, later.q, blend),
           alive: aircraft.alive,
+          integrity: aircraft.health,
         };
       }),
       tracers: (current.projectiles ?? []).map((position) => ({ p: position })),

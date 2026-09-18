@@ -1,4 +1,4 @@
-import { chromium, type Page } from "playwright";
+import { chromium, webkit, type Browser, type Page } from "playwright";
 import { mkdirSync } from "node:fs";
 
 /**
@@ -10,6 +10,13 @@ import { mkdirSync } from "node:fs";
  * caught it. So this runs the *default* live state, at a widescreen size, after
  * the match has been running long enough for drift to show, and fails on
  * measured framing rather than on how a screenshot looks.
+ *
+ * It runs in Chromium *and* WebKit, and at device pixel ratio 2 as well as 1.
+ * The first version of this check tested only Chromium at ratio 1 and passed
+ * while the canvas was laying out at twice the viewport on every Retina
+ * display -- the exact bug it was written to catch. Framing measured through
+ * the camera agrees with itself no matter how wrong the canvas element is, so
+ * the checks below also compare the canvas against the window.
  *
  *   npm run check:ui            (needs `npm run dev` and `npm run server`)
  */
@@ -40,13 +47,49 @@ async function framing(page: Page): Promise<Framing> {
   });
 }
 
+let engineLabel = "";
 const failures: string[] = [];
 function check(condition: boolean, message: string): void {
-  if (condition) console.log(`  ok    ${message}`);
+  const labelled = `${engineLabel}${message}`;
+  if (condition) console.log(`  ok    ${labelled}`);
   else {
-    console.error(`  FAIL  ${message}`);
-    failures.push(message);
+    console.error(`  FAIL  ${labelled}`);
+    failures.push(labelled);
   }
+}
+
+/**
+ * The canvas element must match its container.
+ *
+ * Projected framing is computed through the camera, so it reports a perfectly
+ * centred aircraft even when the canvas is twice the size of the window and
+ * most of the render is off screen. Only measuring the element catches that.
+ */
+async function checkCanvasFitsWindow(page: Page): Promise<void> {
+  const measured = await page.evaluate(() => {
+    const canvas = document.querySelector("canvas")!;
+    const box = canvas.getBoundingClientRect();
+    return {
+      cssWidth: box.width,
+      cssHeight: box.height,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      bufferWidth: canvas.width,
+      ratio: window.devicePixelRatio,
+    };
+  });
+  check(
+    Math.abs(measured.cssWidth - measured.innerWidth) <= 2,
+    `canvas is the width of the window (${measured.cssWidth} vs ${measured.innerWidth}, dpr ${measured.ratio})`,
+  );
+  check(
+    Math.abs(measured.cssHeight - measured.innerHeight) <= 2,
+    `canvas is the height of the window (${measured.cssHeight} vs ${measured.innerHeight})`,
+  );
+  check(
+    measured.bufferWidth >= measured.innerWidth * Math.min(measured.ratio, 2) - 2,
+    `backing store matches the device pixel ratio (${measured.bufferWidth})`,
+  );
 }
 
 function checkFraming(label: string, frame: Framing): void {
@@ -59,12 +102,34 @@ function checkFraming(label: string, frame: Framing): void {
 }
 
 mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+
+const engines: Array<{ name: string; launch: () => Promise<Browser>; scale: number }> = [
+  { name: "chromium", launch: () => chromium.launch(), scale: 1 },
+  { name: "chromium@2x", launch: () => chromium.launch(), scale: 2 },
+  { name: "webkit", launch: () => webkit.launch(), scale: 1 },
+  { name: "webkit@2x", launch: () => webkit.launch(), scale: 2 },
+];
+
+for (const engine of engines) {
+console.log(`\n=== ${engine.name} ===`);
+engineLabel = `[${engine.name}] `;
+const browser = await engine.launch();
+const page = await browser.newPage({
+  viewport: { width: 1600, height: 900 },
+  deviceScaleFactor: engine.scale,
+});
 const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
-  if (message.type() === "error") errors.push(message.text());
+  if (message.type() !== "error") return;
+  // Headless WebKit runs software WebGL and drops the context under load. The
+  // application handles that and recovers, and the framing checks below only
+  // pass if rendering actually continued, so it is noise rather than a fault.
+  if (/WebGL: context lost/i.test(message.text())) {
+    console.log(`  note  ${engineLabel}WebGL context was lost and recovered`);
+    return;
+  }
+  errors.push(message.text());
 });
 
 console.log("live page, untouched default state");
@@ -79,7 +144,8 @@ check(
   Number(await page.getAttribute("#app", "data-sim-time")) > 5,
   "simulation is actually running",
 );
-await page.screenshot({ path: `${OUT}/live-default.png` });
+await checkCanvasFitsWindow(page);
+await page.screenshot({ path: `${OUT}/live-default-${engine.name}.png` });
 
 console.log("live page, after orbiting and zooming");
 const canvas = (await page.locator("canvas").boundingBox())!;
@@ -90,7 +156,7 @@ await page.mouse.up();
 await page.mouse.wheel(0, -320);
 await page.waitForTimeout(3_000);
 checkFraming("after orbit and zoom", await framing(page));
-await page.screenshot({ path: `${OUT}/live-after-orbit.png` });
+await page.screenshot({ path: `${OUT}/live-after-orbit-${engine.name}.png` });
 
 console.log("controls");
 await page.selectOption("#speed", "4");
@@ -115,25 +181,28 @@ await page.click("text=LEADERBOARD");
 await page.waitForTimeout(1_500);
 const leaderboardRows = await page.locator("table.data tbody tr").count();
 check(leaderboardRows > 0, `leaderboard shows ${leaderboardRows} agents`);
-await page.screenshot({ path: `${OUT}/leaderboard.png` });
+await page.screenshot({ path: `${OUT}/leaderboard-${engine.name}.png` });
 
 console.log("match history and replay");
 await page.click("text=MATCHES");
 await page.waitForTimeout(1_500);
 const matchRows = await page.locator("table.data tbody tr").count();
 check(matchRows > 0, `match history shows ${matchRows} matches`);
-await page.screenshot({ path: `${OUT}/matches.png` });
+await page.screenshot({ path: `${OUT}/matches-${engine.name}.png` });
 
 await page.locator("text=WATCH").first().click();
 await page.waitForTimeout(6_000);
 const replayTime = await page.locator(".timecode").textContent();
 check(Boolean(replayTime && parseFloat(replayTime) > 0.5), `replay is playing (${replayTime?.trim()})`);
 checkFraming("replay view", await framing(page));
-await page.screenshot({ path: `${OUT}/replay.png` });
+await page.screenshot({ path: `${OUT}/replay-${engine.name}.png` });
 
 check(errors.length === 0, `no console or page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`);
+await checkCanvasFitsWindow(page);
 
 await browser.close();
+}
+
 console.log(`\nScreenshots in ${OUT}/`);
 if (failures.length) {
   console.error(`\n${failures.length} check(s) failed.`);

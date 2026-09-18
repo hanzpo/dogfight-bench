@@ -32,8 +32,15 @@ export interface LiveMatch {
   downloadReplay: () => void;
 }
 
+/**
+ * Keyboard axes, as pairs of [positive, negative].
+ *
+ * Pitch follows the stick, not the camera: W is forward on the stick and puts
+ * the nose down, S is back and pulls. The control input itself is a load-factor
+ * command where positive pulls, so W maps to the negative end.
+ */
 const KEY_AXES = {
-  pitch: ["KeyW", "KeyS"],
+  pitch: ["KeyS", "KeyW"],
   roll: ["KeyD", "KeyA"],
   yaw: ["KeyE", "KeyQ"],
   throttle: ["KeyR", "KeyF"],
@@ -58,6 +65,7 @@ export function useLiveMatch(): LiveMatch {
 
   const snapshotRef = useRef<ViewerSnapshot>(undefined);
   const simTimeRef = useRef(0);
+  const lastEventIndex = useRef(0);
   const lastUiUpdate = useRef(0);
   const [state, setState] = useState<MatchState>();
   const [paused, setPaused] = useState(false);
@@ -94,6 +102,7 @@ export function useLiveMatch(): LiveMatch {
       "red-1": SCRIPTED_INFO("energy-fighter"),
     });
     accumulator.current = 0;
+    lastEventIndex.current = 0;
     setPaused(false);
   }, []);
 
@@ -147,7 +156,8 @@ export function useLiveMatch(): LiveMatch {
       }
 
       if (sim) {
-        snapshotRef.current = snapshotFromMatch(sim.state);
+        snapshotRef.current = snapshotFromMatch(sim.state, lastEventIndex.current);
+        lastEventIndex.current = sim.state.events.length;
         simTimeRef.current = sim.state.time;
         if (now - lastUiUpdate.current >= UI_REFRESH_MS) {
           lastUiUpdate.current = now;
