@@ -426,6 +426,40 @@ check(
   "right-drag does not open the browser context menu",
 );
 
+/**
+ * Gamepad axes, through a synthetic pad.
+ *
+ * No browser lets a script inject real pad events, but the part worth testing
+ * is the mapping from axes to controls, which is ours: which stick flies, which
+ * way forward is, and that a thumb resting on a worn stick does nothing.
+ */
+await page.evaluate(`(() => {
+  window.__pad = {
+    id: "Synthetic Pad (STANDARD GAMEPAD)", index: 0, connected: true, mapping: "standard",
+    axes: [0, 0, 0, 0],
+    buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })),
+  };
+  navigator.getGamepads = () => [window.__pad, null, null, null];
+  window.dispatchEvent(Object.assign(new Event("gamepadconnected"), { gamepad: window.__pad }));
+})()`);
+await page.selectOption("#control-scheme", "gamepad");
+await page.waitForTimeout(700);
+const padAt = async (axes: number[]) => {
+  await page.evaluate(`window.__pad.axes = ${JSON.stringify(axes)}`);
+  await page.waitForTimeout(450);
+  return (await page.evaluate(controlDot)) as { x: number; y: number };
+};
+const padBack = await padAt([0, 0, 1, 1]);
+check(padBack.x > 15 && padBack.y < -15, `right stick right and back rolls right and pulls (${padBack.x}, ${padBack.y})`);
+const padForward = await padAt([0, 0, 0, -1]);
+check(padForward.y > 15, `right stick forward pushes (${padForward.y})`);
+const padDeadzone = await padAt([0, 0, 0.08, 0.08]);
+check(
+  Math.abs(padDeadzone.x) < 1 && Math.abs(padDeadzone.y) < 1,
+  `a nudge inside the deadzone does nothing (${padDeadzone.x}, ${padDeadzone.y})`,
+);
+await padAt([0, 0, 0, 0]);
+
 await page.selectOption("#control-scheme", "keyboard");
 await page.waitForTimeout(400);
 const released = (await page.evaluate(controlDot)) as { x: number; y: number } | null;

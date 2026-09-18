@@ -31,7 +31,12 @@ export function LivePage() {
   const roster = useRoster();
   const viewer = useRef<DogfightViewer>(undefined);
   const [view, setView] = useState<ViewMode>("orbit");
-  const [observerOpen, setObserverOpen] = useState(true);
+  /**
+   * The observer panel is 286 wide and would cover most of a phone, so it
+   * starts as a tab there. Measured once, not tracked: somebody who opens it
+   * deliberately should not have it shut again by a rotation.
+   */
+  const [observerOpen, setObserverOpen] = useState(() => globalThis.innerWidth > 900);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";

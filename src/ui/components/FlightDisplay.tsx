@@ -402,6 +402,11 @@ function layout(
   place("heading", width / 2, 86);
   place("engine", margin, height - 96);
   place("stores", rightEdge, height - 96);
+  // The attitude indicator is 100 across and needs room beside the airspeed
+  // tape. On a narrow screen there is none, so it goes rather than overlapping
+  // the tape it sits next to.
+  const adiGroup = groups["adi"];
+  if (adiGroup) adiGroup.style.display = width < 760 ? "none" : "";
   place("adi", Math.min(Math.max(width * 0.15, 196), 280), height / 2);
 }
 
