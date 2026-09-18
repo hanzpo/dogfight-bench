@@ -408,6 +408,10 @@ calibrated-probability check skips itself when there is no credential.
 controls and the harness then verifies the resulting state independently. It
 needs a TypeSafe key and Chrome remote debugging. See its README.
 
+Its case names the controls in words, so renaming one in the interface is a
+change to that file as well -- the state it checks afterwards is read from the
+`#app` dataset, which is stable, but the instructions it acts on are not.
+
 ## Conventions
 
 The world is right-handed with **+y up**, which forces **+z south**: with y up
