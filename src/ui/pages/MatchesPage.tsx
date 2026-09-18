@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api, ServerUnavailableError, type MatchRow } from "../api";
 import { authHeaders } from "../auth";
 import { useAccount } from "../hooks/useAccount";
@@ -16,6 +16,8 @@ type Scope = "all" | "mine";
  */
 export function MatchesPage() {
   const account = useAccount();
+  const navigate = useNavigate();
+  const fileInput = useRef<HTMLInputElement>(null);
   const [scope, setScope] = useState<Scope>("all");
   const [rows, setRows] = useState<MatchRow[]>();
   const [error, setError] = useState<string>();
@@ -45,20 +47,35 @@ export function MatchesPage() {
         <div>
           <h1>Matches</h1>
           <p className="page-intro">
-            Every recorded match, with the replay it was recorded from. Replays are stored compressed and only for
-            matches that were actually reported, so an abandoned session leaves nothing behind.
+            Every recorded match, and the replay it was recorded from. Watching one puts you back in the cockpit with
+            the instruments the pilot had. Replays are stored compressed and only for matches that were actually
+            reported, so an abandoned session leaves nothing behind.
           </p>
         </div>
-        {account.user ? (
-          <div className="segmented" role="group" aria-label="Which matches">
-            <button aria-pressed={scope === "all"} onClick={() => setScope("all")}>
-              Everyone
-            </button>
-            <button aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>
-              Mine
-            </button>
-          </div>
-        ) : null}
+        <div className="page-actions">
+          {account.user ? (
+            <div className="segmented" role="group" aria-label="Which matches">
+              <button aria-pressed={scope === "all"} onClick={() => setScope("all")}>
+                Everyone
+              </button>
+              <button aria-pressed={scope === "mine"} onClick={() => setScope("mine")}>
+                Mine
+              </button>
+            </div>
+          ) : null}
+          {/* A replay somebody sent you, or one saved from a match here. */}
+          <button onClick={() => fileInput.current?.click()}>Open a file</button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json"
+            style={{ display: "none" }}
+            onChange={(changed) => {
+              const file = changed.target.files?.[0];
+              if (file) navigate("/replay", { state: { file } });
+            }}
+          />
+        </div>
       </div>
 
       {error ? <p className="notice">{error}</p> : null}
