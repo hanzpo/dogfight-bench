@@ -1,4 +1,5 @@
 import "./style.css";
+import { SCRIPTED_INFO } from "./agents/agent";
 import { EnergyFighterAgent } from "./agents/baselines";
 import { ReplayRecorder } from "./sim/replay";
 import { neutralMerge } from "./sim/scenario";
@@ -46,7 +47,11 @@ function reset(): void {
     simulation.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
   }
   simulation.attachAgent("red-1", new EnergyFighterAgent("red-1"));
-  recorder = new ReplayRecorder(neutralMerge, { "blue-1": "human/baseline", "red-1": "baseline-v1" });
+  const bluePilot = (document.querySelector("#blue-pilot") as HTMLSelectElement).value;
+  recorder = new ReplayRecorder(neutralMerge, {
+    "blue-1": bluePilot === "basic" ? SCRIPTED_INFO("energy-fighter") : SCRIPTED_INFO("human", "raw"),
+    "red-1": SCRIPTED_INFO("energy-fighter"),
+  });
   accumulator = 0;
   paused = false;
 }
@@ -129,6 +134,7 @@ function frame(now: number): void {
     while (accumulator >= neutralMerge.fixedDt && safety++ < 500) {
       simulation.step();
       recorder.capture(simulation.state);
+      if (simulation.state.finished) recorder.finish(simulation.decisions, simulation.summary());
       accumulator -= neutralMerge.fixedDt;
     }
   }

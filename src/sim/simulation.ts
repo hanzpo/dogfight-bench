@@ -328,12 +328,18 @@ export class DogfightSimulation {
    * Runs without rendering or wall-clock pacing. At each decision boundary it
    * waits for both models, so inference latency is measured but neither
    * aircraft gets extra simulated time for being slow.
+   *
+   * This is also the reproducible mode. Because every decision is applied on
+   * the tick it was requested, a recorded decision log replays exactly. Real
+   * -time play cannot promise that: a model's answer lands whenever the network
+   * returns it, so the same log would be applied on different ticks.
    */
-  async runHeadless(): Promise<MatchState> {
+  async runHeadless(onTick?: (state: MatchState) => void): Promise<MatchState> {
     while (!this.state.finished) {
       const decisions = this.requestDecisions();
       if (decisions.length) await Promise.all(decisions);
       this.stepPhysics();
+      onTick?.(this.state);
     }
     return this.state;
   }
