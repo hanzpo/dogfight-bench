@@ -47,7 +47,6 @@ export interface FlcsInputs {
   gravityAlongBodyUp: number;
 }
 
-
 function slew(current: number, command: number, maxRatePerSecond: number, dt: number): number {
   const limit = maxRatePerSecond * dt;
   return current + clamp(command - current, -limit, limit);

@@ -8,6 +8,7 @@ import { stepAircraft } from "../../src/sim/flight-model";
 import { trimLevelFlight, trimPower } from "../../src/sim/trim";
 import type { AircraftState, ControlInput } from "../../src/sim/types";
 import { degrees } from "../../src/math";
+import { clamp } from "../../src/math";
 
 export const DT = 1 / 120;
 
@@ -119,7 +120,7 @@ export function sustainedTurn(altitudeM: number, entrySpeedMps: number, seconds 
     const verticalSpeed = aircraft.velocity.y;
     aircraft.controls = {
       pitch: 1,
-      roll: Math.max(-1, Math.min(1, (targetBank - currentBank(aircraft)) * 2.5 + altitudeError * 0.0015 + verticalSpeed * 0.02)),
+      roll: clamp((targetBank - currentBank(aircraft)) * 2.5 + altitudeError * 0.0015 + verticalSpeed * 0.02, -1, 1),
       yaw: 0,
       throttle: 1,
       fire: false,
@@ -144,7 +145,7 @@ export function instantaneousTurn(altitudeM: number, speedMps: number): TurnResu
     const targetBank = Math.acos(Math.min(1, 1 / n));
     aircraft.controls = {
       pitch: 1,
-      roll: Math.max(-1, Math.min(1, (targetBank - currentBank(aircraft)) * 2.5)),
+      roll: clamp((targetBank - currentBank(aircraft)) * 2.5, -1, 1),
       yaw: 0,
       throttle: 1,
       fire: false,

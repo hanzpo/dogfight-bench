@@ -1,4 +1,5 @@
 import { SEA_LEVEL_M, isWater, terrainElevation, terrainHeight } from "./terrain";
+import { clamp } from "../math";
 
 const GRAVITY_MPS2 = 9.80665;
 
@@ -78,7 +79,7 @@ export function terrainAwareness(input: TerrainAwarenessInput): TerrainAwareness
     }
   }
 
-  const flightPathAngleRad = speed > 1e-3 ? Math.asin(Math.max(-1, Math.min(1, vy / speed))) : 0;
+  const flightPathAngleRad = speed > 1e-3 ? Math.asin(clamp(vy / speed, -1, 1)) : 0;
   const loss = recoveryHeightLossM(speed, flightPathAngleRad, input.availableLoadFactorG);
 
   const clearanceAtRisk = Math.min(clearanceM, minimumClearanceAheadM);

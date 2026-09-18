@@ -20,9 +20,6 @@ export function App() {
             Fly
           </NavLink>
           <NavLink to="/leaderboard">Leaderboard</NavLink>
-          {/* One list, one place. "Matches" and "Replays" were two entries
-              showing the same rows; opening a replay file lives on that page,
-              which is where somebody looking for a replay already is. */}
           <NavLink to="/matches">Matches</NavLink>
           <AccountMenu />
         </nav>

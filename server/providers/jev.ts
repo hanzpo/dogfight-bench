@@ -11,6 +11,7 @@ import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
 import { MANEUVER_GUIDE, buildBriefing } from "../prompt";
 import type { ModelProvider, ProviderOptions } from "./types";
+import { clamp } from "../../src/math";
 
 const COMMITMENT = [
   "Unload. Stop turning: speed is the problem, or the bandit is far enough away that pointing costs nothing.",
@@ -49,7 +50,7 @@ function nearestDetent(fraction: number): ThrottleDetent {
 }
 
 function alongScale(scale: readonly number[], score: number): number {
-  const low = Math.max(0, Math.min(scale.length - 1, Math.floor(score)));
+  const low = clamp(Math.floor(score), 0, scale.length - 1);
   const high = Math.min(low + 1, scale.length - 1);
   return scale[low]! + (scale[high]! - scale[low]!) * (score - low);
 }

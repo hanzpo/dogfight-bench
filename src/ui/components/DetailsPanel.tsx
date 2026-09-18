@@ -51,9 +51,6 @@ export function DetailsPanel({
         <span className="details-note">perfect information · not visible to the pilot</span>
       </header>
 
-      {/* First, when there is one. Watching a model fly, how sure it was of
-          what it just did is the most interesting thing on the panel, and it
-          was previously below four other sections and off the bottom. */}
       {decision ? <DecisionSection decision={decision} /> : null}
 
       <Section title="ENGAGEMENT">
@@ -149,8 +146,6 @@ function DecisionSection({ decision }: { decision: DecisionRecord }) {
         <div className="distribution" key={distribution.question}>
           <div className="distribution-head">
             <span>{distribution.question.replace(/_/g, " ")}</span>
-            {/* The model's own calibrated confidence, which is not the same
-                number as the winning option's probability. */}
             <span className="details-sub">conf {(distribution.confidence * 100).toFixed(0)}%</span>
           </div>
           {distribution.options.slice(0, 6).map((option) => (

@@ -69,8 +69,6 @@ export function ReplayPage() {
       />
       {replay ? (
         <>
-          {/* A replay shows the same instruments the pilot had, so a decision
-              can be judged against what was actually on the display. */}
           <FlightDisplay
             stateRef={playback.stateRef}
             viewerRef={viewer}
@@ -78,9 +76,6 @@ export function ReplayPage() {
             detailsOpen={detailsOpen}
           />
           <TacticalOverlay stateRef={playback.stateRef} viewerRef={viewer} followId={followId} />
-          {/* The decision that was live at this moment, so a replay shows what
-              the model chose and how sure it was, not only what the aircraft
-              then did. */}
           <DetailsPanel
             state={playback.state}
             followId={followId}

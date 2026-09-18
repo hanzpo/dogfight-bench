@@ -73,6 +73,16 @@ export function terrainElevation(x: number, z: number): number {
   return land * 1_500 * shore + range * range * 1_900 * massif + relief * 210 * shore;
 }
 
+/**
+ * The elevation the drawn mesh actually has at this point.
+ *
+ * Not `terrainElevation`, which is the smooth field the mesh's vertices are
+ * sampled from: between those vertices the mesh is flat triangles, and the gap
+ * between the two reached a hundred and eighty metres -- aircraft colliding
+ * with ground that was not where it was drawn. THREE.PlaneGeometry splits each
+ * quad along the anti-diagonal, so the halves are chosen at fx + fz = 1 and
+ * each is the plane through its three corners.
+ */
 export function sampledElevation(x: number, z: number): number {
   const half = TERRAIN_EXTENT_M / 2;
   if (x < -half || x >= half || z < -half || z >= half) return terrainElevation(x, z);

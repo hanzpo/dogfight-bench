@@ -1,5 +1,6 @@
 import { Vector3 } from "three";
 import type { DamageState, Subsystem } from "./types";
+import { clamp } from "../math";
 
 export interface HitVolume {
   subsystem: Subsystem;
@@ -105,7 +106,7 @@ export function volumeCenter(
 }
 
 export function applyHit(damage: DamageState, volume: HitVolume, energyFraction: number, roll: number): void {
-  const scale = Math.max(0.25, Math.min(1, energyFraction));
+  const scale = clamp(energyFraction, 0.25, 1);
   damage.hitsTaken += 1;
   damage.integrity = Math.max(0, damage.integrity - volume.integrityLoss * scale);
   damage.subsystems[volume.subsystem] = Math.max(

@@ -13,7 +13,6 @@ const BODY_Y = new Vector3(0, 1, 0);
 const BODY_Z = new Vector3(0, 0, 1);
 const WORLD_DOWN = new Vector3(0, -1, 0);
 
-
 export function sanitizeControls(input: ControlInput): ControlInput {
   const finite = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
   return {

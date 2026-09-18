@@ -6,6 +6,7 @@ import { HIT_VOLUMES, HULL_RADIUS_M, applyHit, isDestroyed, volumeCenter } from 
 import { bodyAxes } from "./flight-model";
 import type { Random } from "./random";
 import type { AircraftState, MatchState, ProjectileState } from "./types";
+import { clamp } from "../math";
 
 const MUZZLE_ENERGY_J = kineticEnergyJ(GUN.muzzleVelocityMps);
 
@@ -74,7 +75,7 @@ export function fireGun(
 function segmentPointDistanceSq(a: Vector3, b: Vector3, point: Vector3): number {
   const ab = b.clone().sub(a);
   const lengthSq = Math.max(ab.lengthSq(), 1e-9);
-  const t = Math.max(0, Math.min(1, point.clone().sub(a).dot(ab) / lengthSq));
+  const t = clamp(point.clone().sub(a).dot(ab) / lengthSq, 0, 1);
   return a.clone().addScaledVector(ab, t).distanceToSquared(point);
 }
 

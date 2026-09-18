@@ -37,6 +37,8 @@ function placements(config: ScenarioConfig): [Placement, Placement] {
   const half = config.startSeparationM / 2;
   const lateral = config.startLateralOffsetM / 2;
   const split = config.startAltitudeSplitM / 2;
+  // Split between the two: giving one aircraft the whole crossing angle and
+  // the other a heading of zero hands it the merge, and self-play went 8-2.
   const deviation = (180 - config.startHeadingCrossingDeg) / 2;
   return [
     {

@@ -6,7 +6,6 @@ import type { ViewerAircraft } from "./types";
 
 export type ViewMode = "free" | "chase" | "track" | "arena" | "cockpit";
 
-/** Views that place the camera themselves, leaving nothing for the mouse to orbit. */
 const AUTOMATIC_VIEWS: readonly ViewMode[] = ["chase", "track", "arena", "cockpit"];
 
 const BODY_FORWARD = new THREE.Vector3(0, 0, 1);
@@ -26,6 +25,10 @@ const CHASE_RISE = 0.2;
 const CHASE_AIM_ABOVE = 0.05;
 
 const TRACK_LIFT = 0.1;
+const TRACK_NEAR_M = 46;
+const TRACK_PER_METRE = 0.05;
+const TRACK_MAX_M = 200;
+
 const ARENA_ELEVATION_DEG = 26;
 const ARENA_GROUND_CLEARANCE_M = 60;
 /** How far off centre the arena camera may look and still hold what it sees in frame. */
@@ -38,12 +41,10 @@ const ARENA_MIN_M = 200;
  */
 const ARENA_MAX_M = 1_100;
 
-/**
- * Where the camera stands, and how it gets there.
- *
- * Owns the camera outright: the viewer hands it a picture of the fight each
- * frame and never touches the camera itself.
- */
+/** How fast each view settles into a new offset, per second. */
+const CHASE_EASE = 6;
+const ARENA_EASE = 1.6;
+
 export class CameraDirector {
   private view: ViewMode = "chase";
   private pointerCaptured = false;
@@ -80,7 +81,6 @@ export class CameraDirector {
     this.applyControlAvailability();
   }
 
-  /** Forgets where it was standing, so the next frame cuts rather than eases. */
   reset(): void {
     this.placed = false;
   }
@@ -118,12 +118,7 @@ export class CameraDirector {
     this.camera.position.copy(this.controls.target).add(offset.setLength(distance));
   }
 
-  /**
-   * Puts the camera where this view wants it for this frame.
-   *
-   * Returns true when the followed aircraft must not be drawn, which is only
-   * ever the cockpit: you cannot see your own airframe from inside it.
-   */
+  /** Returns true when the followed aircraft must not be drawn, which is only the cockpit. */
   update(follow: ViewerAircraft, centre: THREE.Vector3, bandit: THREE.Vector3 | undefined): boolean {
     switch (this.view) {
       case "cockpit":
@@ -172,12 +167,7 @@ export class CameraDirector {
     this.controls.target.copy(lookAt);
   }
 
-  /**
-   * Behind and above, along the nose, without the roll: the world stays the
-   * right way up and the jet banks against it, which is the only way to read an
-   * attitude from outside. Near the vertical, heading stops meaning anything, so
-   * "behind" blends towards the aircraft's own up.
-   */
+  /** Near the vertical, heading means nothing, so "behind" blends to the body's own up. */
   private placeChase(aircraft: ViewerAircraft, centre: THREE.Vector3): void {
     const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
     const forward = BODY_FORWARD.clone().applyQuaternion(orientation);
@@ -189,22 +179,18 @@ export class CameraDirector {
       centre,
       forward.clone().multiplyScalar(-distance).addScaledVector(up, distance * CHASE_RISE),
       centre.clone().addScaledVector(up, distance * CHASE_AIM_ABOVE),
-      6,
+      CHASE_EASE,
     );
   }
 
-  /**
-   * Camera, your aircraft, the bandit, on one line in that order, so angle off
-   * and range are one picture. Placed exactly rather than eased: a camera that
-   * lags a hard turn by a tenth of a second is no longer on the line.
-   */
+  /** Placed exactly, not eased: a camera that lags a turn is no longer on the line. */
   private placeTrack(centre: THREE.Vector3, bandit: THREE.Vector3): void {
     const axis = centre.clone().sub(bandit);
     const separation = axis.length();
     axis.normalize();
     if (separation < 1) axis.set(0, 0, -1);
 
-    const distance = Math.min(46 + separation * 0.05, 200) * this.framing;
+    const distance = Math.min(TRACK_NEAR_M + separation * TRACK_PER_METRE, TRACK_MAX_M) * this.framing;
     const lift = new THREE.Vector3().crossVectors(axis, WORLD_UP).cross(axis);
     if (lift.lengthSq() < 1e-6) lift.copy(BODY_UP);
     lift.normalize();
@@ -218,13 +204,10 @@ export class CameraDirector {
   }
 
   /**
-   * Both aircraft from outside, broadside to the line between them, so the
-   * separation lies across the screen rather than into it.
-   *
-   * One rule, from the field of view: `reach` is how far off centre this camera
-   * may look and still hold what it sees in frame, so it aims at the midpoint
-   * while the midpoint is within reach and otherwise slides back along that line
-   * until the followed aircraft is.
+   * `framed` is how far off centre this camera may look and still hold what it
+   * sees in frame, so it aims at the midpoint while the midpoint is within that
+   * reach, and otherwise slides back along the line until the followed aircraft
+   * is.
    */
   private placeArena(centre: THREE.Vector3, bandit: THREE.Vector3): void {
     const midpoint = centre.clone().add(bandit).multiplyScalar(0.5);
@@ -246,14 +229,9 @@ export class CameraDirector {
     const floor = terrainHeight(lookAt.x + offset.x, lookAt.z + offset.z) + ARENA_GROUND_CLEARANCE_M;
     offset.y = Math.max(offset.y, floor - lookAt.y);
 
-    this.place(lookAt, offset, lookAt, 1.6);
+    this.place(lookAt, offset, lookAt, ARENA_EASE);
   }
 
-  /**
-   * The eye where the pilot's head is, pointed down the nose, taking the roll
-   * as well: a head-up display is fixed to the airframe, so the horizon rotating
-   * behind it is the whole point.
-   */
   private placeCockpit(aircraft: ViewerAircraft): void {
     const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
     this.camera.position
@@ -264,7 +242,6 @@ export class CameraDirector {
     this.placed = false;
   }
 
-  /** Follows the aircraft without overwriting the angle the player orbited to. */
   private placeFree(aircraft: ViewerAircraft, centre: THREE.Vector3): void {
     if (!this.placed) {
       const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);

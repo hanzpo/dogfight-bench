@@ -49,7 +49,6 @@ function finite(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-
 export function validateAction(value: unknown): AgentAction {
   const record = (value ?? {}) as Record<string, unknown>;
   const controls = record["controls"] as Record<string, unknown> | undefined;

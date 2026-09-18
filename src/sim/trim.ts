@@ -3,6 +3,7 @@ import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
 import { ENGINE, GEOMETRY } from "./config";
 import { commandedPower, thrustAtPower } from "./engine";
 import { heightAboveGround } from "./terrain";
+import { clamp } from "../math";
 
 export interface TrimSolution {
   alphaRad: number;
@@ -46,7 +47,7 @@ export function trimLevelFlight(altitudeM: number, speedMps: number, massKg: num
 
   return {
     alphaRad,
-    throttle: Math.max(0, Math.min(1, throttle)),
+    throttle: clamp(throttle, 0, 1),
     feasible: clRequired <= liftCoefficient(0.47) && thrustRequiredN <= thrustAvailableN,
     thrustRequiredN,
     thrustAvailableN,

@@ -2,6 +2,7 @@ import type { AgentObservation } from "../sim/telemetry";
 import type { ControlInput } from "../sim/types";
 import { validateAction, type AgentAction } from "./action";
 import { resolveTacticalForObservation } from "./autopilot";
+import { clamp } from "../math";
 
 export interface AgentInfo {
   name: string;
@@ -78,7 +79,7 @@ function validateDistributions(value: unknown): ChoiceDistribution[] | undefined
         if (typeof id !== "string" || typeof probability !== "number" || !Number.isFinite(probability)) {
           return undefined;
         }
-        return { id: id.slice(0, 48), probability: Math.max(0, Math.min(1, probability)) };
+        return { id: id.slice(0, 48), probability: clamp(probability, 0, 1) };
       })
       .filter((option): option is { id: string; probability: number } => option !== undefined)
       .sort((a, b) => b.probability - a.probability);
@@ -90,7 +91,7 @@ function validateDistributions(value: unknown): ChoiceDistribution[] | undefined
       choice: choice.slice(0, 48),
       confidence:
         typeof confidence === "number" && Number.isFinite(confidence)
-          ? Math.max(0, Math.min(1, confidence))
+          ? clamp(confidence, 0, 1)
           : (parsed[0]?.probability ?? 0),
       options: parsed,
     });

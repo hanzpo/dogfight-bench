@@ -4,8 +4,8 @@ import { atmosphere, equivalentAirspeed } from "../../sim/atmosphere";
 import { bodyAxes } from "../../sim/flight-model";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
-import { degrees, radians } from "../../math";
-import { clamp } from "../../math";
+import { clamp, degrees, radians } from "../../math";
+import { signedCount } from "../../format";
 
 const FEET = 3.28084;
 const KNOTS = 1.94384;
@@ -79,17 +79,14 @@ export function FlightDisplay({
       set("g", `${own.loadFactor.toFixed(1)}G`);
       set("alt", Math.round(own.position.y * FEET).toLocaleString());
       set("agl", `R ${Math.round(own.heightAboveGroundM * FEET).toLocaleString()}`);
-      set("vs", `${own.velocity.y >= 0 ? "+" : ""}${Math.round(own.velocity.y * FEET * 60).toLocaleString()}`);
+      set("vs", signedCount(own.velocity.y * FEET * 60));
       set("heading", String(Math.round(heading)).padStart(3, "0"));
       set("track", `TRK ${String(Math.round(track)).padStart(3, "0")}`);
       set("aoa", `${degrees(own.aoaRad).toFixed(1)}° AOA`);
       set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
       set("ammo", String(own.ammo));
-      set(
-        "throttleLabel",
-        own.engine.afterburner ? "AB" : own.controls.throttle > 0.02 ? `${Math.round(own.controls.throttle * 100)}%` : "IDLE",
-      );
-      throttleFill.current?.setAttribute("width", (Math.max(0, Math.min(1, own.controls.throttle)) * 84).toFixed(1));
+      set("throttleLabel", throttleLabel(own.engine.afterburner, own.controls.throttle));
+      throttleFill.current?.setAttribute("width", (clamp(own.controls.throttle, 0, 1) * 84).toFixed(1));
       throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
 
       stickDot.current?.setAttribute("cx", (clamp(own.controls.roll, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
@@ -149,7 +146,6 @@ export function FlightDisplay({
 
   return (
     <svg ref={root} className={`flight-display${detailsOpen ? " with-details" : ""}`} aria-hidden>
-      {/* ---------- conformal head-up symbology (cockpit only) ---------- */}
       <defs>
         <clipPath id="hud-field">
           <ellipse ref={hudField} rx="240" ry="150" />
@@ -168,7 +164,6 @@ export function FlightDisplay({
         </g>
       </g>
 
-      {/* ---------- airspeed, left ---------- */}
       <g ref={group("speed")} className="tape-group speed-group">
         <g ref={speedTicks} className="tape-ticks" />
         <g ref={group("speedReadout")}>
@@ -193,7 +188,6 @@ export function FlightDisplay({
         </g>
       </g>
 
-      {/* ---------- altitude, right ---------- */}
       <g ref={group("alt")} className="tape-group alt-group">
         <g ref={altTicks} className="tape-ticks" />
         <g ref={group("altReadout")}>
@@ -215,7 +209,6 @@ export function FlightDisplay({
         </g>
       </g>
 
-      {/* ---------- heading, top ---------- */}
       <g ref={group("heading")} className="heading-group">
         <g ref={headingTicks} className="tape-ticks" />
         <path className="heading-caret" d="M 0 4 L -6 13 L 6 13 Z" />
@@ -230,7 +223,6 @@ export function FlightDisplay({
         </text>
       </g>
 
-      {/* ---------- engine and stores, bottom ---------- */}
       <g ref={group("engine")} className="engine-group">
         <text className="tape-caption" y="-8">
           THROTTLE
@@ -272,6 +264,12 @@ export function FlightDisplay({
 
 const UP = new Vector3(0, 1, 0);
 
+function throttleLabel(afterburner: boolean, throttle: number): string {
+  if (afterburner) return "AB";
+  if (throttle <= 0.02) return "IDLE";
+  return `${Math.round(throttle * 100)}%`;
+}
+
 function layout(
   groups: Record<string, SVGGElement | null>,
   width: number,
@@ -279,7 +277,7 @@ function layout(
   detailsOpen: boolean,
 ): void {
   const scale = clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
-  const margin = Math.min(Math.max(width * 0.05, 26), 92);
+  const margin = clamp(width * 0.05, 26, 92);
   const rightEdge = width - (detailsOpen ? 318 : margin);
   const place = (key: string, x: number, y: number, scaled = true) =>
     groups[key]?.setAttribute(
@@ -314,7 +312,6 @@ function sizeHudField(
   ellipse.setAttribute("rx", rx.toFixed(1));
   ellipse.setAttribute("ry", ry.toFixed(1));
 }
-
 
 function compass(direction: Vector3): number {
   return (((Math.atan2(direction.x, -direction.z) * 180) / Math.PI) + 360) % 360;

@@ -134,9 +134,6 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
                 </span>
                 {row.provisional ? <span className="badge">guest</span> : null}
               </td>
-              {/* The policy version and the interface are both part of the
-                  identity, so two rows for the same model are two different
-                  pilots and have to be told apart. */}
               <td className="muted">
                 {row.kind === "model" ? row.model : "—"}
                 {row.kind === "model" ? <div className="policy">prompt {row.policyVersion}</div> : null}

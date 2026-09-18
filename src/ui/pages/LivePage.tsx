@@ -25,6 +25,41 @@ function pilotNote(hasKey: boolean, free: boolean, exhausted: boolean): string {
   return "needs a key";
 }
 
+const ZOOM_PER_WHEEL_PIXEL = 0.0012;
+
+/**
+ * Everything the browser check measures, written onto `#app` as data attributes.
+ *
+ * Positions and sizes a person can see, rather than anything the viewer exports
+ * for testing, so a check that passes is a check on what was drawn.
+ */
+function publishDiagnostics(viewer: DogfightViewer, simTimeS: number): void {
+  const app = document.querySelector<HTMLElement>("#app");
+  if (!app) return;
+  const stats = viewer.stats;
+  const framing = viewer.getFollowFraming();
+  const data: Record<string, string> = {
+    simTime: simTimeS.toFixed(3),
+    frameMs: stats.frameTimeMs.toFixed(2),
+    renderScale: stats.renderScale.toFixed(2),
+    drawCalls: String(stats.drawCalls),
+    triangles: String(stats.triangles),
+    camera: viewer.camera.position.toArray().map((value) => value.toFixed(3)).join(","),
+    ...(framing
+      ? {
+          subjectScreenX: framing.x.toFixed(4),
+          subjectScreenY: framing.y.toFixed(4),
+          subjectMinX: framing.minX.toFixed(4),
+          subjectMaxX: framing.maxX.toFixed(4),
+          subjectMinY: framing.minY.toFixed(4),
+          subjectMaxY: framing.maxY.toFixed(4),
+          subjectDistance: framing.distanceM.toFixed(1),
+        }
+      : {}),
+  };
+  for (const [key, value] of Object.entries(data)) app.dataset[key] = value;
+}
+
 const KEYMAP: Record<ControlScheme, string> = {
   keyboard: "W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE",
   mouse: "MOUSE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM · Q/E RUDDER · R/F THROTTLE",
@@ -94,34 +129,12 @@ export function LivePage() {
   useEffect(() => {
     let frame = 0;
     const publish = () => {
-      const app = document.querySelector<HTMLElement>("#app");
       const instance = viewer.current;
       if (instance) {
-        const view = match.inputRef.current.consumeViewDelta();
-        if (view.orbitX || view.orbitY) instance.orbitBy(view.orbitX, view.orbitY);
-        if (view.zoom) instance.zoomBy(Math.exp(view.zoom * 0.0012));
-      }
-      if (app && instance) {
-        app.dataset["simTime"] = (match.simTimeRef.current ?? 0).toFixed(3);
-        const stats = instance.stats;
-        app.dataset["frameMs"] = stats.frameTimeMs.toFixed(2);
-        app.dataset["renderScale"] = stats.renderScale.toFixed(2);
-        app.dataset["drawCalls"] = String(stats.drawCalls);
-        app.dataset["triangles"] = String(stats.triangles);
-        app.dataset["camera"] = instance.camera.position
-          .toArray()
-          .map((value) => value.toFixed(3))
-          .join(",");
-        const framing = instance.getFollowFraming();
-        if (framing) {
-          app.dataset["subjectScreenX"] = framing.x.toFixed(4);
-          app.dataset["subjectScreenY"] = framing.y.toFixed(4);
-          app.dataset["subjectMinX"] = framing.minX.toFixed(4);
-          app.dataset["subjectMaxX"] = framing.maxX.toFixed(4);
-          app.dataset["subjectMinY"] = framing.minY.toFixed(4);
-          app.dataset["subjectMaxY"] = framing.maxY.toFixed(4);
-          app.dataset["subjectDistance"] = framing.distanceM.toFixed(1);
-        }
+        const delta = match.inputRef.current.consumeViewDelta();
+        if (delta.orbitX || delta.orbitY) instance.orbitBy(delta.orbitX, delta.orbitY);
+        if (delta.zoom) instance.zoomBy(Math.exp(delta.zoom * ZOOM_PER_WHEEL_PIXEL));
+        publishDiagnostics(instance, match.simTimeRef.current ?? 0);
       }
       frame = requestAnimationFrame(publish);
     };
@@ -169,13 +182,7 @@ export function LivePage() {
         onToggle={() => setDetailsOpen(!detailsOpen)}
       />
 
-      {/* Three groups, because they answer three different questions: who is
-          flying, how you are watching, and what to do now. Wrapped together as
-          one row they read as a pile of controls. */}
       <footer className="controls">
-        {/* What the thing in your hands does, in the bar that chose it. It used
-            to be centred along the very bottom edge, where this bar -- also
-            centred, and taller -- covered it completely. */}
         <div className="keymap">{KEYMAP[match.scheme]}</div>
         <div className="control-group">
         <label>
@@ -244,8 +251,6 @@ export function LivePage() {
             <option value="free">Free look</option>
           </select>
         </label>
-        {/* Which aircraft the camera is on, shown as a state rather than as a
-            verb: "Follow red" never said which one you were watching. */}
         <label>
           Camera
           <div className="segmented" role="group" aria-label="Which aircraft the camera follows">
@@ -313,9 +318,6 @@ export function LivePage() {
         </div>
       </footer>
 
-      {/* Callsign and last event only. Speed and ammunition used to be here as
-          well, which put a second, differently-defined airspeed on screen a few
-          inches from the one on the head-up display. */}
       <div className="flight-strip">
         <span id="flight-data">{followed ? followId.toUpperCase() : "STANDING BY"}</span>
         <span id="event">{event}</span>

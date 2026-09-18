@@ -55,7 +55,6 @@ export function MatchesPage() {
               </button>
             </div>
           ) : null}
-          {/* A replay somebody sent you, or one saved from a match here. */}
           <button onClick={() => fileInput.current?.click()}>
             <FolderOpen />
             Open a file

@@ -1,5 +1,6 @@
 import { densityRatio } from "./atmosphere";
 import { ENGINE } from "./config";
+import { clamp } from "../math";
 
 export interface EngineState {
   power: number;
@@ -10,7 +11,7 @@ export interface EngineState {
 }
 
 export function commandedPower(throttle: number): number {
-  const t = Math.max(0, Math.min(1, throttle));
+  const t = clamp(throttle, 0, 1);
   if (t <= ENGINE.afterburnerThreshold) return t / ENGINE.afterburnerThreshold;
   return 1 + (t - ENGINE.afterburnerThreshold) / (1 - ENGINE.afterburnerThreshold);
 }

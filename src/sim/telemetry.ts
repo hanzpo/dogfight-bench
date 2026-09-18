@@ -7,6 +7,7 @@ import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performa
 import { terrainAwareness, type TerrainAwareness } from "./terrain-awareness";
 import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
 import { degrees, radians } from "../math";
+import { clamp } from "../math";
 
 export interface AircraftTelemetry {
   id: string;
@@ -111,6 +112,7 @@ export interface AgentObservation {
   };
 }
 
+/** The world is right-handed and y-up, which puts north at -z and south at +z. */
 function compassHeading(east: number, south: number): number {
   return (((Math.atan2(east, -south) * 180) / Math.PI) + 360) % 360;
 }
@@ -152,7 +154,7 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     mach: aircraft.mach,
     headingDeg: compassHeading(axes.nose.x, axes.nose.z),
     trackDeg: compassHeading(aircraft.velocity.x, aircraft.velocity.z),
-    pitchDeg: (Math.asin(Math.max(-1, Math.min(1, axes.nose.y))) * 180) / Math.PI,
+    pitchDeg: (Math.asin(clamp(axes.nose.y, -1, 1)) * 180) / Math.PI,
     rollDeg: degrees(bank),
     flightPathAngleDeg,
     verticalSpeedMps: aircraft.velocity.y,
@@ -254,8 +256,8 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     closureRateMps: -relativeVelocity.dot(lineOfSight),
     bearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     elevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
-    angleOffTailDeg: (Math.acos(Math.max(-1, Math.min(1, opponentNose.dot(lineOfSight)))) * 180) / Math.PI,
-    antennaTrainAngleDeg: (Math.acos(Math.max(-1, Math.min(1, axes.nose.dot(lineOfSight)))) * 180) / Math.PI,
+    angleOffTailDeg: (Math.acos(clamp(opponentNose.dot(lineOfSight), -1, 1)) * 180) / Math.PI,
+    antennaTrainAngleDeg: (Math.acos(clamp(axes.nose.dot(lineOfSight), -1, 1)) * 180) / Math.PI,
     lineOfSightRateDegS: degrees(lineOfSightRate),
     energyAdvantageM: ownEnergy - opponentEnergy,
     altitudeAdvantageM: own.position.y - opponent.position.y,

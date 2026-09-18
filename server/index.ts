@@ -10,6 +10,7 @@ import { createStore, competitorFor, humanCompetitor, storeIsShared, type Compet
 import { runSeries, type SeriesRequest } from "./match-runner";
 import { SCRIPTED_NAMES, providers } from "./providers";
 import { priceOf } from "./pricing";
+import { clamp } from "../src/math";
 
 const app = new Hono();
 const store = createStore();
@@ -326,24 +327,7 @@ app.post("/api/live/:id/result", async (context) => {
     }
   }
 
-  const opponentInfo = body.opponentInfo;
-  const opponent: Competitor = scriptedName
-    ? {
-        id: `scripted:${scriptedName}:1`,
-        kind: "scripted",
-        displayName: scriptedName,
-        provider: "scripted",
-        model: scriptedName,
-        policyVersion: "1",
-        schema: "tactical",
-      }
-    : competitorFor({
-        name: opponentInfo?.name ?? ticket.opponentKind,
-        provider: ticket.opponentKind,
-        model: providers().get(ticket.opponentKind)?.describe().model ?? ticket.opponentKind,
-        policyVersion: providers().get(ticket.opponentKind)?.describe().policyVersion ?? "1",
-        schema: "tactical",
-      });
+  const opponent = opponentCompetitor(scriptedName, ticket.opponentKind, body.opponentInfo);
 
   const human = humanCompetitor(account.id, account.displayName, account.anonymous);
 
@@ -364,11 +348,39 @@ app.post("/api/live/:id/result", async (context) => {
   return context.json({ counted: true, matchId: ticket.id, provisional: human.provisional === true });
 });
 
+function opponentCompetitor(
+  scriptedName: string | undefined,
+  kind: string,
+  reported: { name: string; provider: string; model: string; policyVersion: string } | undefined,
+): Competitor {
+  if (scriptedName !== undefined) {
+    return {
+      id: `scripted:${scriptedName}:1`,
+      kind: "scripted",
+      displayName: scriptedName,
+      provider: "scripted",
+      model: scriptedName,
+      policyVersion: "1",
+      schema: "tactical",
+    };
+  }
+  // The server's own description of the model, not the browser's: the client
+  // reports which opponent it flew, never what that opponent's rating belongs to.
+  const described = providers().get(kind)?.describe();
+  return competitorFor({
+    name: reported?.name ?? kind,
+    provider: kind,
+    model: described?.model ?? kind,
+    policyVersion: described?.policyVersion ?? "1",
+    schema: "tactical",
+  });
+}
+
 const MAX_TIME_SCALE = 16;
 
 function boundedLimit(raw: string | undefined): number {
   const value = Number(raw ?? 50);
-  return Number.isFinite(value) ? Math.max(1, Math.min(200, Math.floor(value))) : 50;
+  return Number.isFinite(value) ? clamp(Math.floor(value), 1, 200) : 50;
 }
 
 export { app, store };

@@ -24,8 +24,6 @@ export function AccountMenu() {
         <button className="account-chip" onClick={() => setOpen(!open)}>
           <UserCircle />
           {account.displayName}
-          {/* A guest's display name is already "Guest"; badging it too reads as
-              "Guest guest". */}
           {account.isGuest ? null : <span className="badge">signed in</span>}
         </button>
         {open ? (

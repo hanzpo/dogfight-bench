@@ -6,12 +6,10 @@ import { terrainHeight } from "../sim/terrain";
 import type { AgentObservation, AircraftTelemetry } from "../sim/telemetry";
 import type { AircraftState, ControlInput } from "../sim/types";
 import { THROTTLE_VALUES, type Maneuver, type TacticalAction } from "./action";
-import { degrees, radians } from "../math";
-import { clamp } from "../math";
+import { clamp, degrees, radians } from "../math";
 
 const WORLD_UP = new Vector3(0, 1, 0);
 const GRAVITY = 9.80665;
-
 
 function toVector(values: [number, number, number]): Vector3 {
   return new Vector3(values[0], values[1], values[2]);

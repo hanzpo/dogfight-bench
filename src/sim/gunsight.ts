@@ -3,6 +3,7 @@ import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
 import { kineticEnergyJ, timeOfFlight } from "./ballistics";
 import { GUN, MIN_LETHAL_ENERGY_J } from "./config";
 import { bodyAxes } from "./flight-model";
+import { clamp } from "../math";
 
 export interface GunsightInput {
   position: Vector3;
@@ -64,7 +65,7 @@ export function solveGunsight(input: GunsightInput): GunsightSolution {
 
   const leadRangeM = aim.length();
   const direction = aim.clone().normalize();
-  const aimErrorRad = Math.acos(Math.max(-1, Math.min(1, direction.dot(axes.nose))));
+  const aimErrorRad = Math.acos(clamp(direction.dot(axes.nose), -1, 1));
   const closingSpeed = Math.abs(impactSpeedMps - input.targetVelocity.dot(direction));
 
   return {

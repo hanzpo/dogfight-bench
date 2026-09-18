@@ -50,7 +50,6 @@ export function saveSettings(settings: PilotInputSettings): void {
   }
 }
 
-
 function padCurve(value: number, deadzone: number): number {
   const magnitude = Math.abs(value);
   if (magnitude <= deadzone) return 0;
@@ -112,6 +111,17 @@ export class PilotInput {
     return this.captureRefused;
   }
 
+  /**
+   * A locked pointer reports a movement delta and never moves its client
+   * coordinates; an unlocked one does the opposite. The first event after
+   * attaching has no previous position to subtract.
+   */
+  private pointerDelta(movement: number, client: number, last: number): number {
+    if (this.locked) return clamp(movement, -200, 200);
+    if (Number.isNaN(last)) return 0;
+    return client - last;
+  }
+
   attach(target: HTMLElement): () => void {
     this.target = target;
 
@@ -126,16 +136,8 @@ export class PilotInput {
     };
 
     const move = (event: MouseEvent) => {
-      const dx = this.locked
-        ? clamp(event.movementX, -200, 200)
-        : Number.isNaN(this.lastClient.x)
-          ? 0
-          : event.clientX - this.lastClient.x;
-      const dy = this.locked
-        ? clamp(event.movementY, -200, 200)
-        : Number.isNaN(this.lastClient.y)
-          ? 0
-          : event.clientY - this.lastClient.y;
+      const dx = this.pointerDelta(event.movementX, event.clientX, this.lastClient.x);
+      const dy = this.pointerDelta(event.movementY, event.clientY, this.lastClient.y);
       this.lastClient.x = event.clientX;
       this.lastClient.y = event.clientY;
       this.pointer.x = event.clientX;

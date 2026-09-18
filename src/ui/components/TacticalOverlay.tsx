@@ -3,6 +3,7 @@ import { bulletImpactPoint, hitThresholdM, solveGunsight, wouldConnect } from ".
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
 import { radians } from "../../math";
+import { clamp } from "../../math";
 
 export function TacticalOverlay({
   stateRef,
@@ -69,7 +70,7 @@ export function TacticalOverlay({
         reticle.current?.setAttribute("transform", `translate(${aimX.toFixed(1)} ${aimY.toFixed(1)})`);
         const spreadRadians = Math.atan2(hitThresholdM(range), Math.max(range, 1));
         const fieldOfView = radians(viewer.camera.fov);
-        const radius = Math.max(6, Math.min(140, (spreadRadians / fieldOfView) * height));
+        const radius = clamp((spreadRadians / fieldOfView) * height, 6, 140);
         reticleRing.current?.setAttribute("r", radius.toFixed(1));
       }
 
@@ -83,7 +84,7 @@ export function TacticalOverlay({
         hide(arrow.current);
         const apparent = Math.atan2(16, Math.max(range, 1));
         const fieldOfView = radians(viewer.camera.fov);
-        const half = Math.max(11, Math.min(220, (apparent / fieldOfView) * height));
+        const half = clamp((apparent / fieldOfView) * height, 11, 220);
         boxRect.current?.setAttribute("x", (-half).toFixed(1));
         boxRect.current?.setAttribute("y", (-half).toFixed(1));
         boxRect.current?.setAttribute("width", (half * 2).toFixed(1));

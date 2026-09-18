@@ -13,6 +13,7 @@ import {
 import { trimLevelFlight } from "../src/sim/trim";
 import { DT, currentBank, fly, makeTestAircraft, turnRateDegS } from "./helpers/envelope";
 import { degrees } from "../src/math";
+import { clamp } from "../src/math";
 
 const COMBAT_MASS = MASS.emptyKg + MASS.internalFuelKg * MASS.startFuelFraction;
 
@@ -129,7 +130,7 @@ describe("energy manoeuvrability", () => {
       for (let i = 0; i < 2 / DT; i += 1) {
         aircraft.controls = {
           pitch: (target.loadFactor - 1) / (FLCS.maxLoadFactor - 1),
-          roll: Math.max(-1, Math.min(1, (bank - currentBank(aircraft)) * 1.2 - aircraft.angularVelocity.x * 0.3)),
+          roll: clamp((bank - currentBank(aircraft)) * 1.2 - aircraft.angularVelocity.x * 0.3, -1, 1),
           yaw: 0,
           throttle: 1,
           fire: false,
