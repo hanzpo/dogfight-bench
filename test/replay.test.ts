@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SCRIPTED_INFO } from "../src/agents/agent";
 import { EnergyFighterAgent } from "../src/agents/baselines";
-import { ReplayAgent, ReplayRecorder, parseReplay } from "../src/sim/replay";
+import { REPLAY_VERSION, ReplayAgent, ReplayRecorder, parseReplay } from "../src/sim/replay";
 import { neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 
@@ -23,7 +23,7 @@ describe("replays", () => {
   it("records frames, events, decisions and the result", async () => {
     const { sim, recorder } = await recordMatch();
     const replay = recorder.replay;
-    expect(replay.version).toBe(2);
+    expect(replay.version).toBe(REPLAY_VERSION);
     expect(replay.frames.length).toBeGreaterThan(50);
     expect(replay.decisions.length).toBeGreaterThan(10);
     expect(replay.events.length).toBeGreaterThan(0);
@@ -34,6 +34,9 @@ describe("replays", () => {
     expect(frame.aircraft).toHaveLength(2);
     expect(frame.aircraft[0]!.q).toHaveLength(4);
     expect(frame.t).toBeGreaterThan(0);
+    // Instrument state, so a replay can drive the same display as live flight.
+    expect(frame.aircraft[0]!.s).toHaveLength(7);
+    expect(frame.aircraft[0]!.s[2]).toBeGreaterThan(0);
   });
 
   it("round-trips through JSON and rejects a foreign file", async () => {
@@ -63,4 +66,37 @@ describe("replays", () => {
       expect(aircraft.damage.integrity).toBeCloseTo(original.damage.integrity, 9);
     }
   });
+});
+
+describe("replayed tracers", () => {
+  it("records both ends of every tracer, so playback never has to guess", async () => {
+    const scenario = { ...neutralMerge, maxTime: 6 };
+    const sim = new DogfightSimulation(scenario);
+    const recorder = new ReplayRecorder(scenario, {
+      "blue-1": SCRIPTED_INFO("gunner"),
+      "red-1": SCRIPTED_INFO("target"),
+    });
+    await sim.runHeadless((state) => {
+      // Hold the trigger down so there are rounds in the air to record.
+      state.aircraft[0]!.controls.fire = true;
+      recorder.capture(state);
+    });
+
+    const withTracers = recorder.replay.frames.filter((frame) => (frame.projectiles?.length ?? 0) > 0);
+    expect(withTracers.length).toBeGreaterThan(5);
+
+    for (const frame of withTracers) {
+      for (const segment of frame.projectiles!) {
+        expect(segment).toHaveLength(6);
+        const [ax, ay, az, bx, by, bz] = segment;
+        const length = Math.hypot(bx! - ax!, by! - ay!, bz! - az!);
+        // A streak is a short piece of the round's path, not a stub and not a
+        // vertical stroke invented by the viewer.
+        expect(length).toBeLessThan(40);
+        // Rounds travel far faster horizontally than they fall, so a tracer is
+        // never close to vertical.
+        expect(Math.abs(by! - ay!)).toBeLessThan(length * 0.9);
+      }
+    }
+  }, 60_000);
 });

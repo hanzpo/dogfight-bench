@@ -166,6 +166,13 @@ at that range; the bandit boxed with a lead line; an arrow when they are off
 screen; and a shoot cue that lights exactly when the simulation would authorise
 the trigger.
 
+The world is analytic terrain -- layered value noise with a continental mask,
+ridged mountains and detail -- so there is no heightmap to ship and any point
+can be sampled directly, which the flight model needs for height above ground
+on every tick. It has coastline, inland water and snow above the treeline, and
+three cloud decks, because altitude over featureless ground is unreadable.
+Water is a floor rather than a hole: sea level is as low as anything flies.
+
 **Observer panel** is everything else -- angle off the bandit's tail, the energy
 ledger, predicted miss distance, their fuel and damage. None of that is on an
 instrument in any cockpit, so it is presented as data: one plain monospace
@@ -195,6 +202,10 @@ the model still exists -- so a published result can be checked by anyone.
 Real-time matches replay only approximately, because a model's answer lands
 whenever the network returns it rather than on the tick it was asked for.
 `runHeadless` is the reproducible mode.
+
+Playback shows the same instruments the pilot had, reconstructed from recorded
+state, so a decision can be judged against what was actually on the display
+rather than guessed at from outside.
 
 ## Deploying
 

@@ -112,21 +112,12 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 /* A HUD is a projection on glass, so everything it draws glows a little. */
 .flight-display > g { filter: drop-shadow(0 0 3px #0b3d1f) drop-shadow(0 0 1px #000c); }
 
-/* Tapes hug the edges of the view; the heading runs across the top and the
-   engine and stores sit along the bottom, as they do on the real display. */
-.speed-group { transform: translate(clamp(26px, 5vw, 92px), 0); }
-.alt-group { transform: translate(calc(100% - clamp(26px, 5vw, 92px)), 0); }
-.alt-group .tape-box, .alt-group .tape-caption, .alt-group .tape-sub { transform: translateY(50%); }
-.speed-group .tape-box, .speed-group .tape-caption, .speed-group .tape-sub { transform: translateY(50%); }
-.heading-group { transform: translate(50%, 86px); }
-.engine-group { transform: translate(clamp(26px, 5vw, 92px), calc(100% - 96px)); }
-.stores-group { transform: translate(calc(100% - clamp(26px, 5vw, 92px)), calc(100% - 96px)); }
-.adi { transform: translate(clamp(196px, 15vw, 280px), 50%); }
-
-/* The observer panel occupies the right edge when open, so the altitude tape
-   moves inboard of it rather than hiding underneath. */
-.flight-display.with-observer .alt-group { transform: translate(calc(100% - 300px), 0); }
-.flight-display.with-observer .stores-group { transform: translate(calc(100% - 300px), calc(100% - 96px)); }
+/* Group positions are set in JavaScript from the measured viewport.
+   Percentage values in a CSS transform on an SVG element resolve against
+   different boxes in different engines -- Chromium against the view box,
+   WebKit against the element's own -- which silently parked half the head-up
+   display in the top-left corner on Safari. Pixels from a measurement are the
+   only portable answer. */
 
 .tape-ticks line { stroke: var(--hud); stroke-width: 1.2; opacity: .75; }
 .tape-ticks text { font-size: 10px; opacity: .85; }
@@ -160,6 +151,40 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 .adi-bezel { fill: none; stroke: var(--hud); stroke-width: 1.4; }
 .adi-readout { font-size: 10px; opacity: .85; }
 
+/* ---------- Tactical overlay ----------
+   Gun symbology, which genuinely is something the pilot sees, so it keeps the
+   head-up display's treatment. Full viewport: the overlay projects in viewport
+   coordinates, and without an explicit size the SVG falls back to its intrinsic
+   300x150 and folds the whole thing into the top-left corner. */
+
+.tactical {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 2; pointer-events: none;
+  --hud: #6bff9e;
+  --shoot: #b9ff6b;
+}
+.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
+
+.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
+.reticle circle { stroke: inherit; }
+.reticle .pip { fill: var(--hud); stroke: none; }
+
+.target-box { filter: drop-shadow(0 0 3px #000a); }
+.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
+.target-box text { fill: #ffd98a; }
+
+/* Dashed, so it reads as a correction to close rather than a solid object. */
+.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
+
+.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
+
+.shoot-cue text {
+  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
+  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
+  text-anchor: middle;
+}
+.shoot-cue { animation: pulse .7s ease-in-out infinite; }
+
 /* ---------- Observer panel ----------
    Deliberately not a HUD. This is the benchmark's omniscient view, so it reads
    as data: plain monospace, no glow, one block, one place. */
@@ -176,9 +201,19 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
   position: absolute; top: 8px; right: 8px; min-height: 0; padding: 2px 7px;
   font: 9px "JetBrains Mono"; background: transparent; border-color: #ffffff22;
 }
-/* Collapsed, it stays reachable without covering the right edge of the display. */
-.observer.collapsed { width: auto; padding: 6px 10px; }
+/* Collapsed it becomes a tab on the edge of the screen, rather than a small
+   floating box with a button loose inside it. */
+.observer.collapsed {
+  width: auto; padding: 0; background: none; border: none;
+  top: 82px; right: 0;
+}
 .observer.collapsed header, .observer.collapsed section { display: none; }
+.observer.collapsed .observer-toggle {
+  position: static; padding: 7px 12px; letter-spacing: .18em;
+  background: #080d10ee; border: 1px solid #ffffff1a; border-right: none;
+  color: #9fb2af;
+}
+.observer.collapsed .observer-toggle:hover { color: var(--accent); border-color: var(--accent); border-right: none; }
 .observer header span:first-child { font-size: 9px; letter-spacing: .24em; color: #e7f0ee; }
 .observer-note { font-size: 8px; color: #6f817e; line-height: 1.4; }
 .observer h2 {

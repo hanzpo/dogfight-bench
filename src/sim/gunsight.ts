@@ -46,6 +46,25 @@ export function hitThresholdM(rangeM: number): number {
 /** Effective radius of an F-16 as a target: not the hull sphere, the structure. */
 export const TARGET_RADIUS_M = 4.5;
 
+/**
+ * Longest time of flight worth shooting at, seconds.
+ *
+ * The rounds still carry lethal energy well beyond this, but a target that has
+ * five seconds of warning is simply somewhere else when they arrive. Without a
+ * ceiling the aim geometry lines up at five kilometres and both the shoot cue
+ * and the agents' triggers fire at a shot nobody could make.
+ */
+export const MAX_TRACKING_TIME_OF_FLIGHT_S = 2.0;
+
+/** True when a burst fired now would actually connect. */
+export function wouldConnect(solution: GunsightSolution): boolean {
+  return (
+    solution.inLethalRange &&
+    solution.timeOfFlightS < MAX_TRACKING_TIME_OF_FLIGHT_S &&
+    solution.predictedMissM < hitThresholdM(solution.leadRangeM)
+  );
+}
+
 export function solveGunsight(input: GunsightInput): GunsightSolution {
   const air = atmosphere(input.position.y);
   const axes = bodyAxes(input.orientation);

@@ -64,6 +64,18 @@ export function FlightDisplay({
   const throttleFill = useRef<SVGRectElement>(null);
   const aoaBracket = useRef<SVGGElement>(null);
   const hudField = useRef<SVGEllipseElement>(null);
+  const groups = useRef<Record<string, SVGGElement | null>>({});
+  /**
+   * Last content written into each generated group.
+   *
+   * Tapes and the ladder are built by parsing markup, which is far too
+   * expensive to redo sixty times a second for a readout that changes every few
+   * frames. Skipping the rebuild when the picture has not moved is most of the
+   * cost of this component.
+   */
+  const rendered = useRef<Record<string, string>>({});
+  const observer = useRef(observerOpen);
+  observer.current = observerOpen;
 
   useEffect(() => {
     let frame = 0;
@@ -78,6 +90,8 @@ export function FlightDisplay({
       const width = svg.clientWidth;
       const height = svg.clientHeight;
       if (!own || !width || !height) return;
+
+      layout(groups.current, width, height, observer.current);
 
       const axes = bodyAxes(own.orientation);
       const speed = own.velocity.length();
@@ -114,16 +128,25 @@ export function FlightDisplay({
       throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
 
       // --- moving tapes ----------------------------------------------------
-      renderTape(speedTicks.current, equivalentAirspeed(speed, own.position.y) * KNOTS, 20, 100, height, false);
-      renderTape(altTicks.current, own.position.y * FEET, 500, 2_000, height, true);
-      renderHeadingTape(headingTicks.current, heading, width);
+      renderTape(
+        speedTicks.current,
+        rendered.current,
+        "speed",
+        equivalentAirspeed(speed, own.position.y) * KNOTS,
+        20,
+        100,
+        height,
+        false,
+      );
+      renderTape(altTicks.current, rendered.current, "alt", own.position.y * FEET, 500, 2_000, height, true);
+      renderHeadingTape(headingTicks.current, rendered.current, heading, width);
 
       // --- attitude --------------------------------------------------------
       if (cockpit) {
         conformal.current?.setAttribute("visibility", "visible");
         sizeHudField(hudField.current, viewer, width, height);
         adi.current?.setAttribute("visibility", "hidden");
-        drawLadder(ladder.current, own.position, axes.nose, viewer, width, height);
+        drawLadder(ladder.current, rendered.current, own.position, axes.nose, viewer, width, height);
 
         // Flight path marker: where the aircraft is actually going, which is
         // not where the nose points whenever there is any angle of attack.
@@ -165,6 +188,10 @@ export function FlightDisplay({
     text.current[key] = node;
   };
 
+  const group = (key: string) => (node: SVGGElement | null) => {
+    groups.current[key] = node;
+  };
+
   return (
     <svg ref={root} className={`flight-display${observerOpen ? " with-observer" : ""}`} aria-hidden>
       {/* ---------- conformal head-up symbology (cockpit only) ---------- */}
@@ -187,7 +214,7 @@ export function FlightDisplay({
       </g>
 
       {/* ---------- attitude indicator (external views) ---------- */}
-      <g ref={adi} className="adi" transform="translate(126 300)" visibility="hidden">
+      <g ref={setBoth(adi, group("adi"))} className="adi" visibility="hidden">
         <clipPath id="adi-clip">
           <circle r="52" />
         </clipPath>
@@ -224,8 +251,9 @@ export function FlightDisplay({
       </g>
 
       {/* ---------- airspeed, left ---------- */}
-      <g className="tape-group speed-group" transform="translate(30 0)">
+      <g ref={group("speed")} className="tape-group speed-group">
         <g ref={speedTicks} className="tape-ticks" />
+        <g ref={group("speedReadout")}>
         <g className="tape-box">
           <path d="M 0 -13 L 58 -13 L 58 13 L 0 13 L -8 0 Z" />
           <text ref={label("cas")} x="50" y="5" textAnchor="end">
@@ -244,11 +272,13 @@ export function FlightDisplay({
         <text ref={label("aoa")} className="tape-sub" x="0" y="74">
           0.0° AOA
         </text>
+        </g>
       </g>
 
       {/* ---------- altitude, right ---------- */}
-      <g className="tape-group alt-group">
+      <g ref={group("alt")} className="tape-group alt-group">
         <g ref={altTicks} className="tape-ticks" />
+        <g ref={group("altReadout")}>
         <g className="tape-box">
           <path d="M 0 -13 L -72 -13 L -72 13 L 0 13 L 8 0 Z" />
           <text ref={label("alt")} x="-8" y="5" textAnchor="end">
@@ -264,10 +294,11 @@ export function FlightDisplay({
         <text ref={label("agl")} className="tape-sub" y="58" textAnchor="end">
           R 0
         </text>
+        </g>
       </g>
 
       {/* ---------- heading, top ---------- */}
-      <g className="heading-group">
+      <g ref={group("heading")} className="heading-group">
         <g ref={headingTicks} className="tape-ticks" />
         <path className="heading-caret" d="M 0 4 L -6 13 L 6 13 Z" />
         <g className="tape-box">
@@ -279,7 +310,7 @@ export function FlightDisplay({
       </g>
 
       {/* ---------- engine and stores, bottom ---------- */}
-      <g className="engine-group">
+      <g ref={group("engine")} className="engine-group">
         <text className="tape-caption" y="-8">
           THROTTLE
         </text>
@@ -293,7 +324,7 @@ export function FlightDisplay({
         </text>
       </g>
 
-      <g className="stores-group">
+      <g ref={group("stores")} className="stores-group">
         <text className="tape-caption" y="-8" textAnchor="end">
           GUN
         </text>
@@ -306,6 +337,43 @@ export function FlightDisplay({
 }
 
 const UP = new Vector3(0, 1, 0);
+
+/** Lets one element feed two refs. */
+function setBoth<T>(a: { current: T | null }, b: (node: T | null) => void) {
+  return (node: T | null) => {
+    a.current = node;
+    b(node);
+  };
+}
+
+/**
+ * Positions every instrument group from the measured viewport.
+ *
+ * Done here rather than in CSS because percentage transforms on SVG elements
+ * are not portable between browser engines.
+ */
+function layout(
+  groups: Record<string, SVGGElement | null>,
+  width: number,
+  height: number,
+  observerOpen: boolean,
+): void {
+  const margin = Math.min(Math.max(width * 0.05, 26), 92);
+  // The observer panel owns the right edge when it is open, so the altitude
+  // tape and stores move inboard of it rather than hiding underneath.
+  const rightEdge = width - (observerOpen ? 300 : margin);
+  const place = (key: string, x: number, y: number) =>
+    groups[key]?.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+
+  place("speed", margin, 0);
+  place("speedReadout", 0, height / 2);
+  place("alt", rightEdge, 0);
+  place("altReadout", 0, height / 2);
+  place("heading", width / 2, 86);
+  place("engine", margin, height - 96);
+  place("stores", rightEdge, height - 96);
+  place("adi", Math.min(Math.max(width * 0.15, 196), 280), height / 2);
+}
 
 /** Sizes the clip region to the combiner's field of view for this camera. */
 function sizeHudField(
@@ -342,6 +410,8 @@ function compass(direction: Vector3): number {
  */
 function renderTape(
   group: SVGGElement | null,
+  cache: Record<string, string>,
+  key: string,
   value: number,
   step: number,
   span: number,
@@ -349,6 +419,10 @@ function renderTape(
   right: boolean,
 ): void {
   if (!group) return;
+  // Ticks only move in whole pixels; rebuilding for smaller changes is waste.
+  const signature = `${Math.round(value)}|${Math.round(height)}`;
+  if (cache[key] === signature) return;
+  cache[key] = signature;
   const centre = height / 2;
   const pixelsPerUnit = (height * 0.62) / span;
   const first = Math.ceil((value - span / 2) / step) * step;
@@ -368,11 +442,22 @@ function renderTape(
       );
     }
   }
-  group.innerHTML = marks.join("");
+  const markup = marks.join("");
+  if (cache["ladder"] === markup) return;
+  cache["ladder"] = markup;
+  group.innerHTML = markup;
 }
 
-function renderHeadingTape(group: SVGGElement | null, heading: number, width: number): void {
+function renderHeadingTape(
+  group: SVGGElement | null,
+  cache: Record<string, string>,
+  heading: number,
+  width: number,
+): void {
   if (!group) return;
+  const signature = `${heading.toFixed(1)}|${Math.round(width)}`;
+  if (cache["heading"] === signature) return;
+  cache["heading"] = signature;
   const centre = width / 2;
   const pixelsPerDegree = Math.min(width * 0.32, 420) / 60;
   const marks: string[] = [];
@@ -389,7 +474,10 @@ function renderHeadingTape(group: SVGGElement | null, heading: number, width: nu
       );
     }
   }
-  group.innerHTML = marks.join("");
+  const markup = marks.join("");
+  if (cache["ladder"] === markup) return;
+  cache["ladder"] = markup;
+  group.innerHTML = markup;
 }
 
 /**
@@ -401,6 +489,7 @@ function renderHeadingTape(group: SVGGElement | null, heading: number, width: nu
  */
 function drawLadder(
   group: SVGGElement | null,
+  cache: Record<string, string>,
   position: Vector3,
   nose: Vector3,
   viewer: DogfightViewer,
@@ -463,5 +552,8 @@ function drawLadder(
       }
     }
   }
-  group.innerHTML = marks.join("");
+  const markup = marks.join("");
+  if (cache["ladder"] === markup) return;
+  cache["ladder"] = markup;
+  group.innerHTML = markup;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { bulletImpactPoint, hitThresholdM, solveGunsight } from "../../sim/gunsight";
+import { bulletImpactPoint, hitThresholdM, solveGunsight, wouldConnect } from "../../sim/gunsight";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
 
@@ -144,12 +144,18 @@ export function TacticalOverlay({
       }
 
       // --- Shoot cue --------------------------------------------------------
-      const canHit = solution.inLethalRange && solution.predictedMissM < hitThresholdM(solution.leadRangeM);
-      if (canHit && own.ammo > 0 && !aim.behind) {
+      const canHit = wouldConnect(solution) && own.ammo > 0;
+      if (canHit) {
         show(shootCue.current);
-        // Anchored to the reticle, so the cue reads as a property of the shot
-        // rather than a message that happens to be on screen.
-        shootCue.current?.setAttribute("transform", `translate(${aimX.toFixed(1)} ${(aimY - 46).toFixed(1)})`);
+        // Anchored to the reticle when the reticle is on screen, so the cue
+        // reads as a property of the shot. When it is not -- which is most of
+        // the time in an orbiting external view -- it falls back to a fixed
+        // place, because a cue drawn off the edge of the screen is no cue.
+        const onScreenAim =
+          !aim.behind && aimX > 30 && aimX < width - 30 && aimY > 70 && aimY < height - 130;
+        const cueX = onScreenAim ? aimX : width / 2;
+        const cueY = onScreenAim ? aimY - 46 : height * 0.74;
+        shootCue.current?.setAttribute("transform", `translate(${cueX.toFixed(1)} ${cueY.toFixed(1)})`);
         reticleRing.current?.setAttribute("stroke", "var(--shoot)");
       } else {
         hide(shootCue.current);

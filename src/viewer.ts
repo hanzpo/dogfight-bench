@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { TERRAIN_EXTENT_M, terrainHeight } from "./sim/terrain";
+import { SEA_LEVEL_M, TERRAIN_EXTENT_M, terrainElevation, terrainHeight } from "./sim/terrain";
+import { TRACER_TRAIL_SECONDS } from "./sim/tracer";
 import type { MatchState } from "./sim/types";
 
 /**
@@ -22,10 +23,20 @@ export interface ViewerAircraft {
   integrity?: number;
 }
 
+/**
+ * A tracer as a finished line segment: where the round was, and where it is.
+ *
+ * Both ends are resolved by whoever produces the snapshot, so the renderer has
+ * no direction to infer and no fallback to get wrong. The previous shape gave
+ * the renderer a position and an optional direction, and replays -- which had
+ * no direction to give -- fell back to a short vertical stroke, so every
+ * replayed burst was drawn as a row of vertical lines.
+ */
 export interface ViewerTracer {
-  p: [number, number, number];
-  /** Direction of travel. Absent in replays, which store positions only. */
-  d?: [number, number, number];
+  /** Tail: where the round was a few milliseconds ago. */
+  a: [number, number, number];
+  /** Head: where the round is now. */
+  b: [number, number, number];
 }
 
 /**
@@ -82,13 +93,86 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       afterburner: aircraft.engine.afterburner,
       integrity: aircraft.damage.integrity,
     })),
-    tracers: state.projectiles.slice(-400).map((shot) => ({
-      p: shot.position.toArray() as [number, number, number],
-      d: shot.velocity.clone().normalize().toArray() as [number, number, number],
-    })),
+    tracers: state.projectiles.slice(-MAX_TRACERS).map((shot) => {
+      const speed = shot.velocity.length();
+      // The streak is where the round has been over the last few milliseconds,
+      // which for a round that has only just left the muzzle is barely
+      // anywhere -- drawing a full-length tail puts it out behind the tailplane.
+      const trail = Math.min(TRACER_TRAIL_SECONDS * speed, speed * shot.age);
+      const direction = shot.velocity.clone().divideScalar(Math.max(speed, 1e-6));
+      return {
+        a: shot.position.clone().addScaledVector(direction, -trail).toArray() as [number, number, number],
+        b: shot.position.toArray() as [number, number, number],
+      };
+    }),
     impacts,
   };
 }
+
+/**
+ * Procedural cloud sheet.
+ *
+ * Generated rather than shipped: it keeps the bundle free of a texture asset
+ * and lets the coverage be tuned in one place. Alpha is fractal noise with a
+ * floor subtracted, which leaves broken cloud rather than uniform haze.
+ */
+function cloudTexture(size = 512): THREE.Texture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d")!;
+  const image = context.createImageData(size, size);
+
+  const hash = (ix: number, iy: number) => {
+    let h = Math.imul(ix | 0, 374_761_393) + Math.imul(iy | 0, 668_265_263);
+    h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
+  };
+  // Wrapping value noise, so the sheet tiles without a visible seam.
+  const value = (x: number, y: number, period: number) => {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const fx = x - ix;
+    const fy = y - iy;
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const wrap = (v: number) => ((v % period) + period) % period;
+    const a = hash(wrap(ix), wrap(iy));
+    const b = hash(wrap(ix + 1), wrap(iy));
+    const c = hash(wrap(ix), wrap(iy + 1));
+    const d = hash(wrap(ix + 1), wrap(iy + 1));
+    return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+  };
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      let sum = 0;
+      let amplitude = 1;
+      let total = 0;
+      let period = 4;
+      for (let octave = 0; octave < 5; octave += 1) {
+        sum += value((x / size) * period, (y / size) * period, period) * amplitude;
+        total += amplitude;
+        amplitude *= 0.5;
+        period *= 2;
+      }
+      const density = Math.max(0, sum / total - 0.42) / 0.58;
+      const index = (y * size + x) * 4;
+      image.data[index] = 255;
+      image.data[index + 1] = 255;
+      image.data[index + 2] = 255;
+      image.data[index + 3] = Math.min(255, Math.round(density * 300));
+    }
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** Most tracers drawn at once; a full burst is about a hundred rounds in flight. */
+const MAX_TRACERS = 420;
 
 /** Pilot's eye in body axes: up out of the seat, forward under the canopy. */
 const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
@@ -101,7 +185,17 @@ export class DogfightViewer {
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.3, 400_000);
   readonly controls: OrbitControls;
   private readonly aircraftMeshes = new Map<string, THREE.Object3D>();
-  private readonly projectileGroup = new THREE.Group();
+  /**
+   * All tracers in one buffer.
+   *
+   * The previous version allocated a geometry, a material binding and a Line
+   * object for every round on screen, every frame -- several hundred objects a
+   * frame during a burst, all of them garbage. One pre-allocated buffer with a
+   * draw range costs nothing per frame.
+   */
+  private readonly tracerGeometry = new THREE.BufferGeometry();
+  private readonly tracerPositions = new Float32Array(MAX_TRACERS * 6);
+  private readonly tracerLines: THREE.LineSegments;
   private readonly effectGroup = new THREE.Group();
   private sky?: THREE.Mesh;
   private readonly plumes = new Map<string, THREE.Mesh>();
@@ -140,6 +234,11 @@ export class DogfightViewer {
 
   private readonly onResize = () => this.resize();
   private resizeObserver?: ResizeObserver;
+  /** Smoothed frame time, milliseconds. */
+  private frameTime = 16;
+  private lastFrameAt = 0;
+  private renderScale = 1;
+  private lastScaleChangeAt = 0;
   private pixelRatioQuery?: MediaQueryList;
 
   constructor(private readonly host: HTMLElement) {
@@ -150,7 +249,7 @@ export class DogfightViewer {
       // long; without a logarithmic depth buffer the model z-fights itself.
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.applyPixelRatio();
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -167,16 +266,20 @@ export class DogfightViewer {
     this.controls.rotateSpeed = 0.65;
     this.controls.zoomSpeed = 0.9;
 
-    this.scene.fog = new THREE.FogExp2(0x9fbdd0, 0.0000115);
+    this.scene.fog = new THREE.FogExp2(0x9fbdd0, 0.0000195);
     this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x6b5a3a, 1.6));
     const sun = new THREE.DirectionalLight(0xfff1d0, 3.0);
     sun.position.set(-9_000, 11_000, 6_000);
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0x9ab2c4, 0.8));
-    this.scene.add(this.projectileGroup);
+    this.tracerGeometry.setAttribute("position", new THREE.BufferAttribute(this.tracerPositions, 3));
+    this.tracerLines = new THREE.LineSegments(this.tracerGeometry, this.tracerMaterial);
+    this.tracerLines.frustumCulled = false;
+    this.scene.add(this.tracerLines);
     this.scene.add(this.effectGroup);
     this.createSky();
     this.createTerrain();
+    this.createClouds();
     this.resize();
     addEventListener("resize", this.onResize);
 
@@ -282,49 +385,138 @@ export class DogfightViewer {
      * that the fog swallows it long before its edge, puts the horizon where the
      * pitch ladder says it is.
      */
-    const seaLevel = new THREE.Mesh(
-      new THREE.CircleGeometry(260_000, 64).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x6e7658, fog: true }),
+    // Sampled from the same height field at a coarse resolution, so there is no
+    // seam where it meets the detailed mesh -- a flat disc in a single colour
+    // left a hard line across the middle distance.
+    this.scene.add(
+      this.buildTerrainMesh(
+        new THREE.RingGeometry(TERRAIN_EXTENT_M * 0.48, 260_000, 96, 28).rotateX(-Math.PI / 2),
+      ),
     );
-    seaLevel.position.y = -8;
-    this.scene.add(seaLevel);
 
     // The mesh samples the same height field the simulation collides against,
     // so what the viewer draws as ground is exactly what the physics treats as
     // ground.
-    const segments = 220;
-    const geometry = new THREE.PlaneGeometry(TERRAIN_EXTENT_M, TERRAIN_EXTENT_M, segments, segments);
-    geometry.rotateX(-Math.PI / 2);
+    const segments = 300;
+    this.scene.add(
+      this.buildTerrainMesh(
+        new THREE.PlaneGeometry(TERRAIN_EXTENT_M, TERRAIN_EXTENT_M, segments, segments).rotateX(-Math.PI / 2),
+      ),
+    );
+
+    // Sea surface. Slightly translucent so the shallows read as shallow, and
+    // rendered after the terrain so the sea floor shows through.
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(520_000, 520_000).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({
+        color: 0x1d4763,
+        roughness: 0.18,
+        metalness: 0.55,
+        transparent: true,
+        opacity: 0.88,
+      }),
+    );
+    water.position.y = SEA_LEVEL_M;
+    water.renderOrder = 1;
+    this.scene.add(water);
+  }
+
+  /**
+   * Displaces and tints a flat grid into terrain.
+   *
+   * Shared by the detailed mesh and the coarse ring beyond it, so both read the
+   * same height field and the same colour ramp and meet without a seam.
+   */
+  private buildTerrainMesh(geometry: THREE.BufferGeometry): THREE.Mesh {
     const positions = geometry.attributes["position"]!;
     for (let i = 0; i < positions.count; i++) {
-      positions.setY(i, terrainHeight(positions.getX(i), positions.getZ(i)));
+      // Elevation, not collision height, so the sea floor keeps its shape and
+      // the coastline is a slope rather than a cliff at the waterline.
+      positions.setY(i, terrainElevation(positions.getX(i), positions.getZ(i)));
     }
     geometry.computeVertexNormals();
 
-    // Tint by height and steepness so the relief reads from altitude: valley
-    // scrub, dry slopes, and bare rock on the faces too steep to hold soil.
+    /**
+     * Tint by elevation and steepness.
+     *
+     * Height alone gives a layer cake; adding slope puts rock on the faces too
+     * steep to hold soil and keeps the flats green, which is what makes relief
+     * legible from altitude.
+     */
     const normals = geometry.attributes["normal"]!;
     const colours = new Float32Array(positions.count * 3);
-    const valley = new THREE.Color(0x5c6b45);
-    const slope = new THREE.Color(0x8a7f57);
-    const rock = new THREE.Color(0x6d675f);
+    const seabed = new THREE.Color(0x24384a);
+    const shore = new THREE.Color(0xa99a72);
+    const lowland = new THREE.Color(0x55703f);
+    const upland = new THREE.Color(0x6d6f4a);
+    const rock = new THREE.Color(0x6b6560);
+    const snow = new THREE.Color(0xd8dde0);
     const shade = new THREE.Color();
+
     for (let i = 0; i < positions.count; i++) {
-      const height = Math.min(1, positions.getY(i) / 700);
+      const elevation = positions.getY(i);
       const steepness = 1 - Math.min(1, Math.max(0, normals.getY(i)));
-      shade.copy(valley).lerp(slope, height).lerp(rock, Math.min(1, steepness * 3.2));
+      if (elevation < SEA_LEVEL_M) {
+        shade.copy(seabed).lerp(shore, Math.max(0, 1 + elevation / 220));
+      } else {
+        shade.copy(shore);
+        shade.lerp(lowland, Math.min(1, elevation / 130));
+        shade.lerp(upland, Math.min(1, Math.max(0, (elevation - 420) / 700)));
+        shade.lerp(rock, Math.min(1, steepness * 2.6));
+        shade.lerp(snow, Math.min(1, Math.max(0, (elevation - 1_500) / 500)));
+      }
       colours[i * 3] = shade.r;
       colours[i * 3 + 1] = shade.g;
       colours[i * 3 + 2] = shade.b;
     }
     geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
 
-    this.scene.add(
-      new THREE.Mesh(
-        geometry,
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 }),
-      ),
+    return new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }),
     );
+  }
+
+  /**
+   * Cloud decks.
+   *
+   * Altitude is almost unreadable over open terrain -- a mountain range looks
+   * the same from ten thousand feet as from twenty. Layers of cloud at known
+   * heights fix that: passing down through one, or seeing two below you, says
+   * more about where you are than any instrument.
+   */
+  private createClouds(): void {
+    const texture = cloudTexture();
+    const decks: Array<{ altitude: number; repeat: number; opacity: number; colour: number }> = [
+      { altitude: 1_500, repeat: 26, opacity: 0.5, colour: 0xf2f6f8 },
+      { altitude: 3_400, repeat: 16, opacity: 0.42, colour: 0xe9f0f5 },
+      { altitude: 6_200, repeat: 9, opacity: 0.3, colour: 0xdfe9f2 },
+    ];
+
+    for (const deck of decks) {
+      const layer = texture.clone();
+      layer.needsUpdate = true;
+      layer.wrapS = THREE.RepeatWrapping;
+      layer.wrapT = THREE.RepeatWrapping;
+      layer.repeat.set(deck.repeat, deck.repeat);
+      layer.offset.set(deck.altitude / 1_000, deck.altitude / 700);
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(150_000, 150_000).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({
+          map: layer,
+          color: deck.colour,
+          transparent: true,
+          opacity: deck.opacity,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          fog: true,
+        }),
+      );
+      mesh.position.y = deck.altitude;
+      mesh.renderOrder = 2;
+      this.scene.add(mesh);
+    }
   }
 
   private ensureAircraft(snapshot: ViewerSnapshot): void {
@@ -355,6 +547,7 @@ export class DogfightViewer {
 
   render(snapshot: ViewerSnapshot): void {
     if (this.contextLost) return;
+    this.adaptResolution();
     this.ensureAircraft(snapshot);
     for (const aircraft of snapshot.aircraft) {
       const mesh = this.aircraftMeshes.get(aircraft.id);
@@ -367,16 +560,22 @@ export class DogfightViewer {
     this.spawnEffects(snapshot);
     this.ageEffects(snapshot.time);
 
-    this.projectileGroup.clear();
+    let vertex = 0;
     for (const tracer of snapshot.tracers) {
-      const head = new THREE.Vector3().fromArray(tracer.p);
-      const tail = tracer.d
-        ? head.clone().addScaledVector(new THREE.Vector3().fromArray(tracer.d), -26)
-        : head.clone().addScaledVector(new THREE.Vector3(0, 1, 0), -3);
-      this.projectileGroup.add(
-        new THREE.Line(new THREE.BufferGeometry().setFromPoints([tail, head]), this.tracerMaterial),
-      );
+      if (vertex >= MAX_TRACERS * 6) break;
+      const [ax, ay, az] = tracer.a;
+      const [bx, by, bz] = tracer.b;
+      // A round fired this instant has no streak yet.
+      if ((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2 < 0.25) continue;
+      this.tracerPositions[vertex++] = ax;
+      this.tracerPositions[vertex++] = ay;
+      this.tracerPositions[vertex++] = az;
+      this.tracerPositions[vertex++] = bx;
+      this.tracerPositions[vertex++] = by;
+      this.tracerPositions[vertex++] = bz;
     }
+    this.tracerGeometry.setDrawRange(0, vertex / 3);
+    this.tracerGeometry.attributes["position"]!.needsUpdate = true;
 
     const follow =
       snapshot.aircraft.find((aircraft) => aircraft.id === this.followId) ?? snapshot.aircraft[0];
@@ -490,6 +689,43 @@ export class DogfightViewer {
       effect.mesh.scale.setScalar(1 + progress * effect.grow);
       (effect.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - progress) * 0.6;
     }
+  }
+
+  /**
+   * Trades resolution for frame rate when the machine cannot keep up.
+   *
+   * At a device pixel ratio of two this scene is drawn at 3200x1800, which a
+   * weak GPU cannot sustain. That is not merely ugly: the render loop then
+   * monopolises the main thread, React never gets to commit, and the interface
+   * stops responding -- navigating to another page changes the URL and nothing
+   * happens. Dropping the render scale costs some sharpness and keeps the
+   * application usable, which is the better trade every time.
+   */
+  private adaptResolution(): void {
+    const now = performance.now();
+    if (this.lastFrameAt > 0) {
+      const delta = now - this.lastFrameAt;
+      // Ignore long gaps from a backgrounded tab.
+      if (delta < 500) this.frameTime += (delta - this.frameTime) * 0.1;
+    }
+    this.lastFrameAt = now;
+
+    // Hysteresis: never react to a single slow frame, and never oscillate.
+    if (now - this.lastScaleChangeAt < 1_500) return;
+    const previous = this.renderScale;
+    if (this.frameTime > 34 && this.renderScale > 0.5) this.renderScale = Math.max(0.5, this.renderScale - 0.25);
+    else if (this.frameTime < 15 && this.renderScale < 1) this.renderScale = Math.min(1, this.renderScale + 0.25);
+
+    if (this.renderScale !== previous) {
+      this.lastScaleChangeAt = now;
+      this.frameTime = 16;
+      this.applyPixelRatio();
+      this.resize();
+    }
+  }
+
+  private applyPixelRatio(): void {
+    this.renderer.setPixelRatio(Math.max(0.5, Math.min(devicePixelRatio, 2) * this.renderScale));
   }
 
   /**

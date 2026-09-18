@@ -190,8 +190,12 @@ export const GUN = {
    * bias, which keeps the geometry something an agent can reason about.
    */
   boresightElevationRad: 0,
-  /** Muzzle offset in body axes (right, up, forward) from the CG, metres. */
-  muzzleOffsetM: [-0.62, 0.48, 3.1] as const,
+  /**
+   * Muzzle offset in body axes (right, up, forward) from the CG, metres.
+   * The M61's port is on the upper left fuselage above the wing root, which is
+   * also where the tracers want to appear from.
+   */
+  muzzleOffsetM: [-0.58, 0.82, 2.7] as const,
   /** Rounds that overheat the barrel; affects nothing but is reported. */
   burstLimit: 100,
 } as const;

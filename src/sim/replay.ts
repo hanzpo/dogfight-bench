@@ -3,9 +3,10 @@ import type { AgentAdapter, AgentDecision, AgentInfo } from "../agents/agent";
 import type { AgentObservation } from "./telemetry";
 import type { DecisionRecord, MatchSummary } from "./simulation";
 import type { MatchState, ScenarioConfig, SimEvent } from "./types";
+import { TRACER_TRAIL_SECONDS } from "./tracer";
 
 export const REPLAY_FORMAT = "dogfight-replay";
-export const REPLAY_VERSION = 2;
+export const REPLAY_VERSION = 3;
 
 export interface ReplayAircraftFrame {
   id: string;
@@ -18,14 +19,31 @@ export interface ReplayAircraftFrame {
   ammo: number;
   health: number;
   alive: boolean;
+  /**
+   * Enough instrument state to drive the same display live flight uses.
+   *
+   * Without it a replay can only be watched from outside, with no airspeed, no
+   * attitude, no g and no fuel -- which is most of what makes a recording worth
+   * reviewing. Ordered tuple rather than named fields to keep the file small:
+   * angle of attack (deg), load factor, fuel (kg), throttle, and flags for
+   * afterburner, alpha limiting and departure.
+   */
+  s: [number, number, number, number, number, number, number];
 }
 
 export interface ReplayFrame {
   tick: number;
   t: number;
   aircraft: ReplayAircraftFrame[];
-  /** Live projectile positions, so tracers can be drawn back exactly. */
-  projectiles?: Array<[number, number, number]>;
+  /**
+   * Tracers as finished line segments: tail then head.
+   *
+   * Storing positions alone meant the viewer had no idea which way a round was
+   * travelling, and fell back to drawing a short vertical stroke -- so every
+   * replayed burst looked like a picket fence. Recording both ends removes the
+   * guess, and makes replay and live rendering identical by construction.
+   */
+  projectiles?: Array<[number, number, number, number, number, number]>;
 }
 
 export interface ReplayFile {
@@ -99,12 +117,28 @@ export class ReplayRecorder {
         ammo: aircraft.ammo,
         health: Number(aircraft.damage.integrity.toFixed(3)),
         alive: aircraft.alive,
+        s: [
+          Number(((aircraft.aoaRad * 180) / Math.PI).toFixed(2)),
+          Number(aircraft.loadFactor.toFixed(2)),
+          Number(aircraft.engine.fuelKg.toFixed(1)),
+          Number(aircraft.controls.throttle.toFixed(3)),
+          aircraft.engine.afterburner ? 1 : 0,
+          aircraft.flcs.limiterActive ? 1 : 0,
+          aircraft.flcs.departed ? 1 : 0,
+        ],
       })),
     };
     if (this.includeProjectiles && state.projectiles.length) {
-      frame.projectiles = state.projectiles.map(
-        (shot) => round(shot.position.toArray() as [number, number, number], 1) as [number, number, number],
-      );
+      frame.projectiles = state.projectiles.map((shot) => {
+        const speed = shot.velocity.length();
+        const trail = Math.min(TRACER_TRAIL_SECONDS * speed, speed * shot.age);
+        const direction = shot.velocity.clone().divideScalar(Math.max(speed, 1e-6));
+        const tail = shot.position.clone().addScaledVector(direction, -trail);
+        return [
+          ...(round(tail.toArray() as [number, number, number], 1) as [number, number, number]),
+          ...(round(shot.position.toArray() as [number, number, number], 1) as [number, number, number]),
+        ] as [number, number, number, number, number, number];
+      });
     }
     this.replay.frames.push(frame);
   }

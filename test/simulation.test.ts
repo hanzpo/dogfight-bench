@@ -5,6 +5,8 @@ import { GUN } from "../src/sim/config";
 import { neutralMerge, scenarioSet, scenarioVariant } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 import { observationFor } from "../src/sim/telemetry";
+import { heightAboveGround, isWater, terrainElevation, terrainHeight } from "../src/sim/terrain";
+import { createNeutralMerge } from "../src/sim/scenario";
 
 describe("dogfight simulation", () => {
   it("creates a symmetric neutral merge", () => {
@@ -178,5 +180,59 @@ describe("relative geometry", () => {
 
     // And the mirror: red sees blue at its six, far off its own tail angle.
     expect(observationFor(sim.state, "red-1", neutralMerge, 0).relative.angleOffTailDeg).toBeGreaterThan(175);
+  });
+});
+
+describe("terrain", () => {
+  it("has land, water and mountains, and keeps the merge over land", () => {
+    let lowest = Infinity;
+    let highest = -Infinity;
+    let water = 0;
+    let samples = 0;
+    for (let x = -40_000; x <= 40_000; x += 1_000) {
+      for (let z = -40_000; z <= 40_000; z += 1_000) {
+        const elevation = terrainElevation(x, z);
+        lowest = Math.min(lowest, elevation);
+        highest = Math.max(highest, elevation);
+        if (elevation < 0) water += 1;
+        samples += 1;
+      }
+    }
+    expect(highest).toBeGreaterThan(1_200);
+    expect(lowest).toBeLessThan(-200);
+    const coverage = water / samples;
+    expect(coverage).toBeGreaterThan(0.1);
+    expect(coverage).toBeLessThan(0.6);
+
+    // Both jets must start over land, or the hard deck and terrain collision
+    // stop meaning anything at the merge.
+    for (const aircraft of createNeutralMerge().aircraft) {
+      expect(isWater(aircraft.position.x, aircraft.position.z)).toBe(false);
+    }
+  });
+
+  it("treats the sea surface as the floor rather than a hole", () => {
+    // Somewhere under water, the collision height is sea level even though the
+    // sea floor is well below it.
+    let found = false;
+    for (let x = -40_000; x <= 40_000 && !found; x += 500) {
+      for (let z = -40_000; z <= 40_000 && !found; z += 500) {
+        if (!isWater(x, z)) continue;
+        found = true;
+        expect(terrainElevation(x, z)).toBeLessThan(0);
+        expect(terrainHeight(x, z)).toBe(0);
+        expect(heightAboveGround(x, 100, z)).toBe(100);
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it("is deterministic and continuous", () => {
+    expect(terrainElevation(1_234, -5_678)).toBe(terrainElevation(1_234, -5_678));
+    // No cliffs: a metre sideways is never a large step in height.
+    for (let x = -20_000; x <= 20_000; x += 3_331) {
+      const step = Math.abs(terrainElevation(x, 4_000) - terrainElevation(x + 1, 4_000));
+      expect(step).toBeLessThan(5);
+    }
   });
 });

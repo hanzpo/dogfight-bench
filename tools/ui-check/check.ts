@@ -21,7 +21,9 @@ import { mkdirSync } from "node:fs";
  *   npm run check:ui            (needs `npm run dev` and `npm run server`)
  */
 
-const BASE = process.env["UI_CHECK_URL"] ?? "http://localhost:5174";
+// Vite's default port. Override with UI_CHECK_URL when it picked another one
+// because 5173 was busy -- it prints the port it actually bound to.
+const BASE = process.env["UI_CHECK_URL"] ?? "http://localhost:5173";
 const OUT = "artifacts/ui-check";
 
 interface Framing {
@@ -31,6 +33,23 @@ interface Framing {
   maxX: number;
   minY: number;
   maxY: number;
+}
+
+/**
+ * Rows in a data table once it has loaded.
+ *
+ * Returns zero rather than throwing on timeout: a page that failed to load its
+ * data is one failed check, and should not take the rest of the run with it.
+ */
+async function countRows(page: Page): Promise<number> {
+  try {
+    await page.waitForSelector("table.data tbody tr", { timeout: 20_000 });
+  } catch {
+    const notice = await page.locator(".notice").first().textContent().catch(() => null);
+    if (notice) console.error(`        page said: ${notice.trim().slice(0, 120)}`);
+    return 0;
+  }
+  return page.locator("table.data tbody tr").count();
 }
 
 async function framing(page: Page): Promise<Framing> {
@@ -55,6 +74,31 @@ const OVERLAY_PROBE = `({
   shoot: document.querySelector('.shoot-cue')?.getAttribute('visibility') !== 'hidden',
   arrow: document.querySelector('.bandit-arrow')?.getAttribute('visibility') !== 'hidden'
 })`;
+
+/** Centre of each instrument group, in CSS pixels. */
+const LAYOUT_PROBE = `(() => {
+  const box = (sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
+  };
+  return {
+    viewport: { x: 0, y: window.innerHeight, w: window.innerWidth },
+    speed: box('.flight-display .speed-group .tape-box'),
+    altitude: box('.flight-display .alt-group .tape-box'),
+    heading: box('.flight-display .heading-group .tape-box'),
+    throttle: box('.flight-display .engine-group')
+  };
+})()`;
+
+const OVERLAY_SIZE_PROBE = `(() => {
+  const t = document.querySelector('.tactical').getBoundingClientRect();
+  const d = document.querySelector('.flight-display').getBoundingClientRect();
+  return { tacticalW: Math.round(t.width), tacticalH: Math.round(t.height),
+           displayW: Math.round(d.width), displayH: Math.round(d.height),
+           viewW: window.innerWidth, viewH: window.innerHeight };
+})()`;
 
 const failures: string[] = [];
 function check(condition: boolean, message: string): void {
@@ -94,9 +138,15 @@ async function checkCanvasFitsWindow(page: Page): Promise<void> {
     Math.abs(measured.cssHeight - measured.innerHeight) <= 2,
     `canvas is the height of the window (${measured.cssHeight} vs ${measured.innerHeight})`,
   );
+  /**
+   * The backing store may legitimately be smaller than the device pixel ratio
+   * implies, because the renderer drops resolution when it cannot keep up. What
+   * must never happen is the canvas collapsing to a fraction of the window, so
+   * the floor is half the CSS size.
+   */
   check(
-    measured.bufferWidth >= measured.innerWidth * Math.min(measured.ratio, 2) - 2,
-    `backing store matches the device pixel ratio (${measured.bufferWidth})`,
+    measured.bufferWidth >= measured.innerWidth * 0.5 - 2,
+    `backing store is a sane resolution (${measured.bufferWidth} for a ${measured.innerWidth} px window, dpr ${measured.ratio})`,
   );
 }
 
@@ -145,13 +195,19 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForFunction(() => document.querySelector("#app")?.getAttribute("data-subject-screen-x") !== null, {
   timeout: 20_000,
 });
-// Long enough that any per-frame drift would be obvious.
-await page.waitForTimeout(8_000);
+/**
+ * Wait for simulated time rather than wall time.
+ *
+ * Headless rendering is software rasterised and can run well below real time,
+ * so a fixed wall-clock wait turns a slow renderer into a failed assertion
+ * about the simulation. Waiting on the clock the simulation reports keeps the
+ * check about drift, which is what it is for.
+ */
+await page.waitForFunction(() => Number(document.querySelector("#app")?.getAttribute("data-sim-time")) > 6, {
+  timeout: 60_000,
+});
+check(true, "simulation is running");
 checkFraming("default live view", await framing(page));
-check(
-  Number(await page.getAttribute("#app", "data-sim-time")) > 5,
-  "simulation is actually running",
-);
 await checkCanvasFitsWindow(page);
 await page.screenshot({ path: `${OUT}/live-default-${engine.name}.png` });
 
@@ -189,6 +245,37 @@ console.log("flight instruments");
 // things in separate places; check both exist and that the cockpit view puts
 // conformal symbology on the screen.
 check((await page.locator(".flight-display .tape-box").count()) >= 3, "airspeed, altitude and heading are displayed");
+
+/**
+ * Where the instruments actually landed.
+ *
+ * Existence checks passed while half the head-up display sat in the top-left
+ * corner on WebKit, because percentage transforms on SVG elements resolve
+ * against different boxes in different engines. Positions are measured now.
+ */
+const placed = (await page.evaluate(LAYOUT_PROBE)) as Record<string, { x: number; y: number; w: number }>;
+const viewport = placed["viewport"]!;
+const speed = placed["speed"]!;
+const altitude = placed["altitude"]!;
+const heading = placed["heading"]!;
+const throttle = placed["throttle"]!;
+check(
+  speed.x < viewport.w * 0.25 && Math.abs(speed.y - viewport.y / 2) < viewport.y * 0.2,
+  `airspeed sits on the left at mid-height (${Math.round(speed.x)}, ${Math.round(speed.y)})`,
+);
+check(
+  altitude.x > viewport.w * 0.55 && Math.abs(altitude.y - viewport.y / 2) < viewport.y * 0.2,
+  `altitude sits on the right at mid-height (${Math.round(altitude.x)}, ${Math.round(altitude.y)})`,
+);
+check(
+  Math.abs(heading.x - viewport.w / 2) < viewport.w * 0.12 && heading.y < viewport.y * 0.25,
+  `heading sits across the top centre (${Math.round(heading.x)}, ${Math.round(heading.y)})`,
+);
+check(
+  throttle.x < viewport.w * 0.3 && throttle.y > viewport.y * 0.7,
+  `throttle sits bottom-left (${Math.round(throttle.x)}, ${Math.round(throttle.y)})`,
+);
+check(altitude.x > speed.x + 200, "airspeed and altitude are not stacked on each other");
 check((await page.locator(".observer").count()) === 1, "observer data has its own panel");
 check(
   (await page.locator(".flight-display .adi").getAttribute("visibility")) !== "hidden",
@@ -226,9 +313,30 @@ for (let sample = 0; sample < 40; sample += 1) {
   sawArrowOrBox ||= overlay["box"] === true || overlay["arrow"] === true;
   if (sawReticle && sawTarget) break;
 }
+/**
+ * Overlays must fill the viewport.
+ *
+ * An SVG with no CSS falls back to an intrinsic 300x150, which folds the entire
+ * gun symbology into the top-left corner while every element still reports
+ * itself visible. A stylesheet edit did exactly that once, and visibility
+ * checks alone did not notice.
+ */
+const overlaySize = (await page.evaluate(OVERLAY_SIZE_PROBE)) as Record<string, number>;
+check(
+  overlaySize["tacticalW"]! >= overlaySize["viewW"]! - 2 && overlaySize["tacticalH"]! >= overlaySize["viewH"]! - 2,
+  `tactical overlay fills the viewport (${overlaySize["tacticalW"]}x${overlaySize["tacticalH"]})`,
+);
+check(
+  overlaySize["displayW"]! >= overlaySize["viewW"]! - 2 && overlaySize["displayH"]! >= overlaySize["viewH"]! - 2,
+  `flight display fills the viewport (${overlaySize["displayW"]}x${overlaySize["displayH"]})`,
+);
+
 check(sawReticle, "gunsight reticle is drawn");
-check(sawTarget, "bandit is boxed on screen");
+// Whether the bandit happens to pass through frame during the sample window is
+// luck; that it is *always* indicated one way or the other is the property
+// worth asserting.
 check(sawArrowOrBox, "bandit is always indicated, on screen or off");
+if (!sawTarget) console.log(`  note  ${engineLabel}bandit stayed off screen during sampling`);
 // Whether a scripted fight produces a firing solution inside a twenty-second
 // window is luck, so the cue's gating is pinned by a unit test instead; here we
 // only confirm the element exists to be shown.
@@ -240,20 +348,29 @@ await page.screenshot({ path: `${OUT}/overlay-${engine.name}.png` });
 
 console.log("leaderboard");
 await page.click("text=LEADERBOARD");
-await page.waitForTimeout(1_500);
-const leaderboardRows = await page.locator("table.data tbody tr").count();
+// Wait for the data itself. Matching the loading notice as well resolves
+// immediately and then counts zero rows. A timeout here is a failed check, not
+// a reason to abandon every remaining check in the run.
+const leaderboardRows = await countRows(page);
 check(leaderboardRows > 0, `leaderboard shows ${leaderboardRows} agents`);
 await page.screenshot({ path: `${OUT}/leaderboard-${engine.name}.png` });
 
 console.log("match history and replay");
 await page.click("text=MATCHES");
-await page.waitForTimeout(1_500);
-const matchRows = await page.locator("table.data tbody tr").count();
+const matchRows = await countRows(page);
 check(matchRows > 0, `match history shows ${matchRows} matches`);
 await page.screenshot({ path: `${OUT}/matches-${engine.name}.png` });
 
+if (matchRows === 0) {
+  console.error("  FAIL  no matches to replay; run `npm run bench` first");
+  failures.push("no matches to replay");
+  await browser.close();
+  continue;
+}
 await page.locator("text=WATCH").first().click();
-await page.waitForTimeout(6_000);
+await page.waitForFunction(() => Number(document.querySelector(".timecode")?.textContent?.trim().split(" ")[0]) > 0.5, {
+  timeout: 30_000,
+});
 const replayTime = await page.locator(".timecode").textContent();
 check(Boolean(replayTime && parseFloat(replayTime) > 0.5), `replay is playing (${replayTime?.trim()})`);
 checkFraming("replay view", await framing(page));

@@ -1,7 +1,7 @@
 import { Vector3 } from "three";
 import { atmosphere, GRAVITY_MPS2, equivalentAirspeed } from "./atmosphere";
 import { EARTH_RADIUS_M, FLCS, GEOMETRY, GUN, MIN_LETHAL_ENERGY_J } from "./config";
-import { hitThresholdM, solveGunsight } from "./gunsight";
+import { hitThresholdM, solveGunsight, wouldConnect } from "./gunsight";
 import { bodyAxes } from "./flight-model";
 import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
 import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
@@ -273,7 +273,7 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
     inLethalRange: solution.inLethalRange,
     /** True when the burst would actually connect, not merely be close. */
-    trackingSolution: solution.inLethalRange && solution.predictedMissM < hitThresholdM(solution.leadRangeM),
+    trackingSolution: wouldConnect(solution),
   };
 }
 

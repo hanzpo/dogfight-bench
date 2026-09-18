@@ -1,6 +1,6 @@
 import { Quaternion, Vector3 } from "three";
 import { bodyAxes } from "../sim/flight-model";
-import { hitThresholdM, solveGunsight } from "../sim/gunsight";
+import { solveGunsight, wouldConnect } from "../sim/gunsight";
 import { availableLoadFactor } from "../sim/performance";
 import type { AgentObservation, AircraftTelemetry } from "../sim/telemetry";
 import type { AircraftState, ControlInput } from "../sim/types";
@@ -84,7 +84,13 @@ export function contextFromObservation(observation: AgentObservation): SteeringC
  * The same iteration the telemetry reports, run cheaply enough to use on every
  * tick of the simulation.
  */
-export function leadDirection(context: SteeringContext): { direction: Vector3; rangeM: number; missM: number; lethal: boolean } {
+export function leadDirection(context: SteeringContext): {
+  direction: Vector3;
+  rangeM: number;
+  missM: number;
+  lethal: boolean;
+  connects: boolean;
+} {
   const solution = solveGunsight({
     position: context.position,
     velocity: context.velocity,
@@ -97,6 +103,7 @@ export function leadDirection(context: SteeringContext): { direction: Vector3; r
     rangeM: solution.leadRangeM,
     missM: solution.predictedMissM,
     lethal: solution.inLethalRange,
+    connects: wouldConnect(solution),
   };
 }
 
@@ -320,10 +327,10 @@ export function resolveTactical(action: TacticalAction, context: SteeringContext
     yaw: gunTrackingYaw(context),
     // Recovering from the ground is not the moment to be at idle.
     throttle: Math.max(THROTTLE_VALUES[action.throttle], urgency > 0.4 ? 0.85 : 0),
-    // Authorised only when the burst would actually connect: the target's size
-    // plus how far the dispersion cone has spread at that range. A flat
-    // threshold makes an agent spray at two kilometres and hit nothing.
-    fire: action.fire && shot.lethal && shot.missM < hitThresholdM(shot.rangeM),
+    // Authorised only when the burst would actually connect: close enough that
+    // the target's size covers the dispersion cone, and soon enough that they
+    // are still there when the rounds arrive.
+    fire: action.fire && shot.connects,
   };
 }
 

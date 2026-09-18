@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Vector3 } from "three";
-import { bulletImpactPoint, hitThresholdM, solveGunsight } from "../src/sim/gunsight";
+import {
+  MAX_TRACKING_TIME_OF_FLIGHT_S,
+  bulletImpactPoint,
+  hitThresholdM,
+  solveGunsight,
+  wouldConnect,
+} from "../src/sim/gunsight";
 import { GUN } from "../src/sim/config";
 import { fireGun } from "../src/sim/gun";
 import { Random } from "../src/sim/random";
@@ -203,5 +209,43 @@ describe("the shoot cue", () => {
     expect(hitThresholdM(2_000)).toBeGreaterThan(hitThresholdM(200));
     // But never so wide that it authorises spraying.
     expect(hitThresholdM(2_000)).toBeLessThan(30);
+  });
+});
+
+describe("gun tracking limits", () => {
+  it("refuses a shot the bandit would simply fly out of", () => {
+    const state = createNeutralMerge(neutralMerge);
+    const [shooter, bandit] = state.aircraft;
+    const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
+
+    // Perfectly aligned but two and a half kilometres away, and stationary so the
+    // aim is exactly right: the rounds still carry lethal energy, yet they
+    // take seconds to arrive.
+    bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 2_500));
+    bandit!.velocity.set(0, 0, 0);
+    const distant = solveGunsight({
+      position: shooter!.position,
+      velocity: shooter!.velocity,
+      orientation: shooter!.orientation,
+      targetPosition: bandit!.position,
+      targetVelocity: bandit!.velocity,
+    });
+    expect(distant.predictedMissM).toBeLessThan(hitThresholdM(distant.leadRangeM));
+    expect(distant.timeOfFlightS).toBeGreaterThan(MAX_TRACKING_TIME_OF_FLIGHT_S);
+    expect(wouldConnect(distant)).toBe(false);
+
+    expect(distant.inLethalRange).toBe(true);
+
+    // The same alignment inside gun range is a shot.
+    bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 500));
+    const close = solveGunsight({
+      position: shooter!.position,
+      velocity: shooter!.velocity,
+      orientation: shooter!.orientation,
+      targetPosition: bandit!.position,
+      targetVelocity: bandit!.velocity,
+    });
+    expect(wouldConnect(close)).toBe(true);
+    void nose;
   });
 });

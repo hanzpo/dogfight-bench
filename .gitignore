@@ -17,3 +17,6 @@ artifacts/ui-check/
 
 # Blender auto-backup
 *.blend1
+
+# Stray tooling artefacts
+supabase/
