@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -40,5 +41,48 @@ describe("credential isolation", () => {
       /from\s+["']@anthropic-ai\//.test(readFileSync(path, "utf8")),
     );
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The repository is public, so a committed credential is a published one.
+   *
+   * `.gitignore` is the intent; this is the check. It reads what git actually
+   * tracks rather than what is on disk, because the failure being guarded
+   * against is exactly a file that should have been ignored and was not.
+   *
+   * The Supabase project URL and its publishable key are deliberately absent
+   * from this list: both are compiled into the browser bundle and served to
+   * everyone by design, and row level security is what protects the data.
+   */
+  it("commits no credential to a public repository", () => {
+    const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
+    const shapes: Array<[string, RegExp]> = [
+      ["Supabase secret key", /\bsb_secret_[A-Za-z0-9_-]{10,}/],
+      ["Supabase service role JWT", /\beyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./],
+      ["OpenAI key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}/],
+      ["Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{32,}/],
+      ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
+      ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{30,}/],
+      ["private key block", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
+    ];
+
+    const offenders: string[] = [];
+    for (const path of tracked) {
+      if (path.endsWith(".glb") || path.endsWith(".png") || path.endsWith(".blend")) continue;
+      let text: string;
+      try {
+        text = readFileSync(path, "utf8");
+      } catch {
+        continue;
+      }
+      for (const [name, shape] of shapes) if (shape.test(text)) offenders.push(`${path}: ${name}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /** And nothing that holds one is tracked at all, whatever it contains today. */
+  it("tracks no environment file but the template", () => {
+    const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
+    expect(tracked.filter((path) => /(^|\/)\.env/.test(path))).toEqual([".env.example"]);
   });
 });
