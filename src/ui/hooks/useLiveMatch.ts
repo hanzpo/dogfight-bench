@@ -8,7 +8,7 @@ import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
 import type { MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
 import { api } from "../api";
-import { authHeaders } from "../auth";
+import { authConfigured, authHeaders } from "../auth";
 import { keyHeaders } from "../keys";
 import { useAccount } from "./useAccount";
 import {
@@ -213,7 +213,14 @@ export function useLiveMatch(): LiveMatch {
     // Any opponent that is not another person: beating the scripted baseline is
     // a real result and the obvious way onto the ladder without spending
     // anything on inference.
-    if (blue === HUMAN && red !== HUMAN) {
+    if (!authConfigured) {
+      // No accounts on this deployment, so there is nothing to rank against and
+      // nowhere to keep a replay. Say that rather than asking somebody to sign
+      // in to a thing that does not exist.
+      if (blue === HUMAN) {
+        setRecording({ status: "unranked", message: "This deployment does not record matches." });
+      }
+    } else if (blue === HUMAN && red !== HUMAN) {
       void authHeaders()
         .then((headers) => api.startLiveMatch(red, headers))
         .then((ticket) => {
