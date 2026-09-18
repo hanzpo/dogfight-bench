@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BasicPursuitAgent } from "../src/agents/basic-agent";
+import { SCRIPTED_INFO } from "../src/agents/agent";
+import { BasicPursuitAgent } from "../src/agents/baselines";
 import { GUN } from "../src/sim/config";
 import { neutralMerge, scenarioSet, scenarioVariant } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
@@ -96,6 +97,7 @@ describe("dogfight simulation", () => {
     const sim = new DogfightSimulation(scenario);
     sim.attachAgent("blue-1", {
       id: "broken",
+      info: SCRIPTED_INFO("broken"),
       decide: () => Promise.reject(new Error("model unavailable")),
     });
     await sim.runHeadless();

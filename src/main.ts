@@ -1,5 +1,5 @@
 import "./style.css";
-import { BasicPursuitAgent } from "./agents/basic-agent";
+import { EnergyFighterAgent } from "./agents/baselines";
 import { ReplayRecorder } from "./sim/replay";
 import { neutralMerge } from "./sim/scenario";
 import { DogfightSimulation } from "./sim/simulation";
@@ -43,9 +43,9 @@ const human: ControlInput = { pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire: f
 function reset(): void {
   simulation = new DogfightSimulation(neutralMerge, 0.25);
   if ((document.querySelector("#blue-pilot") as HTMLSelectElement).value === "basic") {
-    simulation.attachAgent("blue-1", new BasicPursuitAgent("baseline-blue"));
+    simulation.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
   }
-  simulation.attachAgent("red-1", new BasicPursuitAgent("baseline-red"));
+  simulation.attachAgent("red-1", new EnergyFighterAgent("red-1"));
   recorder = new ReplayRecorder(neutralMerge, { "blue-1": "human/baseline", "red-1": "baseline-v1" });
   accumulator = 0;
   paused = false;

@@ -89,6 +89,17 @@ export interface GunSolution {
   timeOfFlightS: number;
   /** Angle between the gun line and the required lead, degrees. Zero is a kill. */
   aimErrorDeg: number;
+  /**
+   * How far the burst would pass from the target, metres.
+   *
+   * This is the number that decides whether a shot connects. An aim error of a
+   * couple of degrees sounds tight and is a forty-metre miss at a kilometre, so
+   * gating on the angle alone produces agents that fire constantly and never
+   * hit anything.
+   */
+  predictedMissM: number;
+  /** Range to the predicted intercept point, metres. */
+  leadRangeM: number;
   /** Where the nose has to point, as bearing and elevation from the nose. */
   leadBearingDeg: number;
   leadElevationDeg: number;
@@ -259,19 +270,25 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
     impactSpeed = speed;
   }
 
+  const leadRange = lead.length();
   const leadDirection = lead.clone().normalize();
   const local = new Vector3(
     leadDirection.dot(axes.right),
     leadDirection.dot(axes.up),
     leadDirection.dot(axes.nose),
   );
+  const aimErrorRad = Math.acos(Math.max(-1, Math.min(1, local.z)));
   return {
     timeOfFlightS: timeOfFlight,
-    aimErrorDeg: (Math.acos(Math.max(-1, Math.min(1, local.z))) * 180) / Math.PI,
+    aimErrorDeg: (aimErrorRad * 180) / Math.PI,
+    predictedMissM: Math.tan(Math.min(aimErrorRad, Math.PI / 2 - 1e-6)) * leadRange,
+    leadRangeM: leadRange,
     leadBearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
+    // Lethality depends on the round's speed *relative to the target along the
+    // line of fire*, not on the target's speed in some other direction.
     inLethalRange:
-      kineticEnergyJ(Math.max(impactSpeed - target.velocity.length(), 0)) > MIN_LETHAL_ENERGY_J &&
+      kineticEnergyJ(Math.abs(impactSpeed - target.velocity.dot(leadDirection))) > MIN_LETHAL_ENERGY_J &&
       timeOfFlight < GUN.maxLifeSeconds,
     trackingSolution: false,
   };
@@ -296,7 +313,8 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
   const opponentEnergy = opponent.position.y + opponent.velocity.lengthSq() / (2 * GRAVITY_MPS2);
 
   const gunSolution = gunSolutionFor(own, opponent);
-  gunSolution.trackingSolution = gunSolution.aimErrorDeg < 1.5 && gunSolution.inLethalRange && range < 2_500;
+  gunSolution.trackingSolution =
+    gunSolution.predictedMissM < 12 && gunSolution.inLethalRange && range < 2_500;
   const threat = gunSolutionFor(opponent, own);
 
   return {
@@ -312,7 +330,7 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     energyAdvantageM: ownEnergy - opponentEnergy,
     altitudeAdvantageM: own.position.y - opponent.position.y,
     gunSolution,
-    threatened: threat.aimErrorDeg < 3 && threat.inLethalRange && range < 2_500,
+    threatened: threat.predictedMissM < 40 && threat.inLethalRange && range < 2_500,
   };
 }
 

@@ -1,5 +1,6 @@
-import type { AgentAdapter } from "../agents/agent";
-import { validateDecision } from "../agents/agent";
+import type { AgentAdapter, AgentInfo, DecisionUsage } from "../agents/agent";
+import { AgentTimeoutError, decideWithTimeout, resolveAction, validateDecision } from "../agents/agent";
+import type { AgentAction } from "../agents/action";
 import { isDestroyed } from "./damage";
 import { stepAircraft } from "./flight-model";
 import { fireGun, stepProjectiles } from "./gun";
@@ -21,10 +22,42 @@ interface AgentSlot {
   pending: boolean;
   decisions: number;
   failures: number;
+  timeouts: number;
   totalLatencyMs: number;
   maxLatencyMs: number;
   lastDecisionAt: number;
   lastEventIndex: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** One model decision, kept so a replay can reproduce and explain a match. */
+export interface DecisionRecord {
+  tick: number;
+  time: number;
+  aircraftId: string;
+  sequence: number;
+  action: AgentAction;
+  rationale?: string;
+  latencyMs: number;
+  usage?: DecisionUsage;
+  error?: string;
+}
+
+export interface SimulationOptions {
+  /** Simulated seconds between decisions for every agent. */
+  decisionIntervalS?: number;
+  /**
+   * Wall-clock deadline for a single decision. A model that misses it holds its
+   * previous command, which is the same thing that happens to a pilot who
+   * hesitates.
+   */
+  decisionTimeoutMs?: number;
+  /** Match is abandoned if an agent spends more than this on inference. */
+  inferenceBudgetUsd?: number;
+  /** Set false to stop retaining every decision, for long headless sweeps. */
+  recordDecisions?: boolean;
 }
 
 interface AircraftBookkeeping {
@@ -61,10 +94,15 @@ export interface MatchSummary {
 }
 
 export interface AgentStats {
+  info?: AgentInfo;
   decisions: number;
   failures: number;
+  timeouts: number;
   averageLatencyMs: number;
   maxLatencyMs: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export class DogfightSimulation {
@@ -75,10 +113,21 @@ export class DogfightSimulation {
   private readonly bookkeeping = new Map<string, AircraftBookkeeping>();
   private readonly scoring = new Map<string, { roundsFired: number; hitsScored: number; timeOnTargetS: number; timeInControlZoneS: number }>();
 
+  readonly decisionIntervalS: number;
+  readonly decisionTimeoutMs: number;
+  readonly inferenceBudgetUsd: number;
+  readonly decisions: DecisionRecord[] = [];
+  private readonly recordDecisions: boolean;
+
   constructor(
     readonly config: ScenarioConfig,
-    readonly decisionIntervalS = 0.25,
+    options: SimulationOptions | number = {},
   ) {
+    const settings = typeof options === "number" ? { decisionIntervalS: options } : options;
+    this.decisionIntervalS = settings.decisionIntervalS ?? 0.25;
+    this.decisionTimeoutMs = settings.decisionTimeoutMs ?? 0;
+    this.inferenceBudgetUsd = settings.inferenceBudgetUsd ?? Infinity;
+    this.recordDecisions = settings.recordDecisions ?? true;
     this.state = createNeutralMerge(config);
     this.rng = new Random(config.seed);
     for (const aircraft of this.state.aircraft) {
@@ -93,6 +142,7 @@ export class DogfightSimulation {
   }
 
   attachAgent(aircraftId: string, agent: AgentAdapter): void {
+    agent.reset?.();
     this.slots.set(aircraftId, {
       agent,
       nextDecisionAt: 0,
@@ -100,10 +150,14 @@ export class DogfightSimulation {
       pending: false,
       decisions: 0,
       failures: 0,
+      timeouts: 0,
       totalLatencyMs: 0,
       maxLatencyMs: 0,
       lastDecisionAt: 0,
       lastEventIndex: 0,
+      costUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
     });
   }
 
@@ -124,17 +178,41 @@ export class DogfightSimulation {
       slot.lastEventIndex = this.state.events.length;
 
       const started = performance.now();
-      const request = slot.agent
-        .decide(observation)
-        .then((decision) => {
+      const sequence = slot.sequence - 1;
+      const request = decideWithTimeout(slot.agent, observation, this.decisionTimeoutMs)
+        .then((raw) => {
+          const decision = validateDecision(raw);
           const target = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
-          if (target?.alive) target.controls = validateDecision(decision).controls;
+          if (target?.alive) target.controls = resolveAction(decision.action, observation);
           slot.decisions += 1;
+          slot.costUsd += decision.usage?.costUsd ?? 0;
+          slot.inputTokens += decision.usage?.inputTokens ?? 0;
+          slot.outputTokens += decision.usage?.outputTokens ?? 0;
+          this.record({
+            tick: this.state.tick,
+            time: this.state.time,
+            aircraftId,
+            sequence,
+            action: decision.action,
+            rationale: decision.rationale,
+            latencyMs: performance.now() - started,
+            usage: decision.usage,
+          });
         })
-        .catch(() => {
-          // Hold the last valid controls; a model that fails does not get to
+        .catch((error: unknown) => {
+          // Hold the last valid command. A model that fails does not get to
           // freeze the match, but the failure is recorded against it.
           slot.failures += 1;
+          if (error instanceof AgentTimeoutError) slot.timeouts += 1;
+          this.record({
+            tick: this.state.tick,
+            time: this.state.time,
+            aircraftId,
+            sequence,
+            action: { schema: "raw", controls: { ...this.state.aircraft.find((c) => c.id === aircraftId)!.controls } },
+            latencyMs: performance.now() - started,
+            error: error instanceof Error ? error.message : String(error),
+          });
         })
         .finally(() => {
           const latency = performance.now() - started;
@@ -145,6 +223,10 @@ export class DogfightSimulation {
       requests.push(request);
     }
     return requests;
+  }
+
+  private record(decision: DecisionRecord): void {
+    if (this.recordDecisions) this.decisions.push(decision);
   }
 
   step(): MatchState {
@@ -261,6 +343,14 @@ export class DogfightSimulation {
       if (aircraft.alive && isDestroyed(aircraft.damage)) this.destroy(aircraft, "airframe destroyed");
     }
 
+    const spent = this.overBudget();
+    if (spent) {
+      this.state.finished = true;
+      this.state.winnerId = this.state.aircraft.find((aircraft) => aircraft.id !== spent)?.id;
+      this.state.finishReason = `${spent} exceeded its inference budget`;
+      return;
+    }
+
     const alive = this.state.aircraft.filter((aircraft) => aircraft.alive);
     if (alive.length <= 1) {
       this.state.finished = true;
@@ -306,13 +396,27 @@ export class DogfightSimulation {
       [...this.slots].map(([id, slot]) => [
         id,
         {
+          info: slot.agent.info,
           decisions: slot.decisions,
           failures: slot.failures,
-          averageLatencyMs: slot.decisions + slot.failures ? slot.totalLatencyMs / (slot.decisions + slot.failures) : 0,
+          timeouts: slot.timeouts,
+          averageLatencyMs:
+            slot.decisions + slot.failures ? slot.totalLatencyMs / (slot.decisions + slot.failures) : 0,
           maxLatencyMs: slot.maxLatencyMs,
+          costUsd: slot.costUsd,
+          inputTokens: slot.inputTokens,
+          outputTokens: slot.outputTokens,
         },
       ]),
     );
+  }
+
+  /** True once any agent has spent more than the match's inference budget. */
+  private overBudget(): string | undefined {
+    for (const [aircraftId, slot] of this.slots) {
+      if (slot.costUsd > this.inferenceBudgetUsd) return aircraftId;
+    }
+    return undefined;
   }
 
   /** Backwards-compatible alias. */

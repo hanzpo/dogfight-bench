@@ -15,7 +15,7 @@ export const neutralMerge: ScenarioConfig = {
   maxTime: 300,
   originLatitudeDeg: 36.0,
   originLongitudeDeg: -115.0,
-  startAltitudeM: 4_500,
+  startAltitudeM: 6_000,
   startSpeedMps: 250,
   startSeparationM: 8_000,
   startLateralOffsetM: 0,

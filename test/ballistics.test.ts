@@ -218,13 +218,37 @@ describe("damage", () => {
   });
 });
 
+/**
+ * Where a round actually ends up after `seconds`.
+ *
+ * Rounds leave along the gun line but inherit the aircraft's velocity, which is
+ * a degree or so below the nose at trim, and then drop. Placing a target by eye
+ * on the boresight therefore tests the author's trigonometry rather than the
+ * collision code, so the tests below put the target on the real trajectory.
+ */
+function roundPositionAfter(state: MatchState, shooter: MatchState["aircraft"][number], seconds: number): Vector3 {
+  const probe = { ...state, projectiles: [], events: [] } as MatchState;
+  const scratch = {
+    ...shooter,
+    controls: { ...shooter.controls, fire: true },
+    gunSpin: 1,
+    gunAccumulator: 0,
+    ammo: 10,
+  };
+  const rng = new Random(99);
+  let id = 1;
+  while (probe.projectiles.length === 0) fireGun(probe, scratch, DT, rng, () => id++);
+  probe.projectiles.length = 1;
+  for (let t = 0; t < seconds; t += DT) stepProjectiles(probe, DT, rng);
+  return probe.projectiles[0]?.position.clone() ?? shooter.position.clone();
+}
+
 describe("hit resolution", () => {
   it("registers a hit on a jet parked in front of the gun and not on the shooter", () => {
     const state = createNeutralMerge(neutralMerge);
     const [shooter, target] = state.aircraft;
-    // Put the target 600 m down the gun line, stationary, same attitude.
-    const boresight = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
-    target!.position.copy(shooter!.position).addScaledVector(boresight, 600);
+    // Park the target where the rounds will actually be half a second out.
+    target!.position.copy(roundPositionAfter(state, shooter!, 0.5));
     target!.velocity.set(0, 0, 0);
     target!.orientation.copy(shooter!.orientation);
     shooter!.controls.fire = true;
@@ -245,8 +269,9 @@ describe("hit resolution", () => {
   it("does not let rounds tunnel through a fast crossing target", () => {
     const state = createNeutralMerge(neutralMerge);
     const [shooter, target] = state.aircraft;
-    const gunLine = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
-    target!.position.copy(shooter!.position).addScaledVector(gunLine, 700);
+    const impactPoint = roundPositionAfter(state, shooter!, 0.6);
+    const gunLine = impactPoint.clone().sub(shooter!.position).normalize();
+    target!.position.copy(impactPoint).addScaledVector(gunLine, 150);
     target!.orientation
       .copy(shooter!.orientation)
       .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI));
