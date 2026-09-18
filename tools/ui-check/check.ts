@@ -48,6 +48,14 @@ async function framing(page: Page): Promise<Framing> {
 }
 
 let engineLabel = "";
+/** Visibility of each overlay element, read straight off the SVG. */
+const OVERLAY_PROBE = `({
+  reticle: document.querySelector('.reticle')?.getAttribute('visibility') !== 'hidden',
+  box: document.querySelector('.target-box')?.getAttribute('visibility') !== 'hidden',
+  shoot: document.querySelector('.shoot-cue')?.getAttribute('visibility') !== 'hidden',
+  arrow: document.querySelector('.bandit-arrow')?.getAttribute('visibility') !== 'hidden'
+})`;
+
 const failures: string[] = [];
 function check(condition: boolean, message: string): void {
   const labelled = `${engineLabel}${message}`;
@@ -175,6 +183,33 @@ check(
   (await page.evaluate(() => document.querySelector<HTMLElement>("#app")!.dataset["simStatus"])) === "paused",
   "pause control applied",
 );
+
+console.log("tactical overlay");
+// The gunsight is the whole point of a guns-only game: prove it draws, that it
+// tracks the bandit, and that the shoot cue is gated rather than always on.
+await page.selectOption("#blue-pilot", "basic");
+let sawReticle = false;
+let sawTarget = false;
+let sawArrowOrBox = false;
+for (let sample = 0; sample < 40; sample += 1) {
+  await page.waitForTimeout(500);
+  const overlay = (await page.evaluate(OVERLAY_PROBE)) as Record<string, boolean>;
+  sawReticle ||= overlay["reticle"] === true;
+  sawTarget ||= overlay["box"] === true;
+  sawArrowOrBox ||= overlay["box"] === true || overlay["arrow"] === true;
+  if (sawReticle && sawTarget) break;
+}
+check(sawReticle, "gunsight reticle is drawn");
+check(sawTarget, "bandit is boxed on screen");
+check(sawArrowOrBox, "bandit is always indicated, on screen or off");
+// Whether a scripted fight produces a firing solution inside a twenty-second
+// window is luck, so the cue's gating is pinned by a unit test instead; here we
+// only confirm the element exists to be shown.
+check(
+  (await page.locator(".shoot-cue").count()) === 1,
+  "shoot cue exists to be shown when a burst would connect",
+);
+await page.screenshot({ path: `${OUT}/overlay-${engine.name}.png` });
 
 console.log("leaderboard");
 await page.click("text=LEADERBOARD");

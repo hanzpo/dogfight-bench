@@ -20,6 +20,8 @@ export interface LiveMatch {
   state: MatchState | undefined;
   /** Simulated clock, updated every frame for the harness readouts. */
   simTimeRef: RefObject<number>;
+  /** Live match state for overlays that draw every frame. */
+  liveStateRef: RefObject<MatchState | undefined>;
   paused: boolean;
   timeScale: number;
   followRed: boolean;
@@ -65,6 +67,7 @@ export function useLiveMatch(): LiveMatch {
 
   const snapshotRef = useRef<ViewerSnapshot>(undefined);
   const simTimeRef = useRef(0);
+  const liveStateRef = useRef<MatchState>(undefined);
   const lastEventIndex = useRef(0);
   const lastUiUpdate = useRef(0);
   const [state, setState] = useState<MatchState>();
@@ -157,6 +160,7 @@ export function useLiveMatch(): LiveMatch {
 
       if (sim) {
         snapshotRef.current = snapshotFromMatch(sim.state, lastEventIndex.current);
+        liveStateRef.current = sim.state;
         lastEventIndex.current = sim.state.events.length;
         simTimeRef.current = sim.state.time;
         if (now - lastUiUpdate.current >= UI_REFRESH_MS) {
@@ -185,6 +189,7 @@ export function useLiveMatch(): LiveMatch {
   return {
     snapshotRef,
     simTimeRef,
+    liveStateRef,
     state,
     paused,
     timeScale,

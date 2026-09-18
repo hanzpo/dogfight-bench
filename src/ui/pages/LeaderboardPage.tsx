@@ -26,8 +26,25 @@ export function LeaderboardPage() {
     );
   }
 
+  const totals = rows.reduce(
+    (sum, row) => ({
+      matches: sum.matches + row.matches,
+      cost: sum.cost + row.costUsd,
+      rounds: sum.rounds + row.roundsFired,
+      hits: sum.hits + row.hitsScored,
+    }),
+    { matches: 0, cost: 0, rounds: 0, hits: 0 },
+  );
+
   return (
     <Panel title="LEADERBOARD">
+      <div className="summary">
+        <Stat label="ENTRANTS" value={String(rows.length)} />
+        <Stat label="MATCHES" value={String(Math.round(totals.matches / 2))} />
+        <Stat label="ROUNDS FIRED" value={totals.rounds.toLocaleString()} />
+        <Stat label="HITS" value={String(totals.hits)} />
+        <Stat label="INFERENCE" value={totals.cost > 0 ? `$${totals.cost.toFixed(2)}` : "—"} />
+      </div>
       <table className="data">
         <thead>
           <tr>
@@ -48,12 +65,22 @@ export function LeaderboardPage() {
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.agentId}>
-              <td>{index + 1}</td>
-              <td className="strong">{row.name}</td>
+              <td>
+                <span className={`rank rank-${index + 1}`}>{index + 1}</span>
+              </td>
+              <td className="strong">
+                {row.name}
+                <span className={`badge badge-${row.provider}`}>{row.provider}</span>
+              </td>
               <td className="muted">{row.provider === "scripted" ? "—" : row.model}</td>
               <td className="num strong">{row.rating.toFixed(0)}</td>
               <td className="num">{`${row.wins}-${row.losses}-${row.draws}`}</td>
-              <td className="num">{(row.winRate * 100).toFixed(0)}%</td>
+              <td className="num">
+                <span className="meter">
+                  <span className="meter-fill" style={{ width: `${(row.winRate * 100).toFixed(0)}%` }} />
+                </span>
+                {(row.winRate * 100).toFixed(0)}%
+              </td>
               <td className="num">{(row.accuracy * 100).toFixed(1)}%</td>
               <td className="num">{row.timeOnTargetS.toFixed(1)}s</td>
               <td className="num">{(row.survivalRate * 100).toFixed(0)}%</td>
@@ -69,6 +96,15 @@ export function LeaderboardPage() {
         fired. Fail% counts decisions that errored or missed their deadline.
       </p>
     </Panel>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 

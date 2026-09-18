@@ -62,11 +62,19 @@ control-surface aeroelasticity, no spin modelling beyond departure onset, and
 no store loadout. What it is, is falsifiable.
 
 **Guns.** The M61A1 with 511 rounds, modelled as individual projectiles on the
-G1 drag curve with a published ballistic coefficient: barrel spin-up, inherited
-aircraft velocity, seeded dispersion, and roughly 1.2 s time of flight to a
-kilometre. Collision is resolved in the target's frame against six hit volumes
-that map to subsystems, so a round through the intake is not the same as one
-through a wingtip, and damage degrades the thing it hit.
+G1 drag curve with a published ballistic coefficient: the rate of fire ramps
+with the rotor (first rounds out in 25 ms, full cadence shortly after, and the
+rotor coasts so short bursts work), rounds inherit the aircraft's velocity,
+dispersion is seeded, and time of flight to a kilometre is about 1.2 s.
+Collision is resolved in the target's frame against six hit volumes that map to
+subsystems, so a round through the intake is not the same as one through a
+wingtip, and damage degrades the thing it hit.
+
+A single lead-computing gunsight serves both the telemetry agents read and the
+trigger the simulation pulls, so what a model is told about its shot is exactly
+what the simulation does with it. It compensates for bullet drop, and authorises
+fire only when the burst would actually connect -- the target's size plus how
+far the dispersion cone has spread at that range.
 
 **Rules.** Terrain impact, a hard deck, arena bounds, bingo fuel, departure and
 recovery. A match that runs out of clock is decided on damage dealt, then time
@@ -92,6 +100,15 @@ A manoeuvre is a *goal for the velocity vector*, not a scripted animation. The
 autopilot works out the acceleration that goal needs -- centripetal toward the
 target plus the one g that holds the flight path up -- and points the lift
 vector at it. Choosing the wrong goal still loses the fight.
+
+A tactical command is a **standing order, flown continuously**, not a stick
+position captured when the model answered. Resolving it once per decision and
+holding it is the difference between an autopilot and a quarter-second-old
+snapshot of one, and with the snapshot a gun solution can never converge. For
+the same reason the trigger is gated on the live gun solution: `fire` means
+"shoot when the pipper is on", which is what a pilot with a lead-computing
+sight does. It applies identically to every tactical agent, so it advantages
+none of them. Raw-schema agents keep direct control of the stick and trigger.
 
 The autopilot includes an automatic ground-collision recovery, as the real
 aircraft does. Without one, every scripted match ended in a crash within thirty
@@ -189,11 +206,31 @@ turns the wrong way -- the hardest kind of bug to see. If you re-export the
 mesh from `F16_Clean.blend`, those tests are what tell you whether the export
 orientation still matches the simulation.
 
+## The scripted baselines
+
+`basic-pursuit` is the floor: it points at the bandit and shoots, with no
+concept of energy. `energy-fighter` is the reference, and the thing that makes
+it fly like a fighter is that it flies the corner. Turn performance peaks at
+corner speed and falls away hard on both sides, so it spends g to bleed excess
+speed and afterburner to rebuild it, and treats maximum g as something bought
+for a shot rather than the default. Get that wrong in either direction and an
+agent looks stupid in a specific way: too much g and it spirals down below
+corner where it can neither turn nor run, too little and it sails past the
+fight at twice corner with a two-kilometre turn radius.
+
+Measured over twelve matches, both sides of every seeded scenario:
+
+| | energy-fighter | basic-pursuit |
+|---|---|---|
+| Record | 11-1 | 1-11 |
+| Accuracy | 5.1% | 0.7% |
+| Time with a firing solution | 15.8 s | 5.0 s |
+
 ## Known gaps
 
-- The scripted baselines are mediocre pilots. That is deliberate -- they are
-  the floor and the reference, not a target -- but it means a strong model has
-  a lot of headroom and the benchmark has not yet been calibrated against one.
+- `energy-fighter` is a rule-based pilot, not a good one. It is the floor a
+  model has to clear, and the benchmark has not yet been calibrated against a
+  strong model.
 - The Anthropic and OpenAI adapters are unit-tested against a mocked transport
   but have not been exercised against a live endpoint here; the Jev adapter
   has.

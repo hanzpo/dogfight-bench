@@ -52,24 +52,28 @@ code { font: 11px "JetBrains Mono"; color: var(--accent); }
 }
 
 select, button {
-  min-height: 34px;
-  border: 1px solid #ffffff25;
+  min-height: 32px;
+  border: 1px solid #ffffff22;
   color: #dce7e4;
-  background: #111b1fee;
+  background: #121e23;
   font: 10px "JetBrains Mono";
-  letter-spacing: .04em;
+  letter-spacing: .06em;
+  transition: border-color .12s, color .12s, background .12s;
 }
+button:active { background: #18272d; }
 select { margin-left: 8px; padding: 0 28px 0 9px; }
 button { padding: 0 12px; cursor: pointer; }
 button:hover { border-color: var(--accent); color: var(--accent); }
 label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 
 .controls {
-  position: fixed; left: 50%; bottom: 50px; transform: translateX(-50%); z-index: 3;
-  display: flex; align-items: center; gap: 7px; padding: 7px;
-  background: var(--panel); border: 1px solid var(--hairline);
-  backdrop-filter: blur(12px); white-space: nowrap;
+  position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 6px; padding: 8px;
+  background: #060d11e8; border: 1px solid var(--hairline);
+  backdrop-filter: blur(14px); white-space: nowrap;
+  box-shadow: 0 12px 34px #0009;
 }
+.controls label { display: flex; align-items: center; gap: 0; }
 
 .flight-strip {
   text-shadow: 0 1px 3px #000c;
@@ -87,27 +91,123 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
 
 /* ---------- HUD ---------- */
 
-/* The HUD sits over sky that ranges from near-white to deep blue, so every
-   glyph carries its own shadow rather than relying on the background. */
+/* The display sits over sky ranging from near-white to deep blue, so every
+   glyph carries its own shadow rather than relying on a background. */
 .hud {
-  position: fixed; inset: 82px 0 auto 0; display: flex; justify-content: space-between;
-  padding: 0 20px; pointer-events: none; z-index: 2;
-  text-shadow: 0 1px 3px #000c, 0 0 10px #0009;
+  --hud: #7dffd0;
+  position: fixed; inset: 64px 0 0 0; z-index: 2; pointer-events: none;
+  font: 10px "JetBrains Mono"; letter-spacing: .1em;
+  text-shadow: 0 1px 3px #000d, 0 0 12px #0009;
+  color: var(--hud);
 }
-.hud-panel { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
-.hud-right { text-align: right; }
-.hud-row { display: grid; gap: 1px; }
-.hud-label { font: 8px "JetBrains Mono"; letter-spacing: .16em; color: #cfe0dd; opacity: .85; }
-.hud-value { font: 600 16px "Barlow Condensed"; letter-spacing: .06em; color: #fff; }
-.hud-sub { font: 8px "JetBrains Mono"; letter-spacing: .1em; color: #dbe8e5; opacity: .8; }
-.hud-row.warn .hud-value { color: var(--warn); }
-.hud-row.good .hud-value { color: var(--good); }
-.hud-alert {
-  background: #1a0a06cc;
-  margin-top: 6px; padding: 3px 8px; border: 1px solid var(--warn); color: var(--warn);
-  font: 9px "JetBrains Mono"; letter-spacing: .16em; animation: pulse 1s steps(2, end) infinite;
+.hud-red { --hud: #ff9d8a; }
+
+.hud-corner { position: absolute; top: 18px; display: flex; gap: 16px; align-items: flex-start; }
+.hud-tl { left: 22px; }
+.hud-tr { right: 22px; flex-direction: row-reverse; }
+
+/* --- vertical tapes --- */
+.tape { display: grid; gap: 4px; min-width: 96px; }
+.tape.right { justify-items: end; text-align: right; }
+.tape-head { display: flex; gap: 8px; align-items: baseline; }
+.tape.right .tape-head { flex-direction: row-reverse; }
+.tape-label { font-size: 8px; letter-spacing: .2em; opacity: .75; }
+.tape-hint { font-size: 8px; letter-spacing: .14em; color: #ffd98a; }
+.tape-value {
+  font: 600 27px "Barlow Condensed"; letter-spacing: .03em; line-height: .95; color: #fff;
+  display: flex; align-items: baseline; gap: 4px;
 }
-@keyframes pulse { 50% { opacity: .35; } }
+.tape.right .tape-value { flex-direction: row-reverse; }
+.tape-unit { font: 9px "JetBrains Mono"; opacity: .8; color: var(--hud); }
+.tape-track {
+  position: relative; width: 100%; height: 52px;
+  border-left: 1px solid currentColor; border-right: 1px solid transparent;
+  background: linear-gradient(#ffffff14, #ffffff05);
+}
+.tape.right .tape-track { border-left: 1px solid transparent; border-right: 1px solid currentColor; }
+.tape-fill { position: absolute; left: 0; right: 0; bottom: 0; background: currentColor; opacity: .32; }
+/* Corner speed: the number the whole fight is flown against. */
+.tape-marker { position: absolute; left: -3px; right: -3px; height: 2px; background: #ffd98a; box-shadow: 0 0 6px #ffd98a; }
+.tape-note { font-size: 8px; opacity: .7; }
+.tape.warn { --hud: #ff9a6b; }
+.tape.caution { --hud: #ffd98a; }
+
+/* --- compact readouts --- */
+.readout { display: grid; gap: 2px; min-width: 74px; }
+.readout.right { justify-items: end; text-align: right; }
+.readout-label { font-size: 8px; letter-spacing: .2em; opacity: .75; }
+.readout-value { font: 600 20px "Barlow Condensed"; letter-spacing: .04em; color: #fff; line-height: 1; }
+.readout-note { font-size: 8px; opacity: .7; }
+.readout.good .readout-value { color: #8dfba8; }
+.readout.warn .readout-value { color: #ff9a6b; }
+.readout.caution .readout-value { color: #ffd98a; }
+
+/* --- energy and status --- */
+.hud-bottom {
+  position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%);
+  display: grid; gap: 9px; justify-items: center; width: min(560px, calc(100% - 40px));
+}
+.energy-bar { display: flex; align-items: center; gap: 10px; width: 100%; }
+.energy-label, .energy-value { font-size: 8px; letter-spacing: .16em; white-space: nowrap; }
+.energy-value { min-width: 74px; text-align: right; }
+.energy-value.good { color: #8dfba8; }
+.energy-value.warn { color: #ff9a6b; }
+.energy-track { position: relative; flex: 1; height: 5px; background: #ffffff1f; overflow: hidden; }
+.energy-fill { position: absolute; top: 0; bottom: 0; background: currentColor; opacity: .85; }
+.energy-centre { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #ffffff77; }
+
+.ammo-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.pill {
+  display: flex; align-items: baseline; gap: 6px; padding: 3px 9px;
+  background: #07101599; border: 1px solid #ffffff1f; backdrop-filter: blur(6px);
+}
+.pill span { font-size: 8px; letter-spacing: .16em; opacity: .7; }
+.pill strong { font: 600 12px "Barlow Condensed"; letter-spacing: .05em; color: #fff; }
+.pill.warn { border-color: #ff9a6b88; }
+.pill.warn strong { color: #ff9a6b; }
+.pill.caution strong { color: #ffd98a; }
+.pill.good strong { color: #8dfba8; }
+
+.hud-alerts {
+  position: absolute; left: 50%; top: 116px; transform: translateX(-50%);
+  display: grid; gap: 5px; justify-items: center;
+}
+.alert {
+  padding: 3px 12px; border: 1px solid currentColor; color: #ffd98a;
+  font-size: 9px; letter-spacing: .22em; background: #1a140699;
+}
+.alert.critical { color: #ff7a5c; background: #1a0a06cc; border-color: #ff7a5c; animation: pulse 1s ease-in-out infinite; }
+/* Never fades far enough to become unreadable: it is a warning, not a strobe. */
+@keyframes pulse { 50% { opacity: .55; } }
+
+/* ---------- Tactical overlay ---------- */
+
+.tactical {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 1; pointer-events: none;
+  --hud: #7dffd0;
+  --shoot: #8dfba8;
+}
+.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
+
+.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
+.reticle circle { stroke: inherit; }
+.reticle .pip { fill: var(--hud); stroke: none; }
+
+.target-box { filter: drop-shadow(0 0 3px #000a); }
+.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
+.target-box text { fill: #ffd98a; }
+
+/* Dashed, so it reads as a correction to close rather than a solid object. */
+.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
+
+.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
+
+.shoot-cue text {
+  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
+  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
+}
+.shoot-cue { animation: pulse .7s ease-in-out infinite; }
 
 /* ---------- Data pages ---------- */
 
@@ -116,7 +216,36 @@ label { color: #819295; font: 9px "JetBrains Mono"; letter-spacing: .08em; }
   padding: 28px 32px 60px; background: #080d10;
 }
 .page.overlay-page { background: #080d10e0; backdrop-filter: blur(6px); }
-.page h1 { font: 600 20px "Barlow Condensed"; letter-spacing: .18em; margin: 0 0 20px; }
+.page h1 { font: 600 22px "Barlow Condensed"; letter-spacing: .2em; margin: 0 0 22px; }
+
+.summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+.stat {
+  display: grid; gap: 3px; padding: 10px 16px; min-width: 116px;
+  background: #0d1418; border: 1px solid var(--hairline);
+}
+.stat span { font: 8px "JetBrains Mono"; letter-spacing: .18em; color: #7f9490; }
+.stat strong { font: 600 19px "Barlow Condensed"; letter-spacing: .04em; color: var(--ink); }
+
+.rank {
+  display: inline-grid; place-items: center; width: 21px; height: 21px;
+  font: 600 11px "Barlow Condensed"; color: #93a6a3; border: 1px solid #ffffff1f;
+}
+.rank-1 { color: #0b1512; background: var(--accent); border-color: var(--accent); }
+.rank-2 { color: #cfe0dd; border-color: #cfe0dd88; }
+.rank-3 { color: #d8b183; border-color: #d8b18388; }
+
+.badge {
+  margin-left: 8px; padding: 1px 6px; font: 8px "JetBrains Mono"; letter-spacing: .12em;
+  color: #8fa3a0; border: 1px solid #ffffff1c; text-transform: uppercase;
+}
+.badge-anthropic, .badge-openai, .badge-jev { color: var(--accent); border-color: #67e5d055; }
+
+/* Win rate reads faster as a bar than as a number. */
+.meter {
+  display: inline-block; width: 46px; height: 4px; margin-right: 8px;
+  background: #ffffff1a; vertical-align: middle;
+}
+.meter-fill { display: block; height: 100%; background: var(--accent); }
 .notice { color: #9fb2af; font: 11px "JetBrains Mono"; line-height: 1.7; max-width: 70ch; }
 .footnote { margin-top: 18px; color: #7f9490; font: 9px "JetBrains Mono"; line-height: 1.8; max-width: 90ch; }
 

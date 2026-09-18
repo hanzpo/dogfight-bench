@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Hud } from "../components/Hud";
+import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useLiveMatch, type PilotKind } from "../hooks/useLiveMatch";
 import type { DogfightViewer } from "../../viewer";
@@ -80,6 +81,7 @@ export function LivePage() {
         followId={followId}
         onReady={(instance) => (viewer.current = instance)}
       />
+      <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
       <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
       <Hud state={match.state} followId={followId} />
 

@@ -94,4 +94,30 @@ export function solveGunsight(input: GunsightInput): GunsightSolution {
   };
 }
 
+/**
+ * Where a round fired right now would be after travelling `rangeM`.
+ *
+ * This is what a gunsight reticle marks: not where the nose points, but where
+ * the bullets actually go once drop is accounted for. Drawing it lets a person
+ * see the same shot the agents are told about.
+ */
+export function bulletImpactPoint(
+  position: Vector3,
+  velocity: Vector3,
+  orientation: Quaternion,
+  rangeM: number,
+): Vector3 {
+  const air = atmosphere(position.y);
+  const nose = bodyAxes(orientation).nose;
+  const muzzle = Math.max(GUN.muzzleVelocityMps + velocity.dot(nose), 1);
+  const seconds = Math.min(
+    timeOfFlight(Math.max(rangeM, 1), muzzle, air.densityKgM3, air.speedOfSoundMps).seconds,
+    GUN.maxLifeSeconds,
+  );
+  return position
+    .clone()
+    .addScaledVector(nose, rangeM)
+    .add(new Vector3(0, -0.5 * GRAVITY_MPS2 * seconds * seconds, 0));
+}
+
 const ZERO = new Vector3();

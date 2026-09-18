@@ -433,6 +433,26 @@ export class DogfightViewer {
     }
   }
 
+  /**
+   * Projects a world point into normalised screen space.
+   *
+   * Returns 0..1 across the viewport with y measured downward, plus whether the
+   * point is behind the camera -- which the overlay needs, because a point
+   * behind you projects to a mirrored position that would otherwise be drawn as
+   * though it were in front.
+   */
+  project(point: THREE.Vector3): { x: number; y: number; behind: boolean } {
+    const projected = point.clone().project(this.camera);
+    const toCamera = point.clone().sub(this.camera.position);
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    return {
+      x: (projected.x + 1) / 2,
+      y: (1 - projected.y) / 2,
+      behind: toCamera.dot(forward) <= 0,
+    };
+  }
+
   getFollowFraming(): { x: number; y: number; minX: number; maxX: number; minY: number; maxY: number } | undefined {
     const mesh = this.aircraftMeshes.get(this.followId);
     if (!mesh) return undefined;

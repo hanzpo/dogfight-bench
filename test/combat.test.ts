@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Vector3 } from "three";
+import { bulletImpactPoint, hitThresholdM, solveGunsight } from "../src/sim/gunsight";
 import { GUN } from "../src/sim/config";
 import { fireGun } from "../src/sim/gun";
 import { Random } from "../src/sim/random";
@@ -162,4 +164,44 @@ describe("the energy fighter", () => {
     expect(energyHits).toBeGreaterThan(0);
     expect(energyAccuracy).toBeGreaterThan(basicAccuracy);
   }, 300_000);
+});
+
+describe("the shoot cue", () => {
+  it("is offered for a shot that connects and withheld for one that does not", () => {
+    const state = createNeutralMerge(neutralMerge);
+    const [shooter, bandit] = state.aircraft;
+    const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
+
+    // Directly ahead, matching speed: a shot that should connect.
+    bandit!.position.copy(bulletImpactPoint(shooter!.position, shooter!.velocity, shooter!.orientation, 600));
+    bandit!.velocity.copy(shooter!.velocity);
+    bandit!.orientation.copy(shooter!.orientation);
+    const aligned = solveGunsight({
+      position: shooter!.position,
+      velocity: shooter!.velocity,
+      orientation: shooter!.orientation,
+      targetPosition: bandit!.position,
+      targetVelocity: bandit!.velocity,
+    });
+    expect(aligned.inLethalRange).toBe(true);
+    expect(aligned.predictedMissM).toBeLessThan(hitThresholdM(aligned.leadRangeM));
+
+    // Same range, displaced well outside the burst: no cue.
+    const right = new Vector3(0, 1, 0).cross(nose).normalize();
+    bandit!.position.addScaledVector(right, 60);
+    const displaced = solveGunsight({
+      position: shooter!.position,
+      velocity: shooter!.velocity,
+      orientation: shooter!.orientation,
+      targetPosition: bandit!.position,
+      targetVelocity: bandit!.velocity,
+    });
+    expect(displaced.predictedMissM).toBeGreaterThan(hitThresholdM(displaced.leadRangeM));
+  });
+
+  it("widens the threshold with range, because the dispersion cone spreads", () => {
+    expect(hitThresholdM(2_000)).toBeGreaterThan(hitThresholdM(200));
+    // But never so wide that it authorises spraying.
+    expect(hitThresholdM(2_000)).toBeLessThan(30);
+  });
 });
