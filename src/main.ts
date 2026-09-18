@@ -1,5 +1,4 @@
 import "./style.css";
-import { Vector3 } from "three";
 import { BasicPursuitAgent } from "./agents/basic-agent";
 import { ReplayRecorder } from "./sim/replay";
 import { neutralMerge } from "./sim/scenario";
@@ -11,39 +10,20 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div id="viewport"></div>
   <header class="topbar">
-    <div class="brand"><span class="mark">DB</span><div>DOGFIGHT <b>BENCH</b><small>NEUTRAL MERGE / GUNS ONLY</small></div></div>
+    <div class="brand"><span class="mark">DB</span><div>DOGFIGHT <b>BENCH</b></div></div>
     <div class="status"><span class="live-dot"></span><span id="run-status">LIVE</span><strong id="clock">00:00.0</strong></div>
   </header>
-  <aside class="panel left-panel">
-    <div class="eyebrow blue">BLUE / OWN SHIP</div>
-    <div class="big-number"><span id="blue-speed">0</span><small>KTS</small></div>
-    <div class="metric-row"><span>ALT</span><b id="blue-alt">0 FT</b></div>
-    <div class="metric-row"><span>MACH</span><b id="blue-mach">0.00</b></div>
-    <div class="metric-row"><span>AOA</span><b id="blue-aoa">0.0°</b></div>
-    <div class="metric-row"><span>LOAD</span><b id="blue-g">1.0 G</b></div>
-    <div class="metric-row"><span>20MM</span><b id="blue-ammo">511</b></div>
-    <div class="divider"></div>
-    <label>BLUE PILOT<select id="blue-pilot"><option value="human">Human</option><option value="basic">Baseline AI</option></select></label>
-    <div class="keymap">W/S pitch · A/D roll<br>Q/E rudder · R/F throttle<br>SPACE fire</div>
-  </aside>
-  <aside class="panel right-panel">
-    <div class="eyebrow red">RED / BANDIT</div>
-    <div class="big-number"><span id="range">0.0</span><small>NM</small></div>
-    <div class="metric-row"><span>CLOSURE</span><b id="closure">0 KTS</b></div>
-    <div class="metric-row"><span>ASPECT</span><b id="aspect">0°</b></div>
-    <div class="metric-row"><span>20MM</span><b id="red-ammo">511</b></div>
-    <div class="divider"></div>
-    <label>RED PILOT<select id="red-pilot"><option value="basic">Baseline AI</option></select></label>
-    <button id="follow">FOLLOW RED</button>
-  </aside>
-  <div class="reticle"><i></i><span></span><i></i></div>
+  <div class="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>
   <footer class="controls">
+    <label>BLUE PILOT <select id="blue-pilot"><option value="human">HUMAN</option><option value="basic">BASELINE AI</option></select></label>
+    <button id="follow">FOLLOW RED</button>
     <button id="pause">PAUSE</button>
     <button id="speed">1× REALTIME</button>
     <button id="restart">RESTART MATCH</button>
     <button id="replay">SAVE REPLAY</button>
-    <span id="event">MERGE INITIALIZED</span>
   </footer>
+  <div class="flight-strip"><span id="flight-data">BLUE · 0 KT · 0 FT · 511 ROUNDS</span><span id="event">MERGE INITIALIZED</span></div>
+  <div class="keymap">W/S PITCH · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE</div>
 `;
 
 const viewport = document.querySelector<HTMLElement>("#viewport")!;
@@ -111,24 +91,9 @@ function text(id: string, value: string): void { document.querySelector(`#${id}`
 function updateHud(): void {
   const [blue, red] = simulation.state.aircraft;
   if (!blue || !red) return;
-  const delta = red.position.clone().sub(blue.position);
-  const los = delta.clone().normalize();
-  const closure = -red.velocity.clone().sub(blue.velocity).dot(los);
-  const redForward = new Vector3(0, 0, 1);
-  // Avoid relying on a derived telemetry object just for HUD rendering.
-  redForward.applyQuaternion(red.orientation);
-  const aspect = Math.acos(Math.max(-1, Math.min(1, redForward.dot(los)))) * 180 / Math.PI;
   text("clock", `${String(Math.floor(simulation.state.time / 60)).padStart(2, "0")}:${(simulation.state.time % 60).toFixed(1).padStart(4, "0")}`);
-  text("blue-speed", Math.round(blue.velocity.length() * 1.94384).toString());
-  text("blue-alt", `${Math.round(blue.position.y * 3.28084).toLocaleString()} FT`);
-  text("blue-mach", (blue.velocity.length() / 326).toFixed(2));
-  text("blue-aoa", `${(blue.aoaRad * 180 / Math.PI).toFixed(1)}°`);
-  text("blue-g", `${blue.loadFactor.toFixed(1)} G`);
-  text("blue-ammo", blue.ammo.toString());
-  text("red-ammo", red.ammo.toString());
-  text("range", (delta.length() / 1852).toFixed(1));
-  text("closure", `${Math.round(closure * 1.94384)} KTS`);
-  text("aspect", `${Math.round(aspect)}°`);
+  const followed = followRed ? red : blue;
+  text("flight-data", `${followed.team.toUpperCase()} · ${Math.round(followed.velocity.length() * 1.94384)} KT · ${Math.round(followed.position.y * 3.28084).toLocaleString()} FT · ${followed.ammo} ROUNDS`);
   text("run-status", simulation.state.finished ? "COMPLETE" : paused ? "PAUSED" : "LIVE");
   text("speed", `${timeScale}× ${timeScale === 1 ? "REALTIME" : "ACCELERATED"}`);
   text("pause", paused ? "RESUME" : "PAUSE");

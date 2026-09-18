@@ -1,16 +1,18 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { MatchState } from "./sim/types";
 
 export class DogfightViewer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(62, 1, 0.3, 80_000);
+  readonly camera = new THREE.PerspectiveCamera(55, 1, 0.3, 80_000);
+  readonly controls: OrbitControls;
   private readonly aircraftMeshes = new Map<string, THREE.Object3D>();
   private readonly projectileGroup = new THREE.Group();
-  private readonly clock = new THREE.Clock();
   private modelTemplate?: THREE.Object3D;
   private followId = "blue-1";
+  private cameraInitialized = false;
 
   constructor(private readonly host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -19,6 +21,17 @@ export class DogfightViewer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     host.appendChild(this.renderer.domElement);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 12;
+    this.controls.maxDistance = 240;
+    this.controls.minPolarAngle = 0.08;
+    this.controls.maxPolarAngle = Math.PI - 0.08;
+    this.controls.rotateSpeed = 0.65;
+    this.controls.zoomSpeed = 0.9;
 
     this.scene.background = new THREE.Color(0x9ec8e0);
     this.scene.fog = new THREE.FogExp2(0xa8c7d3, 0.000025);
@@ -37,7 +50,10 @@ export class DogfightViewer {
     this.modelTemplate = gltf.scene;
   }
 
-  setFollow(id: string): void { this.followId = id; }
+  setFollow(id: string): void {
+    this.followId = id;
+    this.cameraInitialized = false;
+  }
 
   private createTerrain(): void {
     const size = 80_000;
@@ -91,7 +107,6 @@ export class DogfightViewer {
   }
 
   render(state: MatchState): void {
-    const dt = Math.min(this.clock.getDelta(), 0.05);
     this.ensureAircraft(state);
     for (const aircraft of state.aircraft) {
       const mesh = this.aircraftMeshes.get(aircraft.id);
@@ -111,13 +126,21 @@ export class DogfightViewer {
 
     const follow = state.aircraft.find((a) => a.id === this.followId) ?? state.aircraft[0];
     if (follow) {
-      const desired = new THREE.Vector3(0, 3.2, -22).applyQuaternion(follow.orientation).add(follow.position);
-      const target = new THREE.Vector3(0, 1, 35).applyQuaternion(follow.orientation).add(follow.position);
-      this.camera.position.lerp(desired, 1 - Math.exp(-dt * 5));
-      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(follow.orientation);
-      this.camera.up.lerp(cameraUp, 1 - Math.exp(-dt * 3)).normalize();
-      this.camera.lookAt(target);
+      const target = follow.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+      if (!this.cameraInitialized) {
+        const initialOffset = new THREE.Vector3(18, 8, -32).applyQuaternion(follow.orientation);
+        this.camera.position.copy(target).add(initialOffset);
+        this.controls.target.copy(target);
+        this.camera.up.set(0, 1, 0);
+        this.cameraInitialized = true;
+      } else {
+        // Follow translation without overwriting the player's orbit angle.
+        const movement = target.clone().sub(this.controls.target);
+        this.camera.position.add(movement);
+        this.controls.target.copy(target);
+      }
     }
+    this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
