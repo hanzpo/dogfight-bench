@@ -14,7 +14,6 @@ import { costUsd, priceOf } from "../server/pricing";
 import { SYSTEM_PROMPT, buildBriefing } from "../server/prompt";
 import { providerAgent } from "../server/providers";
 import { JevProvider } from "../server/providers/jev";
-import { JevStickProvider } from "../server/providers/jev-stick";
 import { OpenAiCompatibleProvider } from "../server/providers/openai";
 
 function sampleObservation() {
@@ -278,79 +277,6 @@ describe("openai-compatible provider", () => {
   it("raises a provider error on a non-2xx response", async () => {
     vi.stubGlobal("fetch", async () => new Response("rate limited", { status: 429 }));
     await expect(new OpenAiCompatibleProvider({ model: "m", baseUrl: "https://example.test/v1" }).decide(sampleObservation())).rejects.toThrow(/429/);
-  });
-});
-
-/**
- * Jev flying the stick: direction as a choice, magnitude as a score.
- *
- * A score is a probability-weighted mean, so a single five-rung scale from
- * "full left" to "full right" averages the two opposite answers into the
- * middle, and the middle of a control axis is "do nothing". Asked as a
- * direction and an amount, the sign survives.
- */
-describe("jev at the stick", () => {
-  const choose = (winner: string, ids: string[], confidence = 0.8) => ({
-    type: "choice",
-    choice: winner,
-    confidence,
-    probabilities: Object.fromEntries(ids.map((id) => [id, id === winner ? 0.7 : 0.3 / (ids.length - 1)])),
-  });
-  const amount = (value: number) => ({
-    type: "score",
-    score: value,
-    confidence: 0.7,
-    probabilities: Object.fromEntries([0, 1, 2, 3, 4].map((level) => [String(level), level === Math.round(value) ? 0.6 : 0.1])),
-  });
-
-  it("signs each axis by its direction and sizes it by its amount", async () => {
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            pitch_way: choose("pull", ["pull", "push"]),
-            pitch_amount: amount(4),
-            roll_way: choose("left", ["left", "right"]),
-            roll_amount: amount(4),
-            yaw_way: choose("centre", ["left", "centre", "right"]),
-            yaw_amount: amount(2),
-            throttle: amount(4),
-            fire: { type: "noul", noul: 0.9 },
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-    const decision = await new JevStickProvider().decide(sampleObservation());
-    expect(decision.action).toEqual({
-      schema: "raw",
-      controls: { pitch: 1, roll: -1, yaw: 0, throttle: 1, fire: true },
-    });
-  });
-
-  // A choice cannot abstain, so the rudder was given somewhere to say "neither"
-  // -- without it the jet flew with half a boot of rudder held permanently on.
-  it("centres the rudder whatever magnitude came back with it", async () => {
-    vi.stubGlobal("fetch", async () =>
-      new Response(
-        JSON.stringify({
-          answers: {
-            pitch_way: choose("push", ["pull", "push"]),
-            pitch_amount: amount(0),
-            roll_way: choose("right", ["left", "right"]),
-            roll_amount: amount(0),
-            yaw_way: choose("centre", ["left", "centre", "right"]),
-            yaw_amount: amount(4),
-            throttle: amount(0),
-            fire: { type: "noul", noul: 0.1 },
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-    const decision = await new JevStickProvider().decide(sampleObservation());
-    expect(decision.action.schema === "raw" && decision.action.controls.yaw).toBe(0);
-    expect(decision.action.schema === "raw" && decision.action.controls.fire).toBe(false);
   });
 });
 

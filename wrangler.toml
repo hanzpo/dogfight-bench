@@ -37,7 +37,7 @@ SUPABASE_ANON_KEY = "sb_publishable_SjQ3x3Ph9SOlAxtzb1XF-A_Lb4ZLolU"
 # far past what a request-scoped Worker may spend. It stays on a machine that
 # can sit still for ten minutes.
 DOGFIGHT_ALLOW_SERIES = "false"
-DOGFIGHT_PUBLIC_PROVIDERS = "jev,jev-stick"
+DOGFIGHT_PUBLIC_PROVIDERS = "jev"
 DOGFIGHT_PUBLIC_DAILY_USD = "5"
 DOGFIGHT_PUBLIC_DAILY_DECISIONS = "40000"
 

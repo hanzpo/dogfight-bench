@@ -2,7 +2,6 @@ import { EnergyFighterAgent, BasicPursuitAgent } from "../../src/agents/baseline
 import type { AgentAdapter } from "../../src/agents/agent";
 import { AnthropicProvider } from "./anthropic";
 import { JevProvider } from "./jev";
-import { JevStickProvider } from "./jev-stick";
 import { OpenAiCompatibleProvider } from "./openai";
 import type { ModelProvider, ProviderOptions } from "./types";
 
@@ -13,13 +12,6 @@ export function providers(options: ProviderOptions = {}): Map<string, ModelProvi
     ["anthropic", new AnthropicProvider(options)],
     ["openai", new OpenAiCompatibleProvider(options)],
     ["jev", new JevProvider(options)],
-    /**
-     * The same model, the same credential, the other interface: axes instead
-     * of a manoeuvre. Its own entrant with its own rating, because folding the
-     * two together would average a model's grasp of tactics with its grasp of
-     * aerodynamics and report one number meaning neither.
-     */
-    ["jev-stick", new JevStickProvider(options)],
   ]);
 }
 
