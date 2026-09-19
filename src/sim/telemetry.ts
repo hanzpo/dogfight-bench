@@ -42,7 +42,14 @@ export interface AircraftTelemetry {
   loadFactorG: number;
   availableLoadFactorG: number;
   sustainedLoadFactorG: number;
-  turnRadiusM: number;
+  /**
+   * Null when the aircraft is not turning.
+   *
+   * The radius is speed over turn rate, which is infinite with the wings level
+   * -- and JSON has no infinity, so a number here would reach the server as
+   * `null` anyway and be read as a number. It says so instead.
+   */
+  turnRadiusM: number | null;
   turnRateDegS: number;
 
   specificEnergyM: number;
@@ -168,7 +175,7 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     loadFactorG: aircraft.loadFactor,
     availableLoadFactorG: availableG,
     sustainedLoadFactorG: sustainedLoadFactor(aircraft.position.y, speed, aircraft.massKg),
-    turnRadiusM: turnRateRadS > 1e-6 ? speed / turnRateRadS : Infinity,
+    turnRadiusM: turnRateRadS > 1e-6 ? speed / turnRateRadS : null,
     turnRateDegS: degrees(turnRateRadS),
 
     specificEnergyM: aircraft.position.y + (speed * speed) / (2 * GRAVITY_MPS2),

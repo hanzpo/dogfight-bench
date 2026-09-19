@@ -24,6 +24,52 @@ function sampleObservation() {
 
 afterEach(() => vi.unstubAllGlobals());
 
+/**
+ * Everything the browser sends arrives as JSON.
+ *
+ * `JSON.stringify` turns Infinity and NaN into `null`, silently. A turn radius
+ * of Infinity -- which is simply what wings-level flight has -- reached the
+ * server as null and every server-side provider died on `null.toFixed()`,
+ * because every test until this one handed the observation over as an object.
+ */
+describe("the observation on the wire", () => {
+  function numbers(value: unknown, path: string, found: string[]): void {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) found.push(`${path} = ${value}`);
+    } else if (Array.isArray(value)) {
+      value.forEach((entry, index) => numbers(entry, `${path}[${index}]`, found));
+    } else if (value && typeof value === "object") {
+      for (const [key, entry] of Object.entries(value)) numbers(entry, `${path}.${key}`, found);
+    }
+  }
+
+  it("holds no number JSON cannot carry", () => {
+    const sim = new DogfightSimulation(neutralMerge);
+    const found: string[] = [];
+    for (let tick = 0; tick < 120 * 20; tick += 1) {
+      sim.step();
+      if (tick % 120) continue;
+      for (const id of ["blue-1", "red-1"]) {
+        numbers(observationFor(sim.state, id, neutralMerge, tick), `${id}@${tick}`, found);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+
+  it("briefs the same whether it arrived as an object or as JSON", () => {
+    const observation = sampleObservation();
+    const overTheWire = JSON.parse(JSON.stringify(observation)) as typeof observation;
+    expect(buildBriefing(overTheWire)).toBe(buildBriefing(observation));
+  });
+
+  it("says a jet with its wings level is not turning, rather than crashing", () => {
+    const observation = sampleObservation();
+    const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
+    own.turnRadiusM = null;
+    expect(buildBriefing(observation)).toContain("turn radius flat");
+  });
+});
+
 describe("model briefing", () => {
   it("presents the tactical picture, not a dump of every field", () => {
     const briefing = buildBriefing(sampleObservation());

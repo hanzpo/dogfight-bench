@@ -35,6 +35,11 @@ function bar(label: string, value: number, unit = "", digits = 0): string {
   return `${label} ${value.toFixed(digits)}${unit}`;
 }
 
+/** A quantity that does not exist right now reads as absent, not as zero. */
+function optional(label: string, value: number | null, unit = "", absent = "n/a"): string {
+  return value === null ? `${label} ${absent}` : bar(label, value, unit);
+}
+
 export function buildBriefing(observation: AgentObservation, includeActionMenu = true): string {
   const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
   const bandit = observation.aircraft.find((aircraft) => aircraft.id === observation.relative.opponentId)!;
@@ -51,7 +56,7 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
     `  ${bar("altitude", own.altitudeM, " m")}, ${bar("height above ground", own.altitudeAglM, " m")}, ${bar("climbing at", own.verticalSpeedMps, " m/s")}`,
     `  energy ${own.specificEnergyM.toFixed(0)} m, Ps ${signed(own.specificExcessPowerMps)} m/s (${either(own.specificExcessPowerMps, "gaining", "LOSING")} energy)`,
     `  pulling ${own.loadFactorG.toFixed(1)} g, ${own.availableLoadFactorG.toFixed(1)} g available, ${own.sustainedLoadFactorG.toFixed(1)} g sustainable`,
-    `  ${bar("turn rate", own.turnRateDegS, " deg/s")}, ${bar("turn radius", own.turnRadiusM, " m")}, ${bar("alpha", own.angleOfAttackDeg, " deg")}${own.limiterActive ? " (AT THE LIMIT)" : ""}`,
+    `  ${bar("turn rate", own.turnRateDegS, " deg/s")}, ${optional("turn radius", own.turnRadiusM, " m", "flat")}, ${bar("alpha", own.angleOfAttackDeg, " deg")}${own.limiterActive ? " (AT THE LIMIT)" : ""}`,
     `  ammo ${own.ammoRemaining}, fuel ${own.fuelKg.toFixed(0)} kg${own.afterburner ? ", afterburner lit" : ""}`,
   );
   if (own.hitsTaken > 0) {
