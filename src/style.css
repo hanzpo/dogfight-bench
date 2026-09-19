@@ -11,6 +11,12 @@
   --text-muted: #9a9ca1;
   --text-faint: #6d7076;
 
+  /* Where the furniture sits. The bar's height is measured and published from
+     the page, because it wraps; the rest is layout this stylesheet decides. */
+  --details-top: 68px;
+  --controls-bottom: 36px;
+  --controls-height: 96px;
+
   --accent: #7dd3c0;
   --accent-ink: #0c1512;
   --warn: #e8a87c;
@@ -138,7 +144,7 @@ input::placeholder { color: var(--text-faint); }
 label { color: var(--text-muted); font-size: 11px; }
 
 .controls {
-    position: fixed; left: 0; right: 0; bottom: 36px; z-index: 3;
+    position: fixed; left: 0; right: 0; bottom: var(--controls-bottom); z-index: 3;
   width: fit-content; margin-inline: auto;
   /* A column so the keymap is a caption row above the groups; centring the
      items keeps the bar only as wide as the widest of them. */
@@ -309,9 +315,10 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
 
 .details {
-  position: fixed; top: 68px; right: 16px; z-index: 3; width: 286px;
+  position: fixed; top: var(--details-top); right: 16px; z-index: 3; width: 286px;
   /* Clear of the control bar, whose height is published as it changes. */
-  max-height: calc(100vh - 68px - 36px - var(--controls-height, 96px) - 24px); overflow: auto;
+  max-height: calc(100vh - var(--details-top) - var(--controls-bottom) - var(--controls-height) - 24px);
+  overflow: auto;
   padding: 14px 16px;
   background: #16181bf2; border: 1px solid var(--line); border-radius: var(--radius);
   font: 11px/1.45 "JetBrains Mono"; color: var(--text-muted);
@@ -466,9 +473,12 @@ table.data a:hover { text-decoration: underline; }
 .timecode { font: 11px "JetBrains Mono"; color: var(--text-muted); min-width: 92px; text-align: center; }
 
 @media (max-width: 900px) {
-  .controls { bottom: 60px; max-width: calc(100vw - 16px); justify-content: flex-start; }
+  :root { --controls-bottom: 60px; }
+  .controls { bottom: var(--controls-bottom); max-width: calc(100vw - 16px); justify-content: flex-start; }
   .keymap { display: none; }
-  .details { width: min(286px, calc(100vw - 24px)); max-height: calc(100vh - 260px); }
+  /* Same reserve as the wide layout: the bar is several rows tall here and its
+     height was a guess, so it covered the bottom of the panel. */
+  .details { width: min(286px, calc(100vw - 24px)); }
   .page { padding: 22px 16px 72px; }
   table.data { font-size: 11px; }
     .page > table.data { display: block; overflow-x: auto; white-space: nowrap; }
@@ -481,5 +491,8 @@ table.data a:hover { text-decoration: underline; }
   .nav a { padding: 6px 8px; }
   .account-menu { width: min(290px, calc(100vw - 24px)); }
   .recording, .decision-error { left: 8px; right: 8px; width: auto; max-width: none; }
+  /* The notice spans the width at this size, so the panel starts below it
+     rather than underneath it. */
+  :root { --details-top: 112px; }
   .orbit-help, .pointer-hint { display: none; }
 }

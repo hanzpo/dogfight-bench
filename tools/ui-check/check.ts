@@ -536,7 +536,15 @@ check(
 await page.selectOption("#view", "free");
 await page.waitForTimeout(1_500);
 
-const rectangles = (await page.evaluate(`(() => {
+/**
+ * Nothing sits on top of anything else, at any window a person might have.
+ *
+ * Only the widescreen case was measured, and the furniture moves: the control
+ * bar grows rows as it wraps, its offset from the bottom changes at 900px, and
+ * the recording notice spans the width below 560px. Each of those broke the
+ * details panel's clearance in turn, and none of them showed up at 1600x900.
+ */
+const RECTANGLES = `(() => {
   const box = (name, sel) => {
     const el = document.querySelector(sel);
     if (!el) return null;
@@ -549,17 +557,38 @@ const rectangles = (await page.evaluate(`(() => {
     box('stores', '.flight-display .stores-group'),
     box('details panel', '.details'),
     box('status strip', '.flight-strip'),
+    box('recording notice', '.recording'),
   ].filter(Boolean);
-})()`)) as Array<{ name: string; l: number; t: number; r: number; b: number }>;
+})()`;
 
-for (let i = 0; i < rectangles.length; i += 1) {
-  for (let j = i + 1; j < rectangles.length; j += 1) {
-    const a = rectangles[i]!;
-    const b = rectangles[j]!;
-    const overlaps = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
-    check(!overlaps, `${a.name} does not sit on ${b.name}`);
+type Rect = { name: string; l: number; t: number; r: number; b: number };
+const overlapsIn = async (label: string): Promise<void> => {
+  const rectangles = (await page.evaluate(RECTANGLES)) as Rect[];
+  const hits: string[] = [];
+  for (let i = 0; i < rectangles.length; i += 1) {
+    for (let j = i + 1; j < rectangles.length; j += 1) {
+      const a = rectangles[i]!;
+      const b = rectangles[j]!;
+      if (a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b) hits.push(`${a.name} on ${b.name}`);
+    }
   }
+  check(hits.length === 0, `${label}: nothing overlaps${hits.length ? ` (${hits.join(", ")})` : ""}`);
+};
+
+await overlapsIn("widescreen");
+
+const widescreen = page.viewportSize()!;
+for (const [width, height] of [
+  [1280, 720],
+  [900, 650],
+  [500, 800],
+] as const) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(1_400);
+  await overlapsIn(`${width}x${height}`);
 }
+await page.setViewportSize(widescreen);
+await page.waitForTimeout(1_200);
 
 console.log("tactical overlay");
 await page.selectOption("#blue-pilot", "basic");
