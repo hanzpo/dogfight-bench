@@ -65,6 +65,42 @@ Read that as one model against one hand-tuned opponent, not as a ranking. A
 six-match sample of the same pair came out 3-3, which is roughly what six
 matches of anything are worth.
 
+## Two ways to fly the same aircraft
+
+`tactical` names a manoeuvre, a load factor and a throttle; an autopilot chases
+that order at simulation rate. `raw` sets the stick and throttle positions
+directly, and they are held until the next answer. Both are offered to Jev as
+separate entrants with separate ratings, because folding them together would
+average a model's grasp of tactics with its grasp of aerodynamics and report one
+number meaning neither.
+
+The stick interface is much the harder one, and the benchmark now says by how
+much. Over the same six matches against `energy-fighter`:
+
+| | stick | manoeuvres |
+|---|---|---|
+| Record | 0-6 | 2-4 |
+| Rounds fired | 1,584 | 20 |
+| Hits | 0 | 2 |
+| Time on target | 0.0 s | 0.3 s |
+
+The failure is visible in one column of the decision log: the roll command
+alternates sign on almost every decision. A control position chosen once a
+second and then frozen is an open loop with a one-second dead time, so the jet
+rolls hard one way, overshoots while nobody is looking, and rolls hard back. It
+is the classic reason a language model belongs in the outer loop of a
+controller and not the inner one -- the autopilot behind `tactical` *is* that
+inner loop, closing at 120 Hz.
+
+Four things were tried and none of them fixed it: asking each axis as one
+signed score (every axis collapsed to centre, because the mean of "full left"
+and "full right" is "centred"); splitting each axis into a direction (`choice`,
+which cannot average across its options) and a magnitude (`score`, where a mean
+is meaningful); running Jev at 5 Hz, which its 180 ms latency allows; and
+putting bank angle, roll rate and the current stick position into the briefing,
+which it had never been told. Each was a real improvement and the oscillation
+survived all of them.
+
 ## Cameras
 
 Five, because a fight asks five different questions. **Free look** is the

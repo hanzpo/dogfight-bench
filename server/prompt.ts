@@ -57,6 +57,11 @@ export function buildBriefing(observation: AgentObservation, includeActionMenu =
     `  energy ${own.specificEnergyM.toFixed(0)} m, Ps ${signed(own.specificExcessPowerMps)} m/s (${either(own.specificExcessPowerMps, "gaining", "LOSING")} energy)`,
     `  pulling ${own.loadFactorG.toFixed(1)} g, ${own.availableLoadFactorG.toFixed(1)} g available, ${own.sustainedLoadFactorG.toFixed(1)} g sustainable`,
     `  ${bar("turn rate", own.turnRateDegS, " deg/s")}, ${optional("turn radius", own.turnRadiusM, " m", "flat")}, ${bar("alpha", own.angleOfAttackDeg, " deg")}${own.limiterActive ? " (AT THE LIMIT)" : ""}`,
+    // Where the aeroplane already is and what the stick is already doing.
+    // Without these a control input is chosen blind: the bank could be 80
+    // degrees the way you are about to roll, and the stick already hard over.
+    `  banked ${Math.abs(own.rollDeg).toFixed(0)} deg ${either(own.rollDeg, "right", "left")}, rolling ${Math.abs(own.rollRateDegS).toFixed(0)} deg/s ${either(own.rollRateDegS, "right", "left")}`,
+    `  stick is ${own.controls.pitch >= 0 ? "aft" : "forward"} ${Math.abs(own.controls.pitch).toFixed(2)}, roll ${signed(own.controls.roll, 2)}, rudder ${signed(own.controls.yaw, 2)}, throttle ${(own.controls.throttle * 100).toFixed(0)}%`,
     `  ammo ${own.ammoRemaining}, fuel ${own.fuelKg.toFixed(0)} kg${own.afterburner ? ", afterburner lit" : ""}`,
   );
   if (own.hitsTaken > 0) {

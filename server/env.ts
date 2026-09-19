@@ -8,7 +8,7 @@ export const env = {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-  publicProviders: (process.env["DOGFIGHT_PUBLIC_PROVIDERS"] ?? "jev")
+  publicProviders: (process.env["DOGFIGHT_PUBLIC_PROVIDERS"] ?? "jev,jev-stick")
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean),

@@ -92,7 +92,8 @@ export function LivePage() {
         const hasKey = Boolean(loadKey(agent.kind));
         const free = agent.free && agent.available && !budget?.exhausted;
         const note = pilotNote(hasKey, free, Boolean(budget?.exhausted));
-        return { value: agent.kind, label: agent.name, note, usable: free || hasKey };
+        const flies = agent.schema === "raw" ? "stick" : "manoeuvres";
+        return { value: agent.kind, label: agent.name, flies, note, usable: free || hasKey };
       });
     return { scripted, models };
   }, [roster.agents, roster.freeBudget, keyNonce]);
@@ -220,7 +221,7 @@ export function LivePage() {
             ))}
             {pilotOptions.models.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label} · {option.note}
+                {option.label} · {option.flies} · {option.note}
               </option>
             ))}
           </select>
@@ -239,7 +240,7 @@ export function LivePage() {
             ))}
             {pilotOptions.models.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label} · {option.note}
+                {option.label} · {option.flies} · {option.note}
               </option>
             ))}
           </select>

@@ -10,6 +10,15 @@ import type { AgentDecision, AgentInfo, ChoiceDistribution } from "../../src/age
 import type { AgentObservation } from "../../src/sim/telemetry";
 import { env, requireKey } from "../env";
 import { MANEUVER_GUIDE, buildBriefing } from "../prompt";
+import {
+  askSystemOne,
+  firstSentence,
+  readChoice,
+  readNoul,
+  readScore,
+  type ChoiceAnswer,
+  type ScoreAnswer,
+} from "./system-one";
 import type { ModelProvider, ProviderOptions } from "./types";
 import { clamp } from "../../src/math";
 
@@ -53,79 +62,6 @@ function alongScale(scale: readonly number[], score: number): number {
   const low = clamp(Math.floor(score), 0, scale.length - 1);
   const high = Math.min(low + 1, scale.length - 1);
   return scale[low]! + (scale[high]! - scale[low]!) * (score - low);
-}
-
-interface ChoiceAnswer {
-  type?: string;
-  choice: string;
-  confidence: number;
-  probabilities: Record<string, number>;
-}
-
-interface ScoreAnswer {
-  type?: string;
-  score: number;
-  confidence: number;
-  probabilities: Record<string, number>;
-  legend?: Record<string, string>;
-}
-
-interface NoulAnswer {
-  type?: string;
-  noul: number;
-}
-
-interface SystemOneResponse {
-  model?: string;
-  answers?: Record<string, unknown>;
-  usage?: { input_tokens?: number; output_tokens?: number; cost_usd?: number };
-}
-
-function finite(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function probability(value: unknown): value is number {
-  return finite(value) && value >= 0 && value <= 1;
-}
-
-function require<T>(valid: boolean, answer: T | undefined, kind: string): T {
-  if (!valid || answer === undefined) throw new Error(`Invalid TypeSafe ${kind}; no action taken`);
-  return answer;
-}
-
-function firstSentence(text: string): string {
-  return text.split(".")[0]!;
-}
-
-function readChoice(value: unknown, ids: readonly string[]): ChoiceAnswer {
-  const answer = value as ChoiceAnswer | undefined;
-  const probabilities = answer?.probabilities;
-  const values = probabilities ? Object.values(probabilities) : [];
-  const valid =
-    answer !== undefined &&
-    ids.includes(answer.choice) &&
-    probabilities !== undefined &&
-    ids.every((id) => id in probabilities) &&
-    [...values, answer.confidence].every(probability) &&
-    Math.abs(values.reduce((sum, entry) => sum + entry, 0) - 1) < 0.02;
-  return require(valid, answer, "choice");
-}
-
-function readScore(value: unknown, levels: number): ScoreAnswer {
-  const answer = value as ScoreAnswer | undefined;
-  const valid =
-    answer !== undefined &&
-    finite(answer.score) &&
-    answer.score >= 0 &&
-    answer.score <= levels - 1 &&
-    probability(answer.confidence);
-  return require(valid, answer, "score");
-}
-
-function readNoul(value: unknown): number {
-  const answer = value as NoulAnswer | undefined;
-  return require(probability(answer?.noul), answer?.noul, "noul");
 }
 
 function distributionsOf(
@@ -238,22 +174,12 @@ export class JevProvider implements ModelProvider {
   }
 
   async decide(observation: AgentObservation, signal?: AbortSignal): Promise<AgentDecision> {
-    const response = await fetch(env.typesafeUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${requireKey(this.apiKey, "TYPESAFE_API_KEY")}`,
-      },
+    const result = await askSystemOne(
+      { url: env.typesafeUrl, key: requireKey(this.apiKey, "TYPESAFE_API_KEY"), model: this.model },
+      buildBriefing(observation, false),
+      QUESTIONS,
       signal,
-      body: JSON.stringify({
-        model: this.model,
-        state: buildBriefing(observation, false),
-        questions: QUESTIONS,
-      }),
-    });
-    if (!response.ok) throw new Error(`TypeSafe returned HTTP ${response.status}: ${await response.text()}`);
-
-    const result = (await response.json()) as SystemOneResponse;
+    );
     const answers = result.answers ?? {};
     const maneuver = readChoice(answers["maneuver"], MANEUVERS);
     const commitment = readScore(answers["commitment"], COMMITMENT.length);

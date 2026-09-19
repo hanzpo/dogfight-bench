@@ -398,7 +398,9 @@ function opponentCompetitor(
     provider: kind,
     model: described?.model ?? kind,
     policyVersion: described?.policyVersion ?? "1",
-    schema: "tactical",
+    // The interface is part of the identity, so a model flying the stick must
+    // not be credited to the same entrant as the one naming manoeuvres.
+    schema: described?.schema ?? "tactical",
   });
 }
 

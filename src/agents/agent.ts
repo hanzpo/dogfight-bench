@@ -100,7 +100,7 @@ function validateDistributions(value: unknown): ChoiceDistribution[] | undefined
 }
 
 export function resolveAction(action: AgentAction, observation: AgentObservation): ControlInput {
-  return resolveTacticalForObservation(action, observation);
+  return action.schema === "raw" ? action.controls : resolveTacticalForObservation(action, observation);
 }
 
 export class AgentTimeoutError extends Error {

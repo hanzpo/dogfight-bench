@@ -178,7 +178,8 @@ export class DogfightSimulation {
           const target = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
           if (target?.alive) {
             if (decision.action.schema === "tactical") {
-              this.standingOrders.set(aircraftId, decision.action);
+              if (decision.action.schema === "tactical") this.standingOrders.set(aircraftId, decision.action);
+              else this.standingOrders.delete(aircraftId);
             } else {
               this.standingOrders.delete(aircraftId);
               target.controls = resolveAction(decision.action, observation);

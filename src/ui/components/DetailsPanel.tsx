@@ -130,7 +130,15 @@ function DecisionSection({ decision }: { decision: DecisionRecord }) {
       <h2>MODEL</h2>
       <dl>
         <Row label="latency" value={`${Math.round(decision.latencyMs)} ms`} />
-        <Row label="command" value={action.maneuver} note={`${action.targetG.toFixed(0)} g · ${action.throttle}`} />
+        {action.schema === "tactical" ? (
+          <Row label="command" value={action.maneuver} note={`${action.targetG.toFixed(0)} g · ${action.throttle}`} />
+        ) : (
+          <Row
+            label="stick"
+            value={`${action.controls.pitch >= 0 ? "pull" : "push"} ${Math.abs(action.controls.pitch).toFixed(2)}`}
+            note={`roll ${action.controls.roll.toFixed(2)} · yaw ${action.controls.yaw.toFixed(2)} · ${(action.controls.throttle * 100).toFixed(0)}%`}
+          />
+        )}
         {decision.usage?.costUsd ? (
           <Row label="cost" value={`$${decision.usage.costUsd.toFixed(5)}`} />
         ) : null}
