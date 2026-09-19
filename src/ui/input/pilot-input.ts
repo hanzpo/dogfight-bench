@@ -32,14 +32,36 @@ export const DEFAULT_SETTINGS: PilotInputSettings = {
 
 const SETTINGS_KEY = "dogfight.input";
 
+/** Bounds each setting, so a stored value can be wrong but never unusable. */
+const SETTING_RANGE = {
+  mousePixelsForFullDeflection: [40, 4_000],
+  mouseSpringPerSecond: [0, 20],
+  gamepadDeadzone: [0, 0.9],
+} as const;
+
+/**
+ * Whatever is in storage was written by some build of this page, not
+ * necessarily this one. A stored setting of the wrong type or a silly
+ * magnitude would otherwise survive a release and quietly break the controls,
+ * with nothing to do about it but know to clear the site's data.
+ */
 export function loadSettings(): PilotInputSettings {
+  let stored: Partial<PilotInputSettings> = {};
   try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
-    if (!stored) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(stored) as Partial<PilotInputSettings>) };
+    stored = (JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Partial<PilotInputSettings>) ?? {};
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
+
+  const settings = { ...DEFAULT_SETTINGS };
+  if (typeof stored.invertMousePitch === "boolean") settings.invertMousePitch = stored.invertMousePitch;
+  for (const [name, [low, high]] of Object.entries(SETTING_RANGE) as Array<
+    [keyof typeof SETTING_RANGE, readonly [number, number]]
+  >) {
+    const value = stored[name];
+    if (typeof value === "number" && Number.isFinite(value)) settings[name] = clamp(value, low, high);
+  }
+  return settings;
 }
 
 export function saveSettings(settings: PilotInputSettings): void {
