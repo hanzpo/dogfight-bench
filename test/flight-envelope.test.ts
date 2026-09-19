@@ -103,7 +103,7 @@ describe("energy manoeuvrability", () => {
       const aircraft = makeTestAircraft({ altitudeM: altitude, speedMps: target.speedMps });
       const bank = Math.acos(Math.min(1, 1 / target.loadFactor));
       for (let i = 0; i < 2 / DT; i += 1) {
-        aircraft.controls = {
+        aircraft.commandedControls = {
           pitch: (target.loadFactor - 1) / (FLCS.maxLoadFactor - 1),
           roll: clamp((bank - currentBank(aircraft)) * 1.2 - aircraft.angularVelocity.x * 0.3, -1, 1),
           yaw: 0,
@@ -136,7 +136,7 @@ describe("flight control system", () => {
     const aircraft = makeTestAircraft({ altitudeM: 1_500, speedMps: 320 });
     let peak = 0;
     for (let i = 0; i < 6 / DT; i += 1) {
-      aircraft.controls = { pitch: 1, roll: 0, yaw: 0, throttle: 1, fire: false };
+      aircraft.commandedControls = { pitch: 1, roll: 0, yaw: 0, throttle: 1, fire: false };
       stepAircraft(aircraft, DT);
       peak = Math.max(peak, aircraft.loadFactor);
     }
@@ -150,7 +150,7 @@ describe("flight control system", () => {
       let peakAlpha = 0;
       let departed = false;
       for (let i = 0; i < 15 / DT; i += 1) {
-        aircraft.controls = { pitch: 1, roll: 0, yaw: 0, throttle: 1, fire: false };
+        aircraft.commandedControls = { pitch: 1, roll: 0, yaw: 0, throttle: 1, fire: false };
         stepAircraft(aircraft, DT);
         peakAlpha = Math.max(peakAlpha, Math.abs(aircraft.aoaRad));
         departed ||= aircraft.flcs.departed;

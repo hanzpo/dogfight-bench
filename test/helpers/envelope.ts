@@ -37,6 +37,7 @@ export function makeTestAircraft(options: TestAircraftOptions): AircraftState {
     orientation,
     angularVelocity: new Vector3(),
     controls: { pitch: 0, roll: 0, yaw: 0, throttle: trim.throttle, fire: false },
+    commandedControls: { pitch: 0, roll: 0, yaw: 0, throttle: trim.throttle, fire: false },
     flcs: createFlcsState(),
     engine: {
       power,
@@ -71,6 +72,7 @@ export function cloneAircraft(aircraft: AircraftState): AircraftState {
     orientation: aircraft.orientation.clone(),
     angularVelocity: aircraft.angularVelocity.clone(),
     controls: { ...aircraft.controls },
+    commandedControls: { ...aircraft.commandedControls },
     flcs: { ...aircraft.flcs },
     engine: { ...aircraft.engine },
     damage: { ...aircraft.damage, subsystems: { ...aircraft.damage.subsystems } },
@@ -80,7 +82,7 @@ export function cloneAircraft(aircraft: AircraftState): AircraftState {
 export function fly(aircraft: AircraftState, seconds: number, controls: Partial<ControlInput>): void {
   const steps = Math.round(seconds / DT);
   for (let i = 0; i < steps; i += 1) {
-    aircraft.controls = { ...aircraft.controls, ...controls };
+    aircraft.commandedControls = { ...aircraft.commandedControls, ...controls };
     stepAircraft(aircraft, DT);
   }
 }
@@ -118,7 +120,7 @@ export function sustainedTurn(altitudeM: number, entrySpeedMps: number, seconds 
     const targetBank = Math.acos(Math.min(1, 1 / n));
     const altitudeError = aircraft.position.y - altitudeM;
     const verticalSpeed = aircraft.velocity.y;
-    aircraft.controls = {
+    aircraft.commandedControls = {
       pitch: 1,
       roll: clamp((targetBank - currentBank(aircraft)) * 2.5 + altitudeError * 0.0015 + verticalSpeed * 0.02, -1, 1),
       yaw: 0,
@@ -143,7 +145,7 @@ export function instantaneousTurn(altitudeM: number, speedMps: number): TurnResu
   for (let i = 0; i < Math.round(6 / DT); i += 1) {
     const n = Math.max(aircraft.loadFactor, 1.02);
     const targetBank = Math.acos(Math.min(1, 1 / n));
-    aircraft.controls = {
+    aircraft.commandedControls = {
       pitch: 1,
       roll: clamp((targetBank - currentBank(aircraft)) * 2.5, -1, 1),
       yaw: 0,

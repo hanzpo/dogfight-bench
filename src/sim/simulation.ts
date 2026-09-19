@@ -182,7 +182,7 @@ export class DogfightSimulation {
               else this.standingOrders.delete(aircraftId);
             } else {
               this.standingOrders.delete(aircraftId);
-              target.controls = resolveAction(decision.action, observation);
+              target.commandedControls = resolveAction(decision.action, observation);
             }
           }
           slot.decisions += 1;
@@ -249,7 +249,7 @@ export class DogfightSimulation {
       if (!order || !aircraft.alive) continue;
       const opponent = this.state.aircraft.find((candidate) => candidate.id !== aircraft.id);
       if (!opponent) continue;
-      aircraft.controls = resolveTactical(order, contextFromState(aircraft, opponent, this.config.hardDeckAglM));
+      aircraft.commandedControls = resolveTactical(order, contextFromState(aircraft, opponent, this.config.hardDeckAglM));
     }
   }
 
@@ -398,7 +398,7 @@ export class DogfightSimulation {
     const aircraft = this.state.aircraft.find((candidate) => candidate.id === aircraftId);
     if (!aircraft) return;
     this.standingOrders.delete(aircraftId);
-    aircraft.controls = controls;
+    aircraft.commandedControls = controls;
   }
 
   agentStats(): Record<string, AgentStats> {

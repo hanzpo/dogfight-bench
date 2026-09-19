@@ -77,6 +77,7 @@ function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftSta
     orientation,
     angularVelocity: new Vector3(),
     controls: { pitch: 0, roll: 0, yaw: 0, throttle: trim.throttle, fire: false },
+    commandedControls: { pitch: 0, roll: 0, yaw: 0, throttle: trim.throttle, fire: false },
     flcs: createFlcsState(),
     engine: {
       power,

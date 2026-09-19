@@ -88,7 +88,7 @@ describe("replayed tracers", () => {
       "red-1": SCRIPTED_INFO("target"),
     });
     await sim.runHeadless((state) => {
-      state.aircraft[0]!.controls.fire = true;
+      state.aircraft[0]!.commandedControls.fire = true;
       recorder.capture(state);
     });
 

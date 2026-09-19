@@ -30,7 +30,18 @@ export interface AircraftState {
   acceleration: Vector3;
   orientation: Quaternion;
   angularVelocity: Vector3;
+  /** Where the stick and throttle actually are. */
   controls: ControlInput;
+  /**
+   * Where whoever is flying wants them.
+   *
+   * The two are separate because a hand cannot teleport. An agent that answers
+   * once a second used to have its command applied as a step, which showed up
+   * as the aeroplane snapping into a bank and snapping back out of it -- and in
+   * one tick the control could move full scale, which no pilot and no actuator
+   * can do.
+   */
+  commandedControls: ControlInput;
   flcs: FlcsState;
   engine: EngineState;
   massKg: number;

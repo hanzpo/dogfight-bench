@@ -59,11 +59,39 @@ export function aeroRatesToRotationVector(p: number, q: number, r: number): Vect
   return new Vector3(-q, -r, p);
 }
 
+/**
+ * How fast the stick and throttle can be moved, in full deflections a second.
+ *
+ * A fighter pilot can slam the stick corner to corner in about a fifth of a
+ * second, and no faster. The throttle is a lever with a hand on it and moves
+ * slower still; the engine's own spool-up is modelled separately.
+ */
+const STICK_PER_SECOND = 5;
+const THROTTLE_PER_SECOND = 2;
+
+function towards(current: number, wanted: number, limit: number): number {
+  return current + clamp(wanted - current, -limit, limit);
+}
+
+/** Moves the controls towards what was commanded, as fast as a hand can. */
+export function trackCommandedControls(aircraft: AircraftState, dt: number): void {
+  const wanted = sanitizeControls(aircraft.commandedControls);
+  const stick = STICK_PER_SECOND * dt;
+  aircraft.controls = {
+    pitch: towards(aircraft.controls.pitch, wanted.pitch, stick),
+    roll: towards(aircraft.controls.roll, wanted.roll, stick),
+    yaw: towards(aircraft.controls.yaw, wanted.yaw, stick),
+    throttle: towards(aircraft.controls.throttle, wanted.throttle, THROTTLE_PER_SECOND * dt),
+    // The trigger is a switch, not a lever.
+    fire: wanted.fire,
+  };
+}
+
 export function stepAircraft(aircraft: AircraftState, dt: number): void {
   if (!aircraft.alive) return;
 
-  const controls = sanitizeControls(aircraft.controls);
-  aircraft.controls = controls;
+  trackCommandedControls(aircraft, dt);
+  const controls = aircraft.controls;
 
   const axes = bodyAxes(aircraft.orientation);
   const agl = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);

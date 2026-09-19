@@ -140,6 +140,7 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
         orientation: new Quaternion(...slerpish(frame.q, later.q, blend)),
         angularVelocity: new Vector3(),
         controls: { pitch: 0, roll: 0, yaw: 0, throttle, fire: false },
+        commandedControls: { pitch: 0, roll: 0, yaw: 0, throttle, fire: false },
         flcs: { ...createFlcsState(), limiterActive: limiter === 1, departed: departed === 1 },
         engine: {
           power: throttle,

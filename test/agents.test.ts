@@ -83,7 +83,7 @@ describe("tactical autopilot", () => {
       const blue = sim.state.aircraft[0]!;
       const startHeading = observe(sim).aircraft[0]!.headingDeg;
       for (let i = 0; i < 120 * 6; i += 1) {
-        blue.controls = resolveAction(
+        blue.commandedControls = resolveAction(
           { schema: "tactical", maneuver, targetG: 7, throttle: "ab", fire: false },
           observe(sim),
         );
@@ -104,11 +104,11 @@ describe("tactical autopilot", () => {
     let bestAimError = Infinity;
     for (let i = 0; i < 120 * 45; i += 1) {
       const observation = observe(sim);
-      blue.controls = resolveAction(
+      blue.commandedControls = resolveAction(
         { schema: "tactical", maneuver: "lead_pursuit", targetG: 8, throttle: "ab", fire: false },
         observation,
       );
-      red.controls = { pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire: false };
+      red.commandedControls = { pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire: false };
       sim.step();
       if (observation.relative.rangeM < 2_500) {
         bestAimError = Math.min(bestAimError, observation.relative.gunSolution.aimErrorDeg);
@@ -204,7 +204,7 @@ describe("scripted baselines", () => {
     for (let i = 0; i < 120 * 12; i += 1) {
       const observation = observationFor(sim.state, "blue-1", neutralMerge, 0);
       const solution = observation.relative.gunSolution;
-      blue!.controls = resolveAction(
+      blue!.commandedControls = resolveAction(
         {
           schema: "tactical",
           maneuver: "lead_pursuit",
@@ -214,7 +214,7 @@ describe("scripted baselines", () => {
         },
         observation,
       );
-      red!.controls = resolveAction(
+      red!.commandedControls = resolveAction(
         { schema: "tactical", maneuver: "level", targetG: 2, throttle: "cruise", fire: false },
         observationFor(sim.state, "red-1", neutralMerge, 0),
       );
