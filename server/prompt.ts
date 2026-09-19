@@ -2,22 +2,38 @@ import { MANEUVERS, THROTTLE_DETENTS } from "../src/agents/action";
 import type { AgentObservation, GunSolution } from "../src/sim/telemetry";
 import { aspect, either, signed } from "../src/format";
 
+/**
+ * When each manoeuvre is the right answer, not what it does.
+ *
+ * These are the criteria a `choice` matches the state against, so they have to
+ * describe the situation rather than the mechanics. Written as descriptions of
+ * the manoeuvre, a head-on merge -- where both aircraft are threatened and both
+ * have a shot -- read as a reason to break, and the break threw away a gun
+ * solution that was eighteen metres from a hit.
+ */
 export const MANEUVER_GUIDE: Record<(typeof MANEUVERS)[number], string> = {
-  pure_pursuit: "nose straight at the bandit; closes range fastest, overshoots easiest",
-  lead_pursuit: "nose ahead of the bandit; the only manoeuvre that produces a gun solution",
-  lag_pursuit: "nose behind the bandit; cuts closure and holds the control zone",
-  break_left: "maximum-rate level turn to the left; the standard defensive move",
-  break_right: "maximum-rate level turn to the right",
-  high_yoyo: "climb out of plane to kill closure when overshooting from behind",
-  low_yoyo: "descend to build speed when the bandit is pulling away",
-  vertical_reversal: "pull into the vertical and come over the top; needs energy",
-  defensive_spiral: "descending turn into an attacker to force an overshoot; costs altitude",
-  extend: "run away from the bandit to rebuild speed and separation",
-  climb: "trade speed for altitude",
-  dive: "trade altitude for speed",
-  level: "wings level, hold altitude",
+  lead_pursuit:
+    "The nose is near the bandit and a shot is on or close: aim where they will be and hold it. Anything under about a hundred metres of predicted miss is worth staying in. This is the only manoeuvre that shoots.",
+  pure_pursuit:
+    "The bandit is well off the nose and far enough away that the angles do not matter yet. Point straight at them and close.",
+  lag_pursuit:
+    "Behind the bandit and closing too fast, or about to slide out in front of them. Aim behind them to bleed the closure and stay in the control zone.",
+  break_left:
+    "The bandit is BEHIND you with a shot, and they are to your left or you must turn left to face them. A maximum-rate turn now, accepting the energy cost, because the alternative is being hit.",
+  break_right: "The same, to the right: the bandit is behind you with a shot and the turn belongs that way.",
+  high_yoyo:
+    "Behind the bandit, closing fast, and about to overshoot in the same plane. Climb out of plane, let them slide back underneath, and drop in behind them.",
+  low_yoyo: "Behind the bandit but slow and falling out of the turn, while they pull away. Trade height for the speed to catch them.",
+  vertical_reversal:
+    "Fast and roughly neutral, with energy to spend and no shot available in the horizontal. Pull into the vertical and come back over the top.",
+  defensive_spiral:
+    "The bandit is behind and inside your turn, and a level break is not going to shake them. Spiral down into them to force an overshoot, paying altitude for it.",
+  extend:
+    "Slow, out of energy, or with the bandit too far off to threaten for a while. Run, rebuild the speed, and come back with something to fight with.",
+  climb: "Fast with nothing immediate to point at: convert the speed into height to spend later.",
+  dive: "Slow with height to spare and nothing immediate to point at: convert the height into speed.",
+  level: "Nothing is happening and nothing needs to. Wings level, hold what you have.",
 };
-
 export const SYSTEM_PROMPT = `You are flying an F-16C in a guns-only one-versus-one dogfight against another aircraft of exactly the same type. You choose one tactical command roughly once a second; an autopilot flies it until your next command.
 
 How the fight is won:
