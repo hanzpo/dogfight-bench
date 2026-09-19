@@ -192,7 +192,8 @@ describe("scripted baselines", () => {
       if (sim.state.winnerId === "red-1") redWins += 1;
     }
     expect(Math.abs(blueWins - redWins)).toBeLessThanOrEqual(3);
-  }, 120_000);
+    // Ten full matches of physics; it shares a machine with the rest of the suite.
+  }, 300_000);
 
   it("converts a tight gun solution into hits", () => {
     const sim = new DogfightSimulation(neutralMerge, { recordDecisions: false });

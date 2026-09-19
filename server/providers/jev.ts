@@ -164,7 +164,7 @@ export class JevProvider implements ModelProvider {
       name: `jev/${this.model}`,
       provider: "jev",
       model: this.model,
-      policyVersion: "primitives-3",
+      policyVersion: "primitives-4",
       schema: "tactical",
     };
   }

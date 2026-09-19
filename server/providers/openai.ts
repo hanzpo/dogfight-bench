@@ -47,7 +47,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       name: `openai-compatible/${this.model}`,
       provider: "openai",
       model: this.model,
-      policyVersion: "bfm-briefing-2",
+      policyVersion: "bfm-briefing-3",
       schema: "tactical",
     };
   }
