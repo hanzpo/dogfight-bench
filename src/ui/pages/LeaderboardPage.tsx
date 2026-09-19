@@ -109,7 +109,6 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
             <th>#</th>
             <th>Entrant</th>
             <th>Model</th>
-            <th>Flies</th>
             <th className="num">Rating</th>
             <th className="num">W-L-D</th>
             <th className="num">Win rate</th>
@@ -138,7 +137,6 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
                 {row.kind === "model" ? row.model : "—"}
                 {row.kind === "model" ? <div className="policy">prompt {row.policyVersion}</div> : null}
               </td>
-              <td className="muted">{row.schema === "raw" ? "stick" : "manoeuvres"}</td>
               <td className="num strong">{row.rating.toFixed(0)}</td>
               <td className="num">{`${row.wins}-${row.losses}-${row.draws}`}</td>
               <td className="num">
@@ -160,9 +158,7 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
       <p className="footnote">
         Rating is Elo, so beating a strong opponent counts for more than beating a weak one, and a model that several
         people beat loses rating once for each of them. Accuracy is hits per round fired. Failures count decisions that
-        errored or missed their deadline. <strong>Flies</strong> is the interface: <em>manoeuvres</em> names a
-        manoeuvre and an autopilot flies it continuously, while <em>stick</em> moves the controls directly and nothing
-        interprets them — the same model at both is two entrants, ranked separately.
+        errored or missed their deadline.
       </p>
     </>
   );

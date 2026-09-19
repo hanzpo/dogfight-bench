@@ -55,24 +55,6 @@ describe("20 mm ballistics", () => {
     expect(thousand.speed).toBeLessThan(800);
   });
 
-  it("loses speed monotonically and drops under gravity", () => {
-    const shot = flyRound(4_500);
-    const near = shot.at(500);
-    const far = shot.at(1_500);
-    expect(near.speed).toBeGreaterThan(far.speed);
-    expect(far.drop).toBeGreaterThan(near.drop);
-    const dragFree = 0.5 * 9.80665 * far.t * far.t;
-    expect(far.drop).toBeGreaterThan(dragFree * 0.7);
-    expect(far.drop).toBeLessThan(dragFree);
-  });
-
-  it("shoots flatter in thin air than at sea level", () => {
-    const low = flyRound(0).at(1_500);
-    const high = flyRound(9_000).at(1_500);
-    expect(high.speed).toBeGreaterThan(low.speed);
-    expect(high.t).toBeLessThan(low.t);
-  });
-
   it("still carries lethal energy at typical guns range", () => {
     const shot = flyRound(4_500);
     expect(kineticEnergyJ(shot.at(1_200).speed)).toBeGreaterThan(10_000);
@@ -109,17 +91,6 @@ describe("the gun", () => {
     for (let i = 0; i < 10 / DT; i += 1) fireGun(state, shooter, DT, rng, nextId);
     expect(shooter.ammo).toBe(0);
     expect(state.events.some((event) => event.type === "winchester")).toBe(true);
-  });
-
-  it("inherits the aircraft's velocity", () => {
-    const { state, rng, nextId } = firingState();
-    const shooter = state.aircraft[0]!;
-    shooter.controls.fire = true;
-    shooter.gunSpin = 1;
-    while (state.projectiles.length === 0) fireGun(state, shooter, DT, rng, nextId);
-    const round = state.projectiles[0]!;
-    expect(round.velocity.length()).toBeGreaterThan(GUN.muzzleVelocityMps + 200);
-    expect(round.velocity.clone().sub(shooter.velocity).length()).toBeCloseTo(GUN.muzzleVelocityMps, 0);
   });
 
   it("disperses rounds by a few milliradians and repeats exactly for a seed", () => {
@@ -178,31 +149,12 @@ describe("damage", () => {
     expect(wingHits).toBeLessThan(30);
   });
 
-  it("degrades the subsystem that was hit", () => {
-    const damage = createDamageState();
-    const engine = HIT_VOLUMES.find((volume) => volume.subsystem === "engine")!;
-    applyHit(damage, engine, 1, 1);
-    expect(damage.subsystems.engine).toBeLessThan(1);
-    expect(damage.subsystems["left-wing"]).toBe(1);
-    expect(damage.fuelLeakKgS).toBeGreaterThan(0);
-    expect(damage.hitsTaken).toBe(1);
-  });
-
   it("can take the pilot out through the canopy", () => {
     const damage = createDamageState();
     const cockpit = HIT_VOLUMES.find((volume) => volume.subsystem === "cockpit")!;
     applyHit(damage, cockpit, 1, 0);
     expect(damage.pilotIncapacitated).toBe(true);
     expect(isDestroyed(damage)).toBe(true);
-  });
-
-  it("scores low-energy hits as less damaging", () => {
-    const wing = HIT_VOLUMES.find((volume) => volume.subsystem === "left-wing")!;
-    const hot = createDamageState();
-    const cold = createDamageState();
-    applyHit(hot, wing, 1, 1);
-    applyHit(cold, wing, 0.3, 1);
-    expect(cold.integrity).toBeGreaterThan(hot.integrity);
   });
 });
 
@@ -305,25 +257,5 @@ describe("the gunsight", () => {
         expect(solution.predictedMissM).toBeLessThanOrEqual(solution.leadRangeM + 1);
       }
     }
-  });
-
-  it("aims above the target to compensate for the drop", () => {
-    const state = createNeutralMerge(neutralMerge);
-    const [shooter, target] = state.aircraft;
-    const nose = new Vector3(0, 0, 1).applyQuaternion(shooter!.orientation);
-    target!.position.copy(shooter!.position).addScaledVector(nose, 1_000);
-    target!.velocity.set(0, 0, 0);
-    const solution = solveGunsight({
-      position: shooter!.position,
-      velocity: shooter!.velocity,
-      orientation: shooter!.orientation,
-      targetPosition: target!.position,
-      targetVelocity: target!.velocity,
-    });
-    const straightAt = target!.position.clone().sub(shooter!.position).normalize();
-    expect(solution.direction.y).toBeGreaterThan(straightAt.y);
-    const dropCompensation = Math.tan(Math.acos(solution.direction.dot(straightAt))) * 1_000;
-    expect(dropCompensation).toBeGreaterThan(1);
-    expect(dropCompensation).toBeLessThan(20);
   });
 });

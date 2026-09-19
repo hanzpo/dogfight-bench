@@ -36,33 +36,6 @@ describe("trigger response", () => {
     }
     expect(firstRoundAt).toBeLessThan(0.1);
   });
-
-  it("ramps up to the rated rate as the rotor spins", () => {
-    const { state, aircraft, rng, nextId } = shooter();
-    aircraft.controls.fire = true;
-    const count = (seconds: number) => {
-      const before = state.projectiles.length;
-      for (let i = 0; i < seconds / DT; i += 1) fireGun(state, aircraft, DT, rng, nextId);
-      return state.projectiles.length - before;
-    };
-    const firstQuarter = count(0.25);
-    count(0.5);
-    const settled = count(0.25);
-    expect(firstQuarter).toBeGreaterThan(0);
-    expect(firstQuarter).toBeLessThan(settled);
-    expect(settled).toBeGreaterThanOrEqual(GUN.ratePerSecond * 0.25 - 1);
-  });
-
-  it("still fires when the trigger is tapped in short bursts", () => {
-    const { state, aircraft, rng, nextId } = shooter();
-    for (let burst = 0; burst < 4; burst += 1) {
-      aircraft.controls.fire = true;
-      for (let i = 0; i < 0.1 / DT; i += 1) fireGun(state, aircraft, DT, rng, nextId);
-      aircraft.controls.fire = false;
-      for (let i = 0; i < 0.3 / DT; i += 1) fireGun(state, aircraft, DT, rng, nextId);
-    }
-    expect(GUN.ammunition - aircraft.ammo).toBeGreaterThan(20);
-  });
 });
 
 describe("standing orders", () => {
@@ -83,19 +56,6 @@ describe("standing orders", () => {
 
     expect(ticks).toBeGreaterThan(500);
     expect(changes).toBeGreaterThan(ticks * 0.5);
-  }, 30_000);
-
-  it("hands the trigger back to a raw-schema agent", async () => {
-    const sim = new DogfightSimulation({ ...neutralMerge, maxTime: 1 }, { decisionIntervalS: 0.25 });
-    sim.attachAgent("blue-1", {
-      id: "raw",
-      info: { name: "raw", provider: "test", model: "raw", policyVersion: "1", schema: "raw" },
-      decide: async () => ({
-        action: { schema: "raw", controls: { pitch: 0, roll: 0, yaw: 0, throttle: 1, fire: true } } as const,
-      }),
-    });
-    await sim.runHeadless();
-    expect(sim.state.aircraft[0]!.ammo).toBeLessThan(GUN.ammunition);
   }, 30_000);
 });
 

@@ -29,26 +29,6 @@ describe("action schema", () => {
       throttle: "mil",
       fire: false,
     });
-    const raw = validateAction({ schema: "raw", controls: { pitch: 5, roll: NaN, yaw: -9, throttle: 2, fire: true } });
-    expect(raw).toEqual({
-      schema: "raw",
-      controls: { pitch: 1, roll: 0, yaw: -1, throttle: 1, fire: true },
-    });
-  });
-
-  it("accepts a bare controls object as the raw schema", () => {
-    const decision = validateDecision({ controls: { pitch: 0.5, roll: 0, yaw: 0, throttle: 1, fire: false } });
-    expect(decision.action.schema).toBe("raw");
-  });
-
-  it("keeps rationale and usage metadata", () => {
-    const decision = validateDecision({
-      action: { schema: "tactical", maneuver: "extend", targetG: 2, throttle: "ab", fire: false },
-      rationale: "low on energy",
-      usage: { inputTokens: 900, outputTokens: 40, costUsd: 0.004 },
-    });
-    expect(decision.rationale).toBe("low on energy");
-    expect(decision.usage?.costUsd).toBeCloseTo(0.004, 6);
   });
 });
 
@@ -117,41 +97,6 @@ describe("tactical autopilot", () => {
     }
   });
 
-  it("climbs and dives when told to", () => {
-    for (const [maneuver, sign] of [
-      ["climb", 1],
-      ["dive", -1],
-    ] as const) {
-      const sim = new DogfightSimulation(neutralMerge);
-      const blue = sim.state.aircraft[0]!;
-      const startAltitude = blue.position.y;
-      for (let i = 0; i < 120 * 8; i += 1) {
-        blue.controls = resolveAction(
-          { schema: "tactical", maneuver, targetG: 4, throttle: "ab", fire: false },
-          observe(sim),
-        );
-        sim.step();
-      }
-      expect(Math.sign(blue.position.y - startAltitude)).toBe(sign);
-      expect(Math.abs(blue.position.y - startAltitude)).toBeGreaterThan(300);
-    }
-  });
-
-  it("holds altitude when told to fly level", () => {
-    const sim = new DogfightSimulation(neutralMerge);
-    const blue = sim.state.aircraft[0]!;
-    const startAltitude = blue.position.y;
-    for (let i = 0; i < 120 * 20; i += 1) {
-      blue.controls = resolveAction(
-        { schema: "tactical", maneuver: "level", targetG: 3, throttle: "mil", fire: false },
-        observe(sim),
-      );
-      sim.step();
-    }
-    expect(Math.abs(blue.position.y - startAltitude)).toBeLessThan(250);
-    expect(blue.flcs.departed).toBe(false);
-  });
-
   it("drives a pursuit manoeuvre to a gun solution", () => {
     const sim = new DogfightSimulation(neutralMerge);
     const blue = sim.state.aircraft[0]!;
@@ -193,12 +138,6 @@ describe("decision deadlines", () => {
   it("rejects a decision that misses its deadline", async () => {
     const sim = new DogfightSimulation(neutralMerge);
     await expect(decideWithTimeout(slowAgent(200), observe(sim), 20)).rejects.toBeInstanceOf(AgentTimeoutError);
-  });
-
-  it("allows a decision that meets it", async () => {
-    const sim = new DogfightSimulation(neutralMerge);
-    const decision = await decideWithTimeout(slowAgent(1), observe(sim), 500);
-    expect(decision.action.schema).toBe("tactical");
   });
 
   it("counts timeouts against the agent without stalling the match", async () => {

@@ -14,6 +14,8 @@ import type { AircraftState, MatchState, ScenarioConfig } from "./types";
 const BOUNDARY_GRACE_S = 5;
 const BINGO_FUEL_KG = 450;
 
+const LEVEL: TacticalAction = { schema: "tactical", maneuver: "level", targetG: 1, throttle: "mil", fire: false };
+
 interface AgentSlot {
   agent: AgentAdapter;
   nextDecisionAt: number;
@@ -206,7 +208,9 @@ export class DogfightSimulation {
             time: this.state.time,
             aircraftId,
             sequence,
-            action: { schema: "raw", controls: { ...this.state.aircraft.find((c) => c.id === aircraftId)!.controls } },
+            // What the aircraft goes on flying: a failed decision leaves the
+            // standing order in place rather than changing anything.
+            action: this.standingOrders.get(aircraftId) ?? LEVEL,
             latencyMs: performance.now() - started,
             error: error instanceof Error ? error.message : String(error),
           });

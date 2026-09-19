@@ -1,4 +1,3 @@
-import type { ControlInput } from "../sim/types";
 import { clamp } from "../math";
 
 export const MANEUVERS = [
@@ -29,11 +28,6 @@ export const THROTTLE_VALUES: Record<ThrottleDetent, number> = {
   ab: 1,
 };
 
-export interface RawAction {
-  schema: "raw";
-  controls: ControlInput;
-}
-
 export interface TacticalAction {
   schema: "tactical";
   maneuver: Maneuver;
@@ -43,7 +37,7 @@ export interface TacticalAction {
   fire: boolean;
 }
 
-export type AgentAction = RawAction | TacticalAction;
+export type AgentAction = TacticalAction;
 
 function finite(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -51,21 +45,6 @@ function finite(value: unknown, fallback: number): number {
 
 export function validateAction(value: unknown): AgentAction {
   const record = (value ?? {}) as Record<string, unknown>;
-  const controls = record["controls"] as Record<string, unknown> | undefined;
-
-  if (record["schema"] === "raw" || (record["schema"] === undefined && controls !== undefined)) {
-    return {
-      schema: "raw",
-      controls: {
-        pitch: clamp(finite(controls?.["pitch"], 0), -1, 1),
-        roll: clamp(finite(controls?.["roll"], 0), -1, 1),
-        yaw: clamp(finite(controls?.["yaw"], 0), -1, 1),
-        throttle: clamp(finite(controls?.["throttle"], 0.85), 0, 1),
-        fire: controls?.["fire"] === true,
-      },
-    };
-  }
-
   const maneuver = MANEUVERS.includes(record["maneuver"] as Maneuver)
     ? (record["maneuver"] as Maneuver)
     : "level";

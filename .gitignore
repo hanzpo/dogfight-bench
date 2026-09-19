@@ -6,16 +6,11 @@ dist/
 .env*
 # The template carries no secrets and has to ship, or nobody knows what to set.
 !.env.example
-tools/browser-feedback/.venv/
-**/.pytest_cache/
-**/.ruff_cache/
-**/__pycache__/
-artifacts/browser-feedback/
 
 # Local benchmark database
 data/
 .scratch/
-artifacts/ui-check/
+artifacts/
 
 # Blender auto-backup
 *.blend1

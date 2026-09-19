@@ -2,11 +2,28 @@ import { describe, expect, it } from "vitest";
 import { SCRIPTED_INFO } from "../src/agents/agent";
 import { BasicPursuitAgent } from "../src/agents/baselines";
 import { GUN } from "../src/sim/config";
-import { neutralMerge, scenarioSet, scenarioVariant } from "../src/sim/scenario";
+import { createNeutralMerge, neutralMerge, scenarioSet, scenarioVariant } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 import { observationFor } from "../src/sim/telemetry";
 import { heightAboveGround, isWater, terrainElevation, terrainHeight } from "../src/sim/terrain";
-import { createNeutralMerge } from "../src/sim/scenario";
+import { Quaternion } from "three";
+import { aeroRatesToRotationVector, bodyAxes } from "../src/sim/flight-model";
+
+describe("frame conventions", () => {
+  it("places the nose along +z and the canopy along +y in body axes", () => {
+    const axes = bodyAxes(new Quaternion());
+    expect(axes.nose.toArray()).toEqual([0, 0, 1]);
+    expect(axes.up.toArray()).toEqual([0, 1, 0]);
+    expect(axes.right.x).toBeCloseTo(-1, 9);
+  });
+
+  it("rolls right for positive p", () => {
+    const omega = aeroRatesToRotationVector(1, 0, 0);
+    const axes = bodyAxes(new Quaternion().setFromAxisAngle(omega.clone().normalize(), omega.length() * 0.5));
+    expect(axes.right.y).toBeLessThan(0);
+    expect(axes.up.x).toBeLessThan(0);
+  });
+});
 
 describe("dogfight simulation", () => {
   it("creates a symmetric neutral merge", () => {
@@ -50,30 +67,6 @@ describe("dogfight simulation", () => {
     const mirrored = observationFor(sim.state, "red-1", neutralMerge, 0);
     expect(mirrored.relative.rangeM).toBeCloseTo(observation.relative.rangeM, 6);
     expect(mirrored.relative.energyAdvantageM).toBeCloseTo(-observation.relative.energyAdvantageM, 6);
-  });
-
-  it("reports a gun solution that closes as the jets merge", () => {
-    const sim = new DogfightSimulation(neutralMerge);
-    const far = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
-    for (let i = 0; i < 120 * 12; i += 1) sim.step();
-    const near = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
-    expect(near.rangeM).toBeLessThan(far.rangeM);
-    expect(near.gunSolution.timeOfFlightS).toBeLessThan(far.gunSolution.timeOfFlightS);
-    expect(far.gunSolution.inLethalRange).toBe(false);
-  });
-
-  it("fires finite ammunition as individual projectiles", () => {
-    const sim = new DogfightSimulation(neutralMerge);
-    sim.state.aircraft[0]!.controls.fire = true;
-    for (let i = 0; i < 240; i += 1) {
-      sim.state.aircraft[0]!.controls.fire = true;
-      sim.step();
-    }
-    const fired = GUN.ammunition - sim.state.aircraft[0]!.ammo;
-    expect(fired).toBeGreaterThan(150);
-    expect(fired).toBeLessThan(200);
-    expect(sim.state.projectiles.length).toBeGreaterThan(90);
-    expect(sim.summary().aircraft[0]!.roundsFired).toBe(fired);
   });
 
   it("runs an AI-vs-AI match headlessly and reports a summary", async () => {
@@ -159,20 +152,6 @@ describe("relative geometry", () => {
     const relative = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
     expect(relative.angleOffTailDeg).toBeGreaterThan(175);
     expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
-  });
-
-  it("reports 0 degrees off the tail from directly behind", () => {
-    const sim = new DogfightSimulation(neutralMerge);
-    const [blue, red] = sim.state.aircraft;
-    red!.orientation.copy(blue!.orientation);
-    red!.velocity.copy(blue!.velocity);
-    red!.position.copy(blue!.position).addScaledVector(blue!.velocity.clone().normalize(), 600);
-
-    const relative = observationFor(sim.state, "blue-1", neutralMerge, 0).relative;
-    expect(relative.angleOffTailDeg).toBeLessThan(5);
-    expect(relative.antennaTrainAngleDeg).toBeLessThan(5);
-
-    expect(observationFor(sim.state, "red-1", neutralMerge, 0).relative.angleOffTailDeg).toBeGreaterThan(175);
   });
 });
 

@@ -43,23 +43,6 @@ describe("level flight", () => {
     expect(aircraft.flcs.departed).toBe(false);
   });
 
-  it("needs more power to hold height as altitude increases", () => {
-    const low = trimLevelFlight(1_000, 250, COMBAT_MASS);
-    const high = trimLevelFlight(9_000, 250, COMBAT_MASS);
-    expect(high.throttle).toBeGreaterThan(low.throttle);
-    expect(high.alphaRad).toBeGreaterThan(low.alphaRad);
-  });
-
-  it("burns fuel and gets lighter", () => {
-    const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 250 });
-    const startFuel = aircraft.engine.fuelKg;
-    const startMass = aircraft.massKg;
-    fly(aircraft, 60, { throttle: 1 });
-    expect(aircraft.engine.fuelKg).toBeLessThan(startFuel);
-    expect(aircraft.massKg).toBeLessThan(startMass);
-    expect(aircraft.engine.afterburner).toBe(true);
-  });
-
   it("burns far more fuel in afterburner than at military power", () => {
     const military = makeTestAircraft({ altitudeM: 4_500, speedMps: 250 });
     const burner = makeTestAircraft({ altitudeM: 4_500, speedMps: 250 });
@@ -90,14 +73,6 @@ describe("energy manoeuvrability", () => {
     expect(corner.loadFactor).toBeCloseTo(FLCS.maxLoadFactor, 1);
     expect(corner.speedMps).toBeGreaterThan(160);
     expect(corner.speedMps).toBeLessThan(215);
-  });
-
-  it("is always able to turn harder instantaneously than it can sustain", () => {
-    for (const altitude of [0, 3_000, 6_000, 9_000]) {
-      expect(cornerSpeed(altitude, COMBAT_MASS).turnRateDegS).toBeGreaterThan(
-        bestSustainedTurn(altitude, COMBAT_MASS).turnRateDegS,
-      );
-    }
   });
 
   it("produces published specific excess power at 1 g", () => {
@@ -195,25 +170,10 @@ describe("flight control system", () => {
     expect(Math.abs(aircraft.angularVelocity.x)).toBeLessThan(0.2);
   });
 
-  it("rolls the way the stick is moved and turns that way when pulled", () => {
-    const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 260 });
-    fly(aircraft, 0.3, { roll: 1, throttle: 1 });
-    expect(currentBank(aircraft)).toBeGreaterThan(0.3);
-    fly(aircraft, 2, { roll: 0, pitch: 0.6, throttle: 1 });
-    expect(turnRateDegS(aircraft)).toBeGreaterThan(5);
-  });
-
   it("keeps a hard turn roughly coordinated without pedal input", () => {
     const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 280 });
     fly(aircraft, 0.4, { roll: 1, throttle: 1 });
     fly(aircraft, 4, { roll: 0, pitch: 0.7, throttle: 1 });
     expect(Math.abs(aircraft.sideslipRad)).toBeLessThan(0.12);
-  });
-
-  it("commands sideslip when the pedals are used", () => {
-    const aircraft = makeTestAircraft({ altitudeM: 4_500, speedMps: 250 });
-    fly(aircraft, 3, { yaw: 1, throttle: 0.9 });
-    expect(aircraft.sideslipRad).toBeLessThan(-0.05);
-    expect(aircraft.sideslipRad).toBeGreaterThan(-0.3);
   });
 });

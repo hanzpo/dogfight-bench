@@ -26,22 +26,6 @@ Nothing needs a key until you want a model to fly.
 | `supabase/migrations/` | Results schema, Elo, housekeeping |
 | `tools/ui-check/` | Browser check (Chromium + WebKit, 1x and 2x) |
 
-## Two ways to fly the same aircraft
-
-`tactical` names a manoeuvre, a load factor and a throttle; an autopilot flies
-that order continuously until the next answer. `raw` moves the stick directly
-and is held until the next answer, with nothing interpreting it and nothing
-gating the trigger.
-
-They are separate entrants with separate ratings, because folding them together
-would average a model's grasp of tactics with its grasp of aerodynamics and
-report one number meaning neither. The interface is named beside the model in
-the viewer's **You** / **Opponent** control.
-
-The stick interface is the harder one at a decision a second: holding a gun
-solution means correcting continuously, and a control position chosen once a
-second is frozen for the whole second.
-
 ## Jev
 
 Jev is not asked to write an answer. It answers typed questions about a state,
@@ -191,23 +175,18 @@ Anonymous sign-in is already on.
 ## Checks
 
 ```bash
-npm test               # 147 tests, ~12 s
+npm test               # 119 tests, ~10 s
 npm run build          # typecheck and bundle
 npm run check:ui:fast  # one engine, ~40 s -- the loop while changing a layout
 npm run check:ui       # Chromium + WebKit, 1x and 2x, ~3 min -- before committing
 ```
 
-`check:ui` drives the *default* live state at widescreen size and fails on
-measured framing, instrument positions, overlapping panels, the camera's own
-stand-off in each view, a render budget, the mouse and gamepad axes, and the
-whole sign-in-and-fly-a-ranked-match flow. Every
-one of those was added after a fault it would have caught shipped without
-anybody noticing. It creates a guest on the real project, so the account flow
-runs at pixel ratio 1 only and honours `UI_CHECK_SKIP_ACCOUNT=1`.
-
-`tools/browser-feedback/` is a separate agentic loop: Jev drives the real
-controls and the harness verifies the resulting state. Its case names the
-controls in words, so renaming one in the interface is a change to that file.
+`check:ui` flies the real page and fails on measured framing, instrument
+positions, panels overlapping at four window sizes, each camera's stand-off, a
+render budget, the mouse and gamepad axes, and the whole
+sign-in-and-fly-a-ranked-match flow. Every one of those was added after a fault
+it would have caught shipped unnoticed. It creates a guest on the real project,
+so the account flow runs at pixel ratio 1 and honours `UI_CHECK_SKIP_ACCOUNT=1`.
 
 ## Known gaps
 

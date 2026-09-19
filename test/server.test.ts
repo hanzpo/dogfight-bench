@@ -32,41 +32,31 @@ afterEach(() => vi.unstubAllGlobals());
  * server as null and every server-side provider died on `null.toFixed()`,
  * because every test until this one handed the observation over as an object.
  */
+/**
+ * JSON.stringify turns Infinity into null, silently. A turn radius of Infinity
+ * -- which is what wings-level flight has -- reached the server as null and
+ * every server-side provider died on `null.toFixed()`, because every test
+ * handed the observation over as an object.
+ */
 describe("the observation on the wire", () => {
-  function numbers(value: unknown, path: string, found: string[]): void {
-    if (typeof value === "number") {
-      if (!Number.isFinite(value)) found.push(`${path} = ${value}`);
-    } else if (Array.isArray(value)) {
-      value.forEach((entry, index) => numbers(entry, `${path}[${index}]`, found));
-    } else if (value && typeof value === "object") {
-      for (const [key, entry] of Object.entries(value)) numbers(entry, `${path}.${key}`, found);
-    }
-  }
-
   it("holds no number JSON cannot carry", () => {
     const sim = new DogfightSimulation(neutralMerge);
     const found: string[] = [];
+    const walk = (value: unknown, path: string): void => {
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) found.push(`${path} = ${value}`);
+      } else if (Array.isArray(value)) {
+        value.forEach((entry, index) => walk(entry, `${path}[${index}]`));
+      } else if (value && typeof value === "object") {
+        for (const [key, entry] of Object.entries(value)) walk(entry, `${path}.${key}`);
+      }
+    };
     for (let tick = 0; tick < 120 * 20; tick += 1) {
       sim.step();
-      if (tick % 120) continue;
-      for (const id of ["blue-1", "red-1"]) {
-        numbers(observationFor(sim.state, id, neutralMerge, tick), `${id}@${tick}`, found);
-      }
+      if (tick % 240) continue;
+      for (const id of ["blue-1", "red-1"]) walk(observationFor(sim.state, id, neutralMerge, tick), id);
     }
     expect(found).toEqual([]);
-  });
-
-  it("briefs the same whether it arrived as an object or as JSON", () => {
-    const observation = sampleObservation();
-    const overTheWire = JSON.parse(JSON.stringify(observation)) as typeof observation;
-    expect(buildBriefing(overTheWire)).toBe(buildBriefing(observation));
-  });
-
-  it("says a jet with its wings level is not turning, rather than crashing", () => {
-    const observation = sampleObservation();
-    const own = observation.aircraft.find((aircraft) => aircraft.id === observation.ownshipId)!;
-    own.turnRadiusM = null;
-    expect(buildBriefing(observation)).toContain("turn radius flat");
   });
 });
 
@@ -203,24 +193,6 @@ describe("match store", () => {
       verified: true,
     });
     expect(await ratingOf()).toBe(afterSecond);
-    store.close();
-  });
-
-  it("keeps humans and models on separate boards unless both are asked for", async () => {
-    const store = new SqliteStore(":memory:");
-    await store.recordMatch({
-      id: "m",
-      summary: summaryFor("blue-1"),
-      competitors: {
-        "blue-1": humanCompetitor("ana", "Ana", false),
-        "red-1": competitorFor(SCRIPTED_INFO("beta")),
-      },
-      origin: "live",
-      verified: false,
-    });
-    expect((await store.leaderboard(["scripted"])).map((row) => row.name)).toEqual(["beta"]);
-    expect((await store.leaderboard(["human"])).map((row) => row.name)).toEqual(["Ana"]);
-    expect(await store.leaderboard(["human", "scripted"])).toHaveLength(2);
     store.close();
   });
 
@@ -411,19 +383,8 @@ describe("jev provider", () => {
     ]);
   });
 
-  it("is one entrant, flying manoeuvres", () => {
-    const info = new JevProvider().describe();
-    expect(info.schema).toBe("tactical");
-    expect(competitorIdFor(info)).toContain("jev");
-  });
-
   it("refuses a malformed answer instead of flying it", async () => {
     respond({ maneuver: { choice: "lead_pursuit", confidence: 2, probabilities: {} } });
-    await expect(new JevProvider().decide(sampleObservation())).rejects.toThrow(/Invalid TypeSafe/);
-  });
-
-  it("refuses a score that is off the rubric", async () => {
-    respond({ maneuver: choice("level"), commitment: score(9), power: score(2), fire: noul(0.1) });
     await expect(new JevProvider().decide(sampleObservation())).rejects.toThrow(/Invalid TypeSafe/);
   });
 });

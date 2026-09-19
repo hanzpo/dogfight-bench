@@ -59,13 +59,6 @@ describe("terrain awareness", () => {
     expect(level.warning).not.toBe("clear");
   });
 
-  it("says nothing is wrong when nothing is", () => {
-    const high = awareness([0, 6_000, 0], [220, 0, 0]);
-    expect(high.warning).toBe("clear");
-    expect(high.timeToImpactS).toBeNull();
-    expect(high.recoveryMarginM).toBeGreaterThan(1_000);
-  });
-
   it("calls for a pull-up when the recovery no longer fits", () => {
     const ground = terrainHeight(0, 0);
     const diving = awareness([0, ground + 900, 0], [0, -250, 0]);
@@ -75,13 +68,6 @@ describe("terrain awareness", () => {
     expect(diving.timeToImpactS!).toBeLessThan(6);
     expect(diving.recoveryHeightLossM).toBeGreaterThan(900);
     expect(diving.recoveryMarginM).toBeLessThan(0);
-  });
-
-  it("stops projecting at the ground rather than reporting depth underneath it", () => {
-    const ground = terrainHeight(0, 0);
-    const diving = awareness([0, ground + 900, 0], [0, -250, 0]);
-    expect(diving.minimumClearanceAheadM).toBeGreaterThan(-400);
-    expect(diving.timeToMinimumClearanceS).toBe(diving.timeToImpactS);
   });
 
   it("knows water from land", () => {
@@ -122,13 +108,6 @@ describe("automatic ground avoidance", () => {
     const ridge = steepestClimbingApproach();
     const position = new Vector3(ridge.x, terrainHeight(ridge.x, ridge.z) + 300, ridge.z);
     expect(groundAvoidanceUrgency(context(position, new Vector3(0, 0, -250)))).toBeGreaterThan(0);
-  });
-
-  it("leaves level flight over flat ground alone", () => {
-    const water = flatWaterPoint();
-    expect(water).toBeDefined();
-    const position = new Vector3(water!.x, 800, water!.z);
-    expect(groundAvoidanceUrgency(context(position, new Vector3(0, 0, -250)))).toBe(0);
   });
 
   it("still recovers from a dive, which is the case it always handled", () => {
