@@ -62,6 +62,36 @@ describe("credential isolation", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * Nothing secret leaves in an error message.
+   *
+   * A provider error relays the upstream response body, which nobody here
+   * controls. An endpoint that echoed back the Authorization header it was sent
+   * would have handed this server's own key to any anonymous visitor, because
+   * the only thing redacted was the caller's own key.
+   */
+  it("redacts every secret from anything sent to a client", async () => {
+    const { redactSecrets } = await import("../server/env");
+    // Split so the fixtures are not themselves key-shaped literals in a tracked
+    // file, which the scanner above would rightly object to.
+    const secrets = [
+      "sk-ant-" + "api03-vJ8kQmz2LpXw9TnRb4YcHd6FgA1sE0uZ",
+      "sk-proj-" + "7HqN3wZmKt9Rb2VxLc5YpD8sGfA4eJ1uXo",
+      "sb_secret_" + "9fK2mQx7Lp4RtZw8Nc3Vb",
+      "eyJhbGciOi" + "JIUzI1NiIsInR5cCI6IkpXVCJ9." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "SflKxwRJSMeKKF2QT4fwpMeJf36P",
+    ];
+    for (const secret of secrets) {
+      const safe = redactSecrets(`upstream rejected ${secret} loudly`);
+      expect(safe).not.toContain(secret);
+      expect(safe).toContain("[redacted]");
+    }
+
+    // A caller's own key, which is never one of the shapes above.
+    expect(redactSecrets("rejected: hunter2-the-caller-key", "hunter2-the-caller-key")).not.toContain("hunter2");
+    // Without swallowing the part of the message that says what went wrong.
+    expect(redactSecrets("TypeSafe returned HTTP 429: slow down")).toBe("TypeSafe returned HTTP 429: slow down");
+  });
+
   it("tracks no environment file but the template", () => {
     const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
     expect(tracked.filter((path) => /(^|\/)\.env/.test(path))).toEqual([".env.example"]);

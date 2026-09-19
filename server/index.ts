@@ -5,7 +5,7 @@ import { validateDecision } from "../src/agents/agent";
 import type { MatchSummary } from "../src/sim/simulation";
 import type { AgentObservation } from "../src/sim/telemetry";
 import { accountFor, forgetAccount, type Account } from "./auth";
-import { env } from "./env";
+import { env, redactSecrets } from "./env";
 import { createStore, competitorFor, humanCompetitor, storeIsShared, type Competitor, type CompetitorKind } from "./store";
 import { runSeries, type SeriesRequest } from "./match-runner";
 import { SCRIPTED_NAMES, providers } from "./providers";
@@ -176,7 +176,7 @@ app.post("/api/decide", async (context) => {
     return context.json(decision);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return context.json({ error: callerKey ? message.split(callerKey).join("[key]") : message }, 502);
+    return context.json({ error: redactSecrets(message, callerKey) }, 502);
   }
 });
 
@@ -210,7 +210,7 @@ app.post("/api/matches", async (context) => {
       })),
     );
   } catch (error) {
-    return context.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return context.json({ error: redactSecrets(error instanceof Error ? error.message : String(error)) }, 500);
   } finally {
     running = false;
   }
@@ -342,7 +342,7 @@ app.post("/api/live/:id/result", async (context) => {
       submittedBy: account.id,
     });
   } catch (error) {
-    return context.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return context.json({ error: redactSecrets(error instanceof Error ? error.message : String(error)) }, 500);
   }
 
   return context.json({ counted: true, matchId: ticket.id, provisional: human.provisional === true });

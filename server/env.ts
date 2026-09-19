@@ -45,6 +45,41 @@ export const env = {
   inferenceBudgetUsd: Number(process.env["INFERENCE_BUDGET_USD"] ?? 2),
 } as const;
 
+/**
+ * Strips anything secret out of text on its way to a client.
+ *
+ * Provider errors relay the upstream response body, which nobody here controls
+ * -- an endpoint that echoes the Authorization header it was sent would have
+ * handed this server's own key to every anonymous visitor on the free tier,
+ * because only the caller's key was ever redacted.
+ *
+ * Two passes: the exact secrets this process holds, then anything shaped like a
+ * key, for the ones it does not know about.
+ */
+const KEY_SHAPES = [
+  /\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}/g,
+  /\bsb_(?:secret|publishable)_[A-Za-z0-9_-]{10,}/g,
+  /\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+];
+
+export function redactSecrets(text: string, ...extra: Array<string | undefined>): string {
+  let safe = text;
+  const secrets = [
+    ...extra,
+    env.anthropicApiKey,
+    env.openaiApiKey,
+    env.typesafeApiKey,
+    env.supabaseServiceRoleKey,
+    env.apiToken,
+  ];
+  for (const secret of secrets) {
+    if (secret && secret.length >= 8) safe = safe.split(secret).join("[redacted]");
+  }
+  for (const shape of KEY_SHAPES) safe = safe.replace(shape, "[redacted]");
+  return safe;
+}
+
 export function requireKey(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} is not set; this provider is unavailable`);
   return value;
