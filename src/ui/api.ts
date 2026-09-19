@@ -88,25 +88,17 @@ export class ServerUnavailableError extends Error {
   }
 }
 
-async function get<T>(path: string, headers: Record<string, string> = {}): Promise<T> {
+/**
+ * One request path, so a failure says the same thing whichever verb it was.
+ *
+ * `get` used to throw the status code alone and drop the body, so the reason
+ * the server had carefully written -- which provider needs a key, what the
+ * deployment is missing -- never reached the screen.
+ */
+async function request<T>(path: string, init: RequestInit, headers: Record<string, string>): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, { headers });
-  } catch {
-    throw new ServerUnavailableError();
-  }
-  if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
-  return (await response.json()) as T;
-}
-
-async function post<T>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-    });
+    response = await fetch(path, { ...init, headers: { ...(init.headers ?? {}), ...headers } });
   } catch {
     throw new ServerUnavailableError();
   }
@@ -114,6 +106,11 @@ async function post<T>(path: string, body: unknown, headers: Record<string, stri
   if (!response.ok) throw new Error(parsed.error ?? `${path} returned HTTP ${response.status}`);
   return parsed;
 }
+
+const get = <T>(path: string, headers: Record<string, string> = {}): Promise<T> => request<T>(path, {}, headers);
+
+const post = <T>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> =>
+  request<T>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, headers);
 
 export const api = {
   leaderboard: () => get<{ leaderboard: LeaderboardEntry[] }>("/api/leaderboard").then((body) => body.leaderboard),
