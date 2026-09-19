@@ -83,18 +83,20 @@ matches of anything are worth.
 
 ## Cameras
 
-Five, because a fight asks five different questions.
+Five, because a fight asks five different questions. **Free look** is the
+default; the wheel zooms in all of them.
 
 | | |
 |---|---|
+| **Free look** | Hand-driven orbit. Drag to swing round the aircraft, scroll to dolly |
 | **Chase** | Behind the aircraft and not rolling with it, so the horizon stays level and the airframe is the attitude instrument |
 | **Target track** | On the line through both aircraft -- camera, your jet, the bandit, in that order -- so angle off and range are one picture rather than two numbers |
 | **Arena** | Down on both from outside, broadside to the line between them, framing the pair while they fit |
 | **Cockpit** | The pilot's eye, and the only view where the pitch ladder and flight path marker are telling the truth |
-| **Free look** | Hand-driven orbit, for whatever the others do not point at |
 
-The wheel works in all of them: in a view that places itself it changes how far
-off that view stands.
+Zoom means something different in each. A view that places itself changes how
+far off it stands; the free view dollies; and the cockpit narrows its field of
+view, because the pilot's eye cannot move.
 
 ## Running models
 

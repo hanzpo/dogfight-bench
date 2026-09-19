@@ -19,6 +19,13 @@ const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(BODY_UP, Math.PI);
 
 const ORBIT_RADIANS_PER_PIXEL = 0.005;
 
+/** How far in and out a self-placing view may be pushed, against its natural framing. */
+const MIN_FRAMING = 0.35;
+const MAX_FRAMING = 4;
+/** The cockpit zooms by field of view, because the pilot's eye cannot move. */
+const COCKPIT_MIN_FOV = 18;
+const COCKPIT_MAX_FOV = 75;
+
 const CHASE_DISTANCE_M = 62;
 const CHASE_RISE = 0.2;
 /** The aircraft sits `atan` of this below the view axis, so 0.05 is three degrees low. */
@@ -46,7 +53,7 @@ const CHASE_EASE = 6;
 const ARENA_EASE = 1.6;
 
 export class CameraDirector {
-  private view: ViewMode = "chase";
+  private view: ViewMode = "free";
   private pointerCaptured = false;
   /** How far off the automatic views stand, as a multiple of their natural framing. */
   private framing = 1;
@@ -54,10 +61,16 @@ export class CameraDirector {
   private placed = false;
   private readonly offset = new THREE.Vector3();
 
+  /** The field of view the cockpit zooms away from and back to. */
+  private readonly baseFov: number;
+
   constructor(
     readonly camera: THREE.PerspectiveCamera,
     private readonly controls: OrbitControls,
-  ) {}
+  ) {
+    this.baseFov = camera.fov;
+    this.applyControlAvailability();
+  }
 
   get mode(): ViewMode {
     return this.view;
@@ -71,6 +84,7 @@ export class CameraDirector {
     if (view === this.view) return;
     this.view = view;
     this.framing = 1;
+    this.setFov(this.baseFov);
     this.reset();
     this.applyControlAvailability();
   }
@@ -108,14 +122,32 @@ export class CameraDirector {
     this.camera.lookAt(this.controls.target);
   }
 
+  /**
+   * The wheel, in whatever view is current.
+   *
+   * There is no one thing zooming means. From the cockpit the eye cannot move,
+   * so it narrows the field of view, the way a pilot looking harder at a speck
+   * does not lean forward. Everywhere else the camera itself moves: a view that
+   * places itself changes how far off it stands, and the free view dollies.
+   */
   zoomBy(factor: number): void {
+    if (this.view === "cockpit") {
+      this.setFov(clamp(this.camera.fov * factor, COCKPIT_MIN_FOV, COCKPIT_MAX_FOV));
+      return;
+    }
     if (this.automatic) {
-      if (this.view !== "cockpit") this.framing = clamp(this.framing * factor, 0.35, 4);
+      this.framing = clamp(this.framing * factor, MIN_FRAMING, MAX_FRAMING);
       return;
     }
     const offset = this.camera.position.clone().sub(this.controls.target);
     const distance = clamp(offset.length() * factor, this.controls.minDistance, this.controls.maxDistance);
     this.camera.position.copy(this.controls.target).add(offset.setLength(distance));
+  }
+
+  private setFov(fov: number): void {
+    if (this.camera.fov === fov) return;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
   }
 
   /** Returns true when the followed aircraft must not be drawn, which is only the cockpit. */

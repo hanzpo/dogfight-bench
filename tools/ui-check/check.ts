@@ -82,6 +82,7 @@ const SHOT_PROBE = `(() => {
     camera: (d.camera || '0,0,0').split(',').map(Number),
     subjectW: Number(d.subjectMaxX) - Number(d.subjectMinX),
     standoffM: Number(d.subjectDistance),
+    fov: Number(d.fov),
   };
 })()`;
 
@@ -467,7 +468,7 @@ check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
 
 console.log("cameras");
-type Shot = { camera: number[]; subjectW: number; standoffM: number };
+type Shot = { camera: number[]; subjectW: number; standoffM: number; fov: number };
 const cameraIn = async (view: string): Promise<Shot> => {
   await page.selectOption("#view", view);
   await page.waitForTimeout(2_000);
@@ -499,16 +500,40 @@ check(
   `chase holds its distance while the jet is moving (${chase.standoffM.toFixed(0)} m)`,
 );
 
-await page.mouse.move(600, 400);
-await page.mouse.wheel(0, -600);
-await page.waitForTimeout(1_200);
-const dollied = (await page.evaluate(SHOT_PROBE)) as Shot;
+/**
+ * The wheel zooms in every view, and each view decides what that means.
+ *
+ * It used to be read only while flying with the mouse, and the orbit controls
+ * -- which handled it otherwise -- are switched off wherever the camera places
+ * itself. So it did nothing in four views out of five.
+ */
+const zoomed = async (view: string): Promise<{ before: Shot; after: Shot }> => {
+  await page.selectOption("#view", view);
+  await page.waitForTimeout(1_800);
+  const before = (await page.evaluate(SHOT_PROBE)) as Shot;
+  await page.mouse.move(600, 400);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(1_200);
+  return { before, after: (await page.evaluate(SHOT_PROBE)) as Shot };
+};
+
+for (const view of ["free", "chase", "track", "arena"]) {
+  const { before, after } = await zoomed(view);
+  check(
+    after.standoffM < before.standoffM * 0.9,
+    `the wheel pulls the ${view} view in (${before.standoffM.toFixed(0)} m to ${after.standoffM.toFixed(0)} m)`,
+  );
+}
+
+// From the cockpit the eye cannot move, so the wheel narrows the field of view
+// instead -- which is also the only measurement of it from outside.
+const cockpitZoom = await zoomed("cockpit");
 check(
-  dollied.standoffM < chase.standoffM * 0.9,
-  `the wheel pulls a self-placing view in (${chase.standoffM.toFixed(0)} m to ${dollied.standoffM.toFixed(0)} m)`,
+  cockpitZoom.after.fov < cockpitZoom.before.fov * 0.9,
+  `the wheel narrows the cockpit's field of view (${cockpitZoom.before.fov.toFixed(0)}° to ${cockpitZoom.after.fov.toFixed(0)}°)`,
 );
 
-await page.selectOption("#view", "chase");
+await page.selectOption("#view", "free");
 await page.waitForTimeout(1_500);
 
 const rectangles = (await page.evaluate(`(() => {

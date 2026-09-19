@@ -16,7 +16,7 @@ export function ReplayPage() {
   const [replay, setReplay] = useState<ReplayFile>();
   const [error, setError] = useState<string>();
   const [followRed, setFollowRed] = useState(false);
-  const [view, setView] = useState<ViewMode>("chase");
+  const [view, setView] = useState<ViewMode>("free");
   const [detailsOpen, setDetailsOpen] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
   const viewer = useRef<DogfightViewer>(undefined);
@@ -175,11 +175,11 @@ export function ReplayPage() {
             <label>
               View
               <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
-<option value="chase">Chase</option>
+                <option value="free">Free look</option>
+                <option value="chase">Chase</option>
                 <option value="track">Target track</option>
                 <option value="arena">Arena</option>
                 <option value="cockpit">Cockpit</option>
-                <option value="free">Free look</option>
               </select>
             </label>
             <label>

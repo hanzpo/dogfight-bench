@@ -45,6 +45,9 @@ function publishDiagnostics(viewer: DogfightViewer, simTimeS: number): void {
     drawCalls: String(stats.drawCalls),
     triangles: String(stats.triangles),
     camera: viewer.camera.position.toArray().map((value) => value.toFixed(3)).join(","),
+    // The cockpit zooms by narrowing this rather than by moving, so it is the
+    // only measurement of that gesture from outside.
+    fov: viewer.camera.fov.toFixed(2),
     ...(framing
       ? {
           subjectScreenX: framing.x.toFixed(4),
@@ -70,7 +73,7 @@ export function LivePage() {
   const match = useLiveMatch();
   const roster = useRoster();
   const viewer = useRef<DogfightViewer>(undefined);
-  const [view, setView] = useState<ViewMode>("chase");
+  const [view, setView] = useState<ViewMode>("free");
   const [detailsOpen, setDetailsOpen] = useState(() => globalThis.innerWidth > 900);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
@@ -262,11 +265,11 @@ export function LivePage() {
         <label>
           View
           <select id="view" value={view} onChange={(changed) => setView(changed.target.value as ViewMode)}>
+            <option value="free">Free look</option>
             <option value="chase">Chase</option>
             <option value="track">Target track</option>
             <option value="arena">Arena</option>
             <option value="cockpit">Cockpit</option>
-            <option value="free">Free look</option>
           </select>
         </label>
         <label>
