@@ -507,6 +507,18 @@ check(
  * -- which handled it otherwise -- are switched off wherever the camera places
  * itself. So it did nothing in four views out of five.
  */
+/**
+ * Paused, because the track camera's stand-off grows with the separation.
+ *
+ * It stood 88 m off, the wheel halved its framing, and by the time the second
+ * sample was taken the two aircraft had flown far enough apart that the view's
+ * natural distance had nearly doubled -- so the measurement said 88 m to 82 m
+ * and called a working zoom broken. The camera keeps following while the
+ * simulation is stopped, so nothing else about the test changes.
+ */
+if ((await page.getAttribute("#app", "data-sim-status")) === "running") await page.click("#pause");
+await page.waitForTimeout(600);
+
 const zoomed = async (view: string): Promise<{ before: Shot; after: Shot }> => {
   await page.selectOption("#view", view);
   await page.waitForTimeout(1_800);
@@ -534,6 +546,7 @@ check(
 );
 
 await page.selectOption("#view", "free");
+if ((await page.getAttribute("#app", "data-sim-status")) === "paused") await page.click("#pause");
 await page.waitForTimeout(1_500);
 
 /**
