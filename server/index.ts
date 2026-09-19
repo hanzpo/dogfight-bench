@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { randomUUID } from "node:crypto";
 import { validateDecision } from "../src/agents/agent";
@@ -47,6 +47,32 @@ const requireToken = async (
   }
   return next();
 };
+
+/**
+ * A body that is not JSON is the caller's mistake, not this server's.
+ *
+ * `context.req.json()` throws on a malformed body, and with nothing catching it
+ * the request fell through to Hono's default handler: a 500 with a plain-text
+ * body, from an API where every other error is JSON. A client reading the
+ * response as JSON got a parse error instead of the reason.
+ */
+class BadRequest extends Error {}
+
+async function readJson<T>(context: Context): Promise<T> {
+  try {
+    return (await context.req.json()) as T;
+  } catch {
+    throw new BadRequest("the request body is not valid JSON");
+  }
+}
+
+/** Nothing leaves as an unhandled throw, and nothing leaves carrying a secret. */
+app.onError((error, context) => {
+  if (error instanceof BadRequest) return context.json({ error: error.message }, 400);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("unhandled", message);
+  return context.json({ error: redactSecrets(message) }, 500);
+});
 
 const burst = new Map<string, { count: number; second: number }>();
 function withinBurst(address: string): boolean {
@@ -107,11 +133,11 @@ app.get("/api/agents", async (context) => {
 });
 
 app.post("/api/decide", async (context) => {
-  const body = (await context.req.json()) as {
+  const body = await readJson<{
     agentId?: string;
     kind?: string;
     observation?: AgentObservation;
-  };
+  }>(context);
   const observation = body.observation;
   if (
     !observation ||
@@ -187,7 +213,7 @@ app.post("/api/matches", async (context) => {
       501,
     );
   }
-  const request = (await context.req.json()) as SeriesRequest;
+  const request = await readJson<SeriesRequest>(context);
   if (!request?.blue?.kind || !request?.red?.kind) {
     return context.json({ error: "blue.kind and red.kind are required" }, 400);
   }
@@ -281,12 +307,12 @@ app.post("/api/live/:id/result", async (context) => {
     return context.json({ error: "that match belongs to somebody else" }, 403);
   }
 
-  const body = (await context.req.json()) as {
+  const body = await readJson<{
     summary?: MatchSummary;
     replay?: string;
     humanAircraftId?: string;
     opponentInfo?: { name: string; provider: string; model: string; policyVersion: string };
-  };
+  }>(context);
   const summary = body.summary;
   const humanAircraftId = body.humanAircraftId;
   if (!summary || !Array.isArray(summary.aircraft) || summary.aircraft.length !== 2 || !humanAircraftId) {

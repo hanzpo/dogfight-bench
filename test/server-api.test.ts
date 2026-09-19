@@ -137,6 +137,27 @@ describe("the benchmark API", () => {
     expect((await response.json()).error).toMatch(/observation/i);
   });
 
+  /**
+   * Every failure is JSON with a reason, including the ones nothing planned for.
+   *
+   * A body that is not JSON threw past every guard and fell through to the
+   * framework's default: a 500 with a plain-text body, from an API where
+   * everything else answers in JSON. A client reading the response got a parse
+   * error rather than the reason.
+   */
+  it("answers a body that is not JSON with a bad request, in JSON", async () => {
+    const response = await app.fetch(
+      new Request("http://localhost/api/decide", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not json",
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toMatch(/application\/json/);
+    expect((await response.json()).error).toMatch(/json/i);
+  });
+
   it("caps how much paid work one request can queue", async () => {
     const body = { blue: { kind: "energy-fighter" }, red: { kind: "basic-pursuit" }, rounds: 9_999 };
     const response = await post("/api/matches", body, "test-token");
