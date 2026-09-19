@@ -53,17 +53,28 @@ trigger is asked strictly but answered generously -- demanding a perfect
 solution rather than a plausible one cut the rounds fired by seventy per cent
 and the hits to none.
 
-Where that leaves it, on the live leaderboard over eighteen matches against
-`energy-fighter`: **1-17**, with 14 hits from 93 rounds fired. The scripted
-pilot manages 114 from 1,635. So Jev shoots about twice as well per round and
-gets a shot roughly a twentieth as often -- it is not failing at gunnery, it is
-failing to arrive at a gun solution, which is the part of a dogfight that is
-actually hard. Before the two fixes above it fired almost nothing and had never
-hit anything at all.
+Where that leaves it, over ten matches against `energy-fighter`: **5-5**, with
+twenty-five hits and ten seconds spent with the nose on the bandit. The
+scripted pilot had not been beaten once before this.
 
-Read that as one model against one hand-tuned opponent, not as a ranking. A
-six-match sample of the same pair came out 3-3, which is roughly what six
-matches of anything are worth.
+Three things got it there, and the order is not the order anyone would guess.
+The manoeuvre criteria now describe *when* each manoeuvre is the answer rather
+than what it does -- a `choice` matches the state against its criteria, and
+written as mechanics a head-on merge read as a reason to break, which threw
+away a gun solution eighteen metres from a hit. The stick moves at a finite
+rate, so a command is no longer a step, and a steadier gun platform is worth
+more than it sounds. And the briefing reports bank angle, roll rate and where
+the controls already are, none of which it used to say.
+
+Two changes were measured and rejected. Tightening the trigger traded
+twenty-five hits for fourteen to gain one win in eight, which is a coin flip
+bought with a real loss. And asking the manoeuvre in one call and then the
+commitment, power and trigger in a second call conditioned on it -- which fixes
+a genuine incoherence, because System One answers every question in isolation,
+so "how hard through that manoeuvre" had no manoeuvre to refer to -- came out
+1-7 with no hits at all from 429 rounds. Naming the plan colours the trigger,
+and the trigger should be answered from the gun solution alone. The isolation
+is a feature.
 
 ## Why the model names manoeuvres instead of moving the stick
 
