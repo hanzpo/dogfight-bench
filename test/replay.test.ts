@@ -67,6 +67,28 @@ describe("replays", () => {
   });
 });
 
+/**
+ * Anyone can hand the player a file, so it checks the shape and not just the
+ * label. A replay carrying the right format tag but no frames was accepted, and
+ * the page then died reading `frames.length`: a blank screen, no reason given.
+ */
+describe("opening a replay file", () => {
+  const replay = (extra: Record<string, unknown>) =>
+    JSON.stringify({ format: "dogfight-replay", version: REPLAY_VERSION, ...extra });
+
+  it.each([
+    ["something that is not JSON at all", "hello", /not even JSON/i],
+    ["a JSON file that is not a replay", JSON.stringify({ hello: "world" }), /not a dogfight replay/i],
+    ["a replay from an older build", replay({ version: 1 }), /version/i],
+    ["a replay cut short before any frames", replay({}), /no frames/i],
+    ["a replay with its frames emptied", replay({ frames: [] }), /no frames/i],
+    ["a replay missing its decisions", replay({ frames: [{}] }), /decisions/i],
+    ["a replay that does not say what was flown", replay({ frames: [{}], decisions: [], events: [] }), /what was flown/i],
+  ])("refuses %s, and says why", (_name, text, reason) => {
+    expect(() => parseReplay(text)).toThrow(reason);
+  });
+});
+
 describe("replayed tracers", () => {
   it("records both ends of every tracer, so playback never has to guess", async () => {
     const scenario = { ...neutralMerge, maxTime: 6 };

@@ -166,11 +166,37 @@ export class ReplayAgent implements AgentAdapter {
   }
 }
 
+/**
+ * Checks the shape, not just the label.
+ *
+ * Anyone can hand this a file. It used to accept anything carrying the right
+ * format tag, so a truncated or hand-edited replay passed and the player then
+ * died reading `frames.length` -- a blank page, with nothing said about why.
+ */
 export function parseReplay(text: string): ReplayFile {
-  const replay = JSON.parse(text) as ReplayFile;
-  if (replay.format !== REPLAY_FORMAT) throw new Error("Not a dogfight replay");
-  if (replay.version !== REPLAY_VERSION) {
-    throw new Error(`Unsupported replay version ${replay.version}; expected ${REPLAY_VERSION}`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("That file is not a replay: it is not even JSON.");
   }
-  return replay;
+
+  const replay = parsed as Partial<ReplayFile>;
+  if (!replay || typeof replay !== "object" || replay.format !== REPLAY_FORMAT) {
+    throw new Error("That file is not a dogfight replay.");
+  }
+  if (replay.version !== REPLAY_VERSION) {
+    throw new Error(`This replay is version ${String(replay.version)}; this build reads version ${REPLAY_VERSION}.`);
+  }
+  if (!Array.isArray(replay.frames) || replay.frames.length === 0) {
+    throw new Error("This replay has no frames in it; it was probably cut short while being saved.");
+  }
+  for (const [name, value] of [
+    ["decisions", replay.decisions],
+    ["events", replay.events],
+  ] as const) {
+    if (!Array.isArray(value)) throw new Error(`This replay is missing its ${name}.`);
+  }
+  if (!replay.scenario || !replay.agents) throw new Error("This replay does not say what was flown.");
+  return replay as ReplayFile;
 }
