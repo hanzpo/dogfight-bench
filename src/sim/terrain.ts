@@ -1,3 +1,4 @@
+import { fractal, noise } from "./noise";
 
 export const TERRAIN_EXTENT_M = 80_000;
 
@@ -6,42 +7,6 @@ export const TERRAIN_CHUNK_SEGMENTS = 38;
 export const TERRAIN_GRID_STEP_M = TERRAIN_EXTENT_M / (TERRAIN_CHUNKS * TERRAIN_CHUNK_SEGMENTS);
 
 export const SEA_LEVEL_M = 0;
-
-function hash(ix: number, iy: number): number {
-  let h = Math.imul(ix | 0, 374_761_393) + Math.imul(iy | 0, 668_265_263);
-  h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
-}
-
-function smooth(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function noise(x: number, y: number): number {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = smooth(x - ix);
-  const fy = smooth(y - iy);
-  const a = hash(ix, iy);
-  const b = hash(ix + 1, iy);
-  const c = hash(ix, iy + 1);
-  const d = hash(ix + 1, iy + 1);
-  return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
-}
-
-function fractal(x: number, y: number, octaves: number): number {
-  let sum = 0;
-  let amplitude = 1;
-  let total = 0;
-  let frequency = 1;
-  for (let octave = 0; octave < octaves; octave += 1) {
-    sum += noise(x * frequency, y * frequency) * amplitude;
-    total += amplitude;
-    amplitude *= 0.5;
-    frequency *= 2;
-  }
-  return sum / total;
-}
 
 function ridged(x: number, y: number, octaves: number): number {
   let sum = 0;

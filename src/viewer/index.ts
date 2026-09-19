@@ -11,6 +11,7 @@ import {
   terrainElevation,
   terrainHeight,
 } from "../sim/terrain";
+import { fractal } from "../sim/noise";
 import { TRACER_TRAIL_SECONDS } from "../sim/tracer";
 import { CameraDirector } from "./cameras";
 import type { ViewMode } from "./cameras";
@@ -60,46 +61,16 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
   };
 }
 
+/** A tiling sheet of soft blobs, thin enough to fly through. */
 function cloudTexture(size = 512): THREE.Texture {
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext("2d")!;
   const image = context.createImageData(size, size);
-
-  const hash = (ix: number, iy: number) => {
-    let h = Math.imul(ix | 0, 374_761_393) + Math.imul(iy | 0, 668_265_263);
-    h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
-    return ((h ^ (h >>> 16)) >>> 0) / 4_294_967_296;
-  };
-  const value = (x: number, y: number, period: number) => {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    const fx = x - ix;
-    const fy = y - iy;
-    const sx = fx * fx * (3 - 2 * fx);
-    const sy = fy * fy * (3 - 2 * fy);
-    const wrap = (v: number) => ((v % period) + period) % period;
-    const a = hash(wrap(ix), wrap(iy));
-    const b = hash(wrap(ix + 1), wrap(iy));
-    const c = hash(wrap(ix), wrap(iy + 1));
-    const d = hash(wrap(ix + 1), wrap(iy + 1));
-    return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
-  };
-
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      let sum = 0;
-      let amplitude = 1;
-      let total = 0;
-      let period = 4;
-      for (let octave = 0; octave < 5; octave += 1) {
-        sum += value((x / size) * period, (y / size) * period, period) * amplitude;
-        total += amplitude;
-        amplitude *= 0.5;
-        period *= 2;
-      }
-      const density = Math.max(0, sum / total - 0.42) / 0.58;
+      const density = Math.max(0, fractal((x / size) * 4, (y / size) * 4, 5, 4) - 0.42) / 0.58;
       const index = (y * size + x) * 4;
       image.data[index] = 255;
       image.data[index + 1] = 255;
