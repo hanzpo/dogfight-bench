@@ -1,6 +1,6 @@
 import { GRAVITY_MPS2 } from "./atmosphere";
 import { alphaForLiftCoefficient, liftCoefficient as liftCoefficientAt } from "./aero";
-import { AERO, FLCS, GEOMETRY, SURFACES } from "./config";
+import { F16_FLIGHT, FLCS, type FlcsSpec, type FlightSpec } from "./config";
 import { clamp } from "../math";
 
 export interface FlcsState {
@@ -52,19 +52,20 @@ function slew(current: number, command: number, maxRatePerSecond: number, dt: nu
   return current + clamp(command - current, -limit, limit);
 }
 
-export function gainSchedule(dynamicPressurePa: number): number {
-  return clamp(FLCS.referenceQ / Math.max(dynamicPressurePa, FLCS.minGainScheduleQ), 0.25, 2.5);
+export function gainSchedule(dynamicPressurePa: number, flcs: FlcsSpec = FLCS): number {
+  return clamp(flcs.referenceQ / Math.max(dynamicPressurePa, flcs.minGainScheduleQ), 0.25, 2.5);
 }
 
-export function stepFlcs(state: FlcsState, input: FlcsInputs, dt: number): FlcsState {
-  const schedule = gainSchedule(input.dynamicPressurePa);
+export function stepFlcs(state: FlcsState, input: FlcsInputs, dt: number, flight: FlightSpec = F16_FLIGHT): FlcsState {
+  const { aero, flcs, geometry, surfaces } = flight;
+  const schedule = gainSchedule(input.dynamicPressurePa, flcs);
   const speed = Math.max(input.trueAirspeedMps, 30);
-  const halfSpan = GEOMETRY.wingSpanM / (2 * speed);
+  const halfSpan = geometry.wingSpanM / (2 * speed);
   const pHat = input.p * halfSpan;
   const rHat = input.r * halfSpan;
 
   const departed =
-    Math.abs(input.alphaRad) > AERO.alphaDepartureRad || Math.abs(input.betaRad) > AERO.betaDepartureRad
+    Math.abs(input.alphaRad) > aero.alphaDepartureRad || Math.abs(input.betaRad) > aero.betaDepartureRad
       ? true
       : state.departed &&
         !(Math.abs(input.alphaRad) < 0.35 && Math.abs(input.betaRad) < 0.17 && Math.abs(input.r) < 0.5);
@@ -72,71 +73,71 @@ export function stepFlcs(state: FlcsState, input: FlcsInputs, dt: number): FlcsS
 
   const rawG =
     input.pitchStick >= 0
-      ? 1 + input.pitchStick * (FLCS.maxLoadFactor - 1)
-      : 1 + input.pitchStick * (1 - FLCS.minLoadFactor);
+      ? 1 + input.pitchStick * (flcs.maxLoadFactor - 1)
+      : 1 + input.pitchStick * (1 - flcs.minLoadFactor);
   state.commandedG = rawG;
 
-  const liftArea = Math.max(input.dynamicPressurePa * GEOMETRY.wingAreaM2, 1);
+  const liftArea = Math.max(input.dynamicPressurePa * geometry.wingAreaM2, 1);
   const clCommand = (rawG * input.massKg * GRAVITY_MPS2) / liftArea;
-  const rawAlpha = alphaForLiftCoefficient(clCommand) + state.alphaIntegralRad;
+  const rawAlpha = alphaForLiftCoefficient(clCommand, aero) + state.alphaIntegralRad;
   const alphaCommand = clamp(
     rawAlpha,
-    -FLCS.alphaLimitRad * FLCS.negativeAlphaLimitFraction,
-    FLCS.alphaLimitRad,
+    -flcs.alphaLimitRad * flcs.negativeAlphaLimitFraction,
+    flcs.alphaLimitRad,
   );
   state.commandedAlphaRad = alphaCommand;
-  const limiting = rawAlpha > FLCS.alphaLimitRad;
+  const limiting = rawAlpha > flcs.alphaLimitRad;
   state.limiterActive = limiting;
 
-  const achievableG = (liftCoefficientAt(alphaCommand) * liftArea) / (input.massKg * GRAVITY_MPS2);
+  const achievableG = (liftCoefficientAt(alphaCommand, aero) * liftArea) / (input.massKg * GRAVITY_MPS2);
   const qSteady = (GRAVITY_MPS2 * (achievableG + input.gravityAlongBodyUp)) / speed;
-  const qCommand = qSteady + FLCS.alphaTrackingGain * (alphaCommand - input.alphaRad);
+  const qCommand = qSteady + flcs.alphaTrackingGain * (alphaCommand - input.alphaRad);
 
   if (!limiting && !departed) {
     state.alphaIntegralRad = clamp(
-      state.alphaIntegralRad + FLCS.alphaIntegralGain * (rawG - input.loadFactor) * dt * 0.01,
-      -FLCS.alphaIntegralLimitRad,
-      FLCS.alphaIntegralLimitRad,
+      state.alphaIntegralRad + flcs.alphaIntegralGain * (rawG - input.loadFactor) * dt * 0.01,
+      -flcs.alphaIntegralLimitRad,
+      flcs.alphaIntegralLimitRad,
     );
   } else {
     state.alphaIntegralRad *= Math.exp(-dt / 0.5);
   }
 
-  const qHatCommand = (qCommand * GEOMETRY.meanChordM) / (2 * speed);
+  const qHatCommand = (qCommand * geometry.meanChordM) / (2 * speed);
   const pitchTrim =
-    -(AERO.cmZero + AERO.cmAlpha * input.alphaRad + AERO.cmQ * qHatCommand) / AERO.cmPitchCommand;
+    -(aero.cmZero + aero.cmAlpha * input.alphaRad + aero.cmQ * qHatCommand) / aero.cmPitchCommand;
   state.pitchWashout += ((input.q - state.pitchWashout) * dt) / 1.2;
   const pitchFeedback =
-    FLCS.pitchRateGain * schedule * (qCommand - input.q) - FLCS.pitchRateDamping * (input.q - state.pitchWashout);
+    flcs.pitchRateGain * schedule * (qCommand - input.q) - flcs.pitchRateDamping * (input.q - state.pitchWashout);
   const pitchCommand = clamp(pitchTrim + pitchFeedback, -1, 1);
 
   const fade = clamp(
-    1 - (0.65 * (Math.abs(input.alphaRad) - FLCS.rollAlphaFadeStartRad)) / (FLCS.alphaLimitRad - FLCS.rollAlphaFadeStartRad),
+    1 - (0.65 * (Math.abs(input.alphaRad) - flcs.rollAlphaFadeStartRad)) / (flcs.alphaLimitRad - flcs.rollAlphaFadeStartRad),
     0.35,
     1,
   );
-  const pCommand = input.rollStick * FLCS.maxRollRateRadS * fade * (departed ? 0.3 : 1);
+  const pCommand = input.rollStick * flcs.maxRollRateRadS * fade * (departed ? 0.3 : 1);
   const rollTrim =
-    -(AERO.clP * pCommand * halfSpan + AERO.clBeta * input.betaRad + AERO.clR * rHat) / AERO.clRollCommand;
-  const rollCommand = clamp(rollTrim + FLCS.rollRateGain * schedule * (pCommand - input.p), -1, 1);
+    -(aero.clP * pCommand * halfSpan + aero.clBeta * input.betaRad + aero.clR * rHat) / aero.clRollCommand;
+  const rollCommand = clamp(rollTrim + flcs.rollRateGain * schedule * (pCommand - input.p), -1, 1);
 
   state.yawWashout += ((input.r - state.yawWashout) * dt) / 1.5;
   const damped = input.r - state.yawWashout;
-  const betaCommand = -input.yawPedal * FLCS.maxCommandedSideslipRad;
+  const betaCommand = -input.yawPedal * flcs.maxCommandedSideslipRad;
 
   const yawTrim =
-    -(AERO.cnBeta * betaCommand + AERO.cnP * pHat + AERO.cnR * rHat + AERO.cnRollCommand * rollCommand) /
-    AERO.cnYawCommand;
+    -(aero.cnBeta * betaCommand + aero.cnP * pHat + aero.cnR * rHat + aero.cnRollCommand * rollCommand) /
+    aero.cnYawCommand;
   const yawCommand = clamp(
     clamp(yawTrim, -1, 1) +
-      FLCS.sideslipGain * schedule * (input.betaRad - betaCommand) -
-      FLCS.yawDamperGain * schedule * damped,
+      flcs.sideslipGain * schedule * (input.betaRad - betaCommand) -
+      flcs.yawDamperGain * schedule * damped,
     -1,
     1,
   );
 
-  state.pitch = slew(state.pitch, pitchCommand, SURFACES.elevatorRateRadS / SURFACES.elevatorMaxRad, dt);
-  state.roll = slew(state.roll, rollCommand, SURFACES.aileronRateRadS / SURFACES.aileronMaxRad, dt);
-  state.yaw = slew(state.yaw, yawCommand, SURFACES.rudderRateRadS / SURFACES.rudderMaxRad, dt);
+  state.pitch = slew(state.pitch, pitchCommand, surfaces.elevatorRateRadS / surfaces.elevatorMaxRad, dt);
+  state.roll = slew(state.roll, rollCommand, surfaces.aileronRateRadS / surfaces.aileronMaxRad, dt);
+  state.yaw = slew(state.yaw, yawCommand, surfaces.rudderRateRadS / surfaces.rudderMaxRad, dt);
   return state;
 }

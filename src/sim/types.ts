@@ -1,6 +1,7 @@
 import type { Quaternion, Vector3 } from "three";
 import type { EngineState } from "./engine";
 import type { FlcsState } from "./flcs";
+import type { AirframeId, MissileId } from "./airframes";
 
 export type Team = "blue" | "red";
 
@@ -60,6 +61,7 @@ export interface DamageState {
 export interface AircraftState {
   id: string;
   team: Team;
+  airframe: AirframeId;
   position: Vector3;
   velocity: Vector3;
   acceleration: Vector3;
@@ -112,6 +114,7 @@ export type MissileTrack = { kind: "aircraft"; id: string } | { kind: "flare"; i
 
 export interface MissileState {
   id: number;
+  kind: MissileId;
   ownerId: string;
   position: Vector3;
   previousPosition: Vector3;
@@ -189,4 +192,6 @@ export interface ScenarioConfig {
   arenaRadiusM: number;
   /** Guns only unless said otherwise, which is what every benchmark was flown with. */
   weapons?: Loadout;
+  /** Which aeroplane each seat flies, by aircraft id; an F-16 wherever it is not said. */
+  airframes?: Partial<Record<string, AirframeId>>;
 }

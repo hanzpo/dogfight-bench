@@ -1,7 +1,8 @@
 import { Quaternion, Vector3 } from "three";
 import { coefficients, momentCoefficients } from "./aero";
 import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
-import { AERO, GEOMETRY, MASS } from "./config";
+import { MASS, type MassSpec } from "./config";
+import { airframe } from "./airframes";
 import { stepEngine } from "./engine";
 import { stepFlcs } from "./flcs";
 import { heightAboveGround } from "./terrain";
@@ -29,17 +30,17 @@ export function sanitizeControls(input: ControlInput): ControlInput {
 export { airDensity, speedOfSound } from "./atmosphere";
 
 export function currentMass(aircraft: AircraftState): number {
-  return MASS.emptyKg + aircraft.engine.fuelKg;
+  return airframe(aircraft.airframe).mass.emptyKg + aircraft.engine.fuelKg;
 }
 
-export function inertia(fuelKg: number): { ixx: number; iyy: number; izz: number; ixz: number } {
-  const fill = clamp(fuelKg / MASS.internalFuelKg, 0, 1);
-  const scale = 1 - MASS.fuelInertiaFraction * (1 - fill);
+export function inertia(fuelKg: number, mass: MassSpec = MASS): { ixx: number; iyy: number; izz: number; ixz: number } {
+  const fill = clamp(fuelKg / mass.internalFuelKg, 0, 1);
+  const scale = 1 - mass.fuelInertiaFraction * (1 - fill);
   return {
-    ixx: MASS.ixxKgM2 * scale,
-    iyy: MASS.iyyKgM2 * scale,
-    izz: MASS.izzKgM2 * scale,
-    ixz: MASS.ixzKgM2 * scale,
+    ixx: mass.ixxKgM2 * scale,
+    iyy: mass.iyyKgM2 * scale,
+    izz: mass.izzKgM2 * scale,
+    ixz: mass.ixzKgM2 * scale,
   };
 }
 
@@ -96,6 +97,8 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
 
   trackCommandedControls(aircraft, dt);
   const controls = aircraft.controls;
+  const frame = airframe(aircraft.airframe);
+  const geometry = frame.geometry;
 
   const axes = bodyAxes(aircraft.orientation);
   const agl = heightAboveGround(aircraft.position.x, aircraft.position.y, aircraft.position.z);
@@ -141,18 +144,19 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
       gravityAlongBodyUp: WORLD_DOWN.dot(axes.up),
     },
     dt,
+    frame,
   );
 
-  stepEngine(aircraft.engine, controls.throttle, aircraft.position.y, aircraft.mach, dt);
+  stepEngine(aircraft.engine, controls.throttle, aircraft.position.y, aircraft.mach, dt, frame.engine);
   aircraft.engine.fuelKg = Math.max(0, aircraft.engine.fuelKg - aircraft.damage.fuelLeakKgS * dt);
   const thrustN = aircraft.engine.thrustN * aircraft.damage.subsystems.engine;
   aircraft.massKg = currentMass(aircraft);
 
   const wingHealth = 0.5 * (aircraft.damage.subsystems["left-wing"] + aircraft.damage.subsystems["right-wing"]);
-  const aero = coefficients(alpha, beta, aircraft.mach, agl);
+  const aero = coefficients(alpha, beta, aircraft.mach, agl, frame.aero, geometry.wingSpanM);
   const cl = aero.cl * (0.55 + 0.45 * wingHealth);
   const cd = aero.cd + (1 - wingHealth) * 0.05;
-  const scale = qbar * GEOMETRY.wingAreaM2;
+  const scale = qbar * geometry.wingAreaM2;
   const lift = scale * cl;
   const drag = scale * cd;
   const side = scale * aero.cy;
@@ -179,8 +183,8 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
   const acceleration = specificForce.clone().add(new Vector3(0, -GRAVITY_MPS2, 0));
   aircraft.acceleration.copy(acceleration);
 
-  const halfSpan = GEOMETRY.wingSpanM / (2 * vTrue);
-  const halfChord = GEOMETRY.meanChordM / (2 * vTrue);
+  const halfSpan = geometry.wingSpanM / (2 * vTrue);
+  const halfChord = geometry.meanChordM / (2 * vTrue);
   const moments = momentCoefficients(
     alpha,
     beta,
@@ -191,15 +195,16 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
     aircraft.flcs.roll * controlHealth,
     aircraft.flcs.yaw * controlHealth,
     aircraft.flcs.departed,
+    frame.aero,
   );
   const asymmetricRoll =
     (aircraft.damage.subsystems["right-wing"] - aircraft.damage.subsystems["left-wing"]) * 0.045;
 
-  const rollMoment = scale * GEOMETRY.wingSpanM * (moments.roll + asymmetricRoll);
-  const pitchMoment = scale * GEOMETRY.meanChordM * moments.pitch;
-  const yawMoment = scale * GEOMETRY.wingSpanM * moments.yaw;
+  const rollMoment = scale * geometry.wingSpanM * (moments.roll + asymmetricRoll);
+  const pitchMoment = scale * geometry.meanChordM * moments.pitch;
+  const yawMoment = scale * geometry.wingSpanM * moments.yaw;
 
-  const { ixx, iyy, izz, ixz } = inertia(aircraft.engine.fuelKg);
+  const { ixx, iyy, izz, ixz } = inertia(aircraft.engine.fuelKg, frame.mass);
   const gamma = ixx * izz - ixz * ixz;
   const a = rollMoment - (izz - iyy) * q * r + ixz * p * q;
   const b = yawMoment - (iyy - ixx) * p * q - ixz * q * r;
@@ -227,6 +232,7 @@ export function stepAircraft(aircraft: AircraftState, dt: number): void {
 export function availableLoadFactor(aircraft: AircraftState): number {
   const air = atmosphere(aircraft.position.y);
   const qbar = 0.5 * air.densityKgM3 * aircraft.velocity.lengthSq();
-  const maxLift = qbar * GEOMETRY.wingAreaM2 * AERO.clMax;
-  return Math.min(9, maxLift / (aircraft.massKg * GRAVITY_MPS2));
+  const frame = airframe(aircraft.airframe);
+  const maxLift = qbar * frame.geometry.wingAreaM2 * frame.aero.clMax;
+  return Math.min(frame.flcs.maxLoadFactor, maxLift / (aircraft.massKg * GRAVITY_MPS2));
 }

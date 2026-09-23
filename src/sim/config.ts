@@ -100,6 +100,9 @@ export const FLCS = {
 } as const;
 
 export const GUN = {
+  name: "M61A1",
+  /** How hard one round hits against a 20 mm round; the airframe damage table is written for 20 mm. */
+  damageScale: 1,
   ammunition: 511,
   ratePerSecond: 100,
   muzzleVelocityMps: 1_036,
@@ -149,6 +152,10 @@ export const MISSILE = {
   lockRangeReferenceM: 8_000,
   /** Fraction of the lock signal the track survives down to once held. */
   trackHoldFraction: 0.6,
+  /** Multiplies a flare's chance to pull the seeker: below 1 is better counter-countermeasures. */
+  flareSusceptibility: 1,
+  /** Scales the launch zone the HUD and the scripted pilot shoot inside. */
+  rangeFactor: 1,
   armingS: 0.6,
   fuzeRadiusM: 9,
   lethalRadiusM: 12,
@@ -194,3 +201,41 @@ export const MIN_LETHAL_ENERGY_J = 3_000;
 
 export const EARTH_RADIUS_M = 6_371_000;
 
+
+/** The constants above, with the numbers widened so another airframe can supply its own. */
+type Widen<V> = V extends number
+  ? number
+  : V extends string
+    ? string
+    : V extends readonly [number, number, number]
+      ? readonly [number, number, number]
+      : V;
+type Numbers<T> = { readonly [K in keyof T]: Widen<T[K]> };
+
+export type GeometrySpec = Numbers<typeof GEOMETRY>;
+export type MassSpec = Numbers<typeof MASS>;
+export type EngineSpec = Numbers<typeof ENGINE>;
+export type AeroSpec = Numbers<typeof AERO>;
+export type SurfaceSpec = Numbers<typeof SURFACES>;
+export type FlcsSpec = Numbers<typeof FLCS>;
+export type GunSpec = Numbers<typeof GUN>;
+export type MissileSpec = Numbers<Omit<typeof MISSILE, "rails">>;
+
+/** Everything the flight model needs to know about one type of aeroplane. */
+export interface FlightSpec {
+  geometry: GeometrySpec;
+  mass: MassSpec;
+  engine: EngineSpec;
+  aero: AeroSpec;
+  surfaces: SurfaceSpec;
+  flcs: FlcsSpec;
+}
+
+export const F16_FLIGHT: FlightSpec = {
+  geometry: GEOMETRY,
+  mass: MASS,
+  engine: ENGINE,
+  aero: AERO,
+  surfaces: SURFACES,
+  flcs: FLCS,
+};

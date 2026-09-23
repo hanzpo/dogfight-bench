@@ -1,5 +1,6 @@
 import { Euler, Quaternion, Vector3 } from "three";
-import { FLARE, GUN, MASS, MISSILE } from "./config";
+import { FLARE, MISSILE } from "./config";
+import { airframe, type AirframeId } from "./airframes";
 import { createDamageState } from "./damage";
 import { thrustAtPower } from "./engine";
 import { createFlcsState } from "./flcs";
@@ -56,11 +57,12 @@ function placements(config: ScenarioConfig): [Placement, Placement] {
   ];
 }
 
-export function createStores(config: ScenarioConfig): StoresState {
+export function createStores(config: ScenarioConfig, frame: AirframeId = "f16c"): StoresState {
   const armed = config.weapons === "fox2";
+  const stations = armed ? Math.min(MISSILE.carried, airframe(frame).rails.length) : 0;
   return {
-    missileStations: armed ? MISSILE.carried : 0,
-    missiles: armed ? MISSILE.carried : 0,
+    missileStations: stations,
+    missiles: stations,
     flares: armed ? FLARE.carried : 0,
     missileHeld: false,
     flareHeld: false,
@@ -71,20 +73,23 @@ export function createStores(config: ScenarioConfig): StoresState {
 }
 
 function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftState {
-  const fuelKg = MASS.internalFuelKg * MASS.startFuelFraction;
-  const massKg = MASS.emptyKg + fuelKg;
-  const trim = trimLevelFlight(placement.position.y, config.startSpeedMps, massKg);
+  const id = config.airframes?.[placement.id] ?? "f16c";
+  const frame = airframe(id);
+  const fuelKg = frame.mass.internalFuelKg * frame.mass.startFuelFraction;
+  const massKg = frame.mass.emptyKg + fuelKg;
+  const trim = trimLevelFlight(placement.position.y, config.startSpeedMps, massKg, frame);
 
   const yaw = radians(placement.headingDeg);
   const orientation = new Quaternion().setFromEuler(new Euler(-trim.alphaRad, yaw, 0, "YXZ"));
   const velocity = new Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(config.startSpeedMps);
 
   const air = atmosphere(placement.position.y);
-  const power = trimPower(trim.throttle);
+  const power = trimPower(trim.throttle, frame);
 
   return {
     id: placement.id,
     team: placement.team,
+    airframe: id,
     position: placement.position.clone(),
     velocity,
     acceleration: new Vector3(),
@@ -96,7 +101,7 @@ function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftSta
     engine: {
       power,
       fuelKg,
-      thrustN: thrustAtPower(power, placement.position.y, config.startSpeedMps / air.speedOfSoundMps),
+      thrustN: thrustAtPower(power, placement.position.y, config.startSpeedMps / air.speedOfSoundMps, frame.engine),
       fuelFlowKgS: 0,
       afterburner: power > 1.02,
     },
@@ -107,11 +112,11 @@ function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftSta
     mach: config.startSpeedMps / air.speedOfSoundMps,
     specificExcessPowerMps: 0,
     heightAboveGroundM: placement.position.y,
-    ammo: GUN.ammunition,
+    ammo: frame.gun.ammunition,
     gunAccumulator: 0,
     gunSpin: 0,
     roundsThisBurst: 0,
-    stores: createStores(config),
+    stores: createStores(config, id),
     seeker: { tone: config.weapons === "fox2" ? "search" : "off", signal: 0, flaresSeen: [] },
     damage: createDamageState(),
     health: 1,

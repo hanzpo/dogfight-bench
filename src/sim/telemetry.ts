@@ -1,9 +1,10 @@
 import { Vector3 } from "three";
 import { atmosphere, GRAVITY_MPS2, equivalentAirspeed } from "./atmosphere";
-import { EARTH_RADIUS_M, FLCS, GEOMETRY, GUN, MIN_LETHAL_ENERGY_J } from "./config";
+import { EARTH_RADIUS_M, MIN_LETHAL_ENERGY_J } from "./config";
+import { airframe, type AirframeId } from "./airframes";
 import { hitThresholdM, solveGunsight, wouldConnect } from "./gunsight";
 import { bodyAxes } from "./flight-model";
-import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
+import { availableLoadFactor, limiterCl, sustainedLoadFactor } from "./performance";
 import { missileLaunchZone, rwrContacts, type RwrContact } from "./rwr";
 import { terrainAwareness, type TerrainAwareness } from "./terrain-awareness";
 import type { AircraftState, MatchState, ScenarioConfig, SeekerTone, SimEvent, Subsystem } from "./types";
@@ -13,6 +14,7 @@ import { clamp } from "../math";
 export interface AircraftTelemetry {
   id: string;
   team: string;
+  airframe: AirframeId;
   alive: boolean;
 
   latitudeDeg: number;
@@ -144,6 +146,7 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
   const axes = bodyAxes(aircraft.orientation);
   const speed = aircraft.velocity.length();
   const air = atmosphere(aircraft.position.y);
+  const frame = airframe(aircraft.airframe);
 
   const latitudeDeg = config.originLatitudeDeg - ((aircraft.position.z / EARTH_RADIUS_M) * 180) / Math.PI;
   const longitudeDeg =
@@ -154,13 +157,14 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
   const flightPathAngleDeg = speed > 1e-3 ? (Math.asin(aircraft.velocity.y / speed) * 180) / Math.PI : 0;
   const bank = Math.atan2(axes.up.dot(axes.nose.clone().cross(new Vector3(0, 1, 0)).normalize()), axes.up.y);
 
-  const availableG = availableLoadFactor(aircraft.position.y, speed, aircraft.massKg);
+  const availableG = availableLoadFactor(aircraft.position.y, speed, aircraft.massKg, frame);
 
   const turnRateRadS = speed > 1e-3 ? (GRAVITY_MPS2 * Math.sqrt(Math.max(aircraft.loadFactor ** 2 - 1, 0))) / speed : 0;
 
   return {
     id: aircraft.id,
     team: aircraft.team,
+    airframe: aircraft.airframe,
     alive: aircraft.alive,
 
     latitudeDeg,
@@ -190,15 +194,15 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
 
     loadFactorG: aircraft.loadFactor,
     availableLoadFactorG: availableG,
-    sustainedLoadFactorG: sustainedLoadFactor(aircraft.position.y, speed, aircraft.massKg),
+    sustainedLoadFactorG: sustainedLoadFactor(aircraft.position.y, speed, aircraft.massKg, frame),
     turnRadiusM: turnRateRadS > 1e-6 ? speed / turnRateRadS : null,
     turnRateDegS: degrees(turnRateRadS),
 
     specificEnergyM: aircraft.position.y + (speed * speed) / (2 * GRAVITY_MPS2),
     specificExcessPowerMps: aircraft.specificExcessPowerMps,
     cornerSpeedMps: Math.sqrt(
-      (2 * FLCS.maxLoadFactor * aircraft.massKg * GRAVITY_MPS2) /
-        (air.densityKgM3 * GEOMETRY.wingAreaM2 * LIMITER_CL),
+      (2 * frame.flcs.maxLoadFactor * aircraft.massKg * GRAVITY_MPS2) /
+        (air.densityKgM3 * frame.geometry.wingAreaM2 * limiterCl(frame)),
     ),
 
     throttle: aircraft.controls.throttle,
@@ -231,6 +235,7 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
 
 export function gunSolutionFor(shooter: AircraftState, target: AircraftState): GunSolution {
   const axes = bodyAxes(shooter.orientation);
+  const gun = airframe(shooter.airframe).gun;
   const solution = solveGunsight({
     position: shooter.position,
     velocity: shooter.velocity,
@@ -238,6 +243,7 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
     targetPosition: target.position,
     targetVelocity: target.velocity,
     targetAcceleration: target.acceleration,
+    gun,
   });
 
   const local = new Vector3(
@@ -253,7 +259,7 @@ export function gunSolutionFor(shooter: AircraftState, target: AircraftState): G
     leadBearingDeg: (Math.atan2(local.x, local.z) * 180) / Math.PI,
     leadElevationDeg: (Math.atan2(local.y, Math.hypot(local.x, local.z)) * 180) / Math.PI,
     inLethalRange: solution.inLethalRange,
-    trackingSolution: wouldConnect(solution),
+    trackingSolution: wouldConnect(solution, gun),
   };
 }
 
@@ -299,7 +305,9 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
           },
         }
       : {}),
-    threatened: threat.inLethalRange && threat.predictedMissM < hitThresholdM(threat.leadRangeM) * 3,
+    threatened:
+      threat.inLethalRange &&
+      threat.predictedMissM < hitThresholdM(threat.leadRangeM, airframe(opponent.airframe).gun) * 3,
   };
 }
 

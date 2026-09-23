@@ -1,5 +1,5 @@
 import { SEA_LEVEL_DENSITY } from "./atmosphere";
-import { GUN } from "./config";
+import { GUN, type GunSpec } from "./config";
 
 const G1_MACH = [
   0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.825, 0.85, 0.875, 0.9, 0.925, 0.95, 0.975, 1.0, 1.025, 1.05,
@@ -23,18 +23,30 @@ export function g1DragCoefficient(mach: number): number {
   return G1_CD[index - 1]! * (1 - t) + G1_CD[index]! * t;
 }
 
-export const PROJECTILE_AREA_M2 = Math.PI * (GUN.projectileDiameterM / 2) ** 2;
-
-export const FORM_FACTOR =
-  GUN.projectileMassKg / GUN.projectileDiameterM ** 2 / (GUN.ballisticCoefficientG1 * 703.069);
-
-export function projectileDragCoefficient(mach: number): number {
-  return g1DragCoefficient(mach) * FORM_FACTOR;
+export function projectileArea(gun: GunSpec = GUN): number {
+  return Math.PI * (gun.projectileDiameterM / 2) ** 2;
 }
 
-export function projectileDeceleration(speed: number, density: number, speedOfSoundMps: number): number {
-  const cd = projectileDragCoefficient(speed / speedOfSoundMps);
-  return (0.5 * density * speed * speed * cd * PROJECTILE_AREA_M2) / GUN.projectileMassKg;
+export function formFactor(gun: GunSpec = GUN): number {
+  return gun.projectileMassKg / gun.projectileDiameterM ** 2 / (gun.ballisticCoefficientG1 * 703.069);
+}
+
+export const PROJECTILE_AREA_M2 = projectileArea();
+
+export const FORM_FACTOR = formFactor();
+
+export function projectileDragCoefficient(mach: number, gun: GunSpec = GUN): number {
+  return g1DragCoefficient(mach) * formFactor(gun);
+}
+
+export function projectileDeceleration(
+  speed: number,
+  density: number,
+  speedOfSoundMps: number,
+  gun: GunSpec = GUN,
+): number {
+  const cd = projectileDragCoefficient(speed / speedOfSoundMps, gun);
+  return (0.5 * density * speed * speed * cd * projectileArea(gun)) / gun.projectileMassKg;
 }
 
 export function timeOfFlight(
@@ -42,11 +54,12 @@ export function timeOfFlight(
   muzzleSpeedMps: number,
   density: number,
   speedOfSoundMps: number,
+  gun: GunSpec = GUN,
 ): { seconds: number; impactSpeedMps: number } {
   const speed = Math.max(muzzleSpeedMps, 1);
   const range = Math.max(rangeM, 0);
   const constantAt = (reference: number) =>
-    projectileDeceleration(reference, density, speedOfSoundMps) / (reference * reference);
+    projectileDeceleration(reference, density, speedOfSoundMps, gun) / (reference * reference);
 
   let k = constantAt(speed);
   if (k <= 0) return { seconds: range / speed, impactSpeedMps: speed };
@@ -57,6 +70,6 @@ export function timeOfFlight(
   return { seconds: (growth - 1) / (k * speed), impactSpeedMps: speed / growth };
 }
 
-export function kineticEnergyJ(speed: number): number {
-  return 0.5 * GUN.projectileMassKg * speed * speed;
+export function kineticEnergyJ(speed: number, gun: GunSpec = GUN): number {
+  return 0.5 * gun.projectileMassKg * speed * speed;
 }

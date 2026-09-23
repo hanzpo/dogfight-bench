@@ -2,6 +2,8 @@ import { Quaternion, Vector3 } from "three";
 import { bodyAxes } from "../sim/flight-model";
 import { solveGunsight, wouldConnect } from "../sim/gunsight";
 import { availableLoadFactor } from "../sim/performance";
+import { airframe } from "../sim/airframes";
+import type { GunSpec } from "../sim/config";
 import { terrainHeight } from "../sim/terrain";
 import type { AgentObservation, AircraftTelemetry } from "../sim/telemetry";
 import type { AircraftState, ControlInput } from "../sim/types";
@@ -29,6 +31,8 @@ export interface SteeringContext {
   hardDeckAglM: number;
   availableLoadFactorG: number;
   flightPathAngleRad: number;
+  /** Its own gun, so the lead it flies to is the lead its rounds need. */
+  gun?: GunSpec;
 }
 
 export function contextFromState(
@@ -45,8 +49,9 @@ export function contextFromState(
     opponentVelocity: opponent.velocity,
     altitudeAglM: own.heightAboveGroundM,
     hardDeckAglM,
-    availableLoadFactorG: availableLoadFactor(own.position.y, speed, own.massKg),
+    availableLoadFactorG: availableLoadFactor(own.position.y, speed, own.massKg, airframe(own.airframe)),
     flightPathAngleRad: Math.asin(clamp(own.velocity.y / speed, -1, 1)),
+    gun: airframe(own.airframe).gun,
   };
 }
 
@@ -64,6 +69,7 @@ export function contextFromObservation(observation: AgentObservation): SteeringC
     hardDeckAglM: observation.arena.hardDeckAglM,
     availableLoadFactorG: own.availableLoadFactorG,
     flightPathAngleRad: radians(own.flightPathAngleDeg),
+    gun: airframe(own.airframe).gun,
   };
 }
 
@@ -80,13 +86,14 @@ export function leadDirection(context: SteeringContext): {
     orientation: context.orientation,
     targetPosition: context.opponentPosition,
     targetVelocity: context.opponentVelocity,
+    gun: context.gun,
   });
   return {
     direction: solution.direction,
     rangeM: solution.leadRangeM,
     missM: solution.predictedMissM,
     lethal: solution.inLethalRange,
-    connects: wouldConnect(solution),
+    connects: wouldConnect(solution, context.gun),
   };
 }
 

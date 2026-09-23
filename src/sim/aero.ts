@@ -1,4 +1,4 @@
-import { AERO, GEOMETRY } from "./config";
+import { AERO, GEOMETRY, type AeroSpec } from "./config";
 
 export interface AeroCoefficients {
   cl: number;
@@ -7,45 +7,45 @@ export interface AeroCoefficients {
   stalled: boolean;
 }
 
-export function liftCoefficient(alphaRad: number): number {
+export function liftCoefficient(alphaRad: number, aero: AeroSpec = AERO): number {
   const sign = alphaRad < 0 ? -1 : 1;
   const alpha = Math.abs(alphaRad);
-  const peak = AERO.clMaxAlphaRad;
+  const peak = aero.clMaxAlphaRad;
   if (alpha <= peak) {
-    const linear = AERO.clAlpha * alpha;
-    const shaped = AERO.clMax * Math.sin((Math.PI / 2) * (alpha / peak));
+    const linear = aero.clAlpha * alpha;
+    const shaped = aero.clMax * Math.sin((Math.PI / 2) * (alpha / peak));
     const blend = Math.min(1, alpha / peak);
-    return sign * (AERO.clZero * (1 - blend) + linear * (1 - blend) + shaped * blend);
+    return sign * (aero.clZero * (1 - blend) + linear * (1 - blend) + shaped * blend);
   }
   const past = alpha - peak;
-  const decayed = AERO.clMax - (AERO.clMax - AERO.clStallFloor) * Math.min(1, past / 0.55);
+  const decayed = aero.clMax - (aero.clMax - aero.clStallFloor) * Math.min(1, past / 0.55);
   return sign * decayed;
 }
 
-export function alphaForLiftCoefficient(cl: number): number {
-  let low = -AERO.clMaxAlphaRad;
-  let high = AERO.clMaxAlphaRad;
+export function alphaForLiftCoefficient(cl: number, aero: AeroSpec = AERO): number {
+  let low = -aero.clMaxAlphaRad;
+  let high = aero.clMaxAlphaRad;
   for (let i = 0; i < 24; i += 1) {
     const mid = (low + high) / 2;
-    if (liftCoefficient(mid) < cl) low = mid;
+    if (liftCoefficient(mid, aero) < cl) low = mid;
     else high = mid;
   }
   return (low + high) / 2;
 }
 
-export function waveDrag(mach: number): number {
-  if (mach <= AERO.waveDragOnsetMach) return 0;
-  if (mach <= AERO.waveDragPeakMach) {
-    const t = (mach - AERO.waveDragOnsetMach) / (AERO.waveDragPeakMach - AERO.waveDragOnsetMach);
-    return AERO.waveDragPeak * t * t * (3 - 2 * t);
+export function waveDrag(mach: number, aero: AeroSpec = AERO): number {
+  if (mach <= aero.waveDragOnsetMach) return 0;
+  if (mach <= aero.waveDragPeakMach) {
+    const t = (mach - aero.waveDragOnsetMach) / (aero.waveDragPeakMach - aero.waveDragOnsetMach);
+    return aero.waveDragPeak * t * t * (3 - 2 * t);
   }
-  const decay = Math.exp(-(mach - AERO.waveDragPeakMach) / 0.9);
-  return AERO.waveDragSupersonicFloor + (AERO.waveDragPeak - AERO.waveDragSupersonicFloor) * decay;
+  const decay = Math.exp(-(mach - aero.waveDragPeakMach) / 0.9);
+  return aero.waveDragSupersonicFloor + (aero.waveDragPeak - aero.waveDragSupersonicFloor) * decay;
 }
 
-export function inducedFactor(mach: number): number {
-  if (mach <= 0.9) return AERO.inducedK;
-  return AERO.inducedK * (1 + 1.9 * Math.min(mach - 0.9, 0.8));
+export function inducedFactor(mach: number, aero: AeroSpec = AERO): number {
+  if (mach <= 0.9) return aero.inducedK;
+  return aero.inducedK * (1 + 1.9 * Math.min(mach - 0.9, 0.8));
 }
 
 export interface GroundEffect {
@@ -53,16 +53,16 @@ export interface GroundEffect {
   inducedFactor: number;
 }
 
-export function groundEffect(heightAboveGroundM: number): GroundEffect {
-  const ratio = Math.max(heightAboveGroundM, 0) / GEOMETRY.wingSpanM;
+export function groundEffect(heightAboveGroundM: number, spanM: number = GEOMETRY.wingSpanM): GroundEffect {
+  const ratio = Math.max(heightAboveGroundM, 0) / spanM;
   if (ratio >= 1) return { liftFactor: 1, inducedFactor: 1 };
   const proximity = (1 - ratio) ** 2;
   return { liftFactor: 1 + 0.08 * proximity, inducedFactor: 1 - 0.30 * proximity };
 }
 
-export function dragFromLiftCoefficient(cl: number, mach: number): number {
-  const stallExcess = Math.max(0, Math.abs(cl) - AERO.clMax);
-  return AERO.cd0 + waveDrag(mach) + inducedFactor(mach) * cl * cl + AERO.cdSeparation * stallExcess;
+export function dragFromLiftCoefficient(cl: number, mach: number, aero: AeroSpec = AERO): number {
+  const stallExcess = Math.max(0, Math.abs(cl) - aero.clMax);
+  return aero.cd0 + waveDrag(mach, aero) + inducedFactor(mach, aero) * cl * cl + aero.cdSeparation * stallExcess;
 }
 
 export function coefficients(
@@ -70,15 +70,17 @@ export function coefficients(
   betaRad: number,
   mach: number,
   heightAboveGroundM: number,
+  aero: AeroSpec = AERO,
+  spanM: number = GEOMETRY.wingSpanM,
 ): AeroCoefficients {
-  const ground = groundEffect(heightAboveGroundM);
-  const cl = liftCoefficient(alphaRad) * ground.liftFactor;
-  const stalled = Math.abs(alphaRad) > AERO.clMaxAlphaRad;
-  const separation = stalled ? AERO.cdSeparation * (Math.abs(alphaRad) - AERO.clMaxAlphaRad) ** 1.5 : 0;
+  const ground = groundEffect(heightAboveGroundM, spanM);
+  const cl = liftCoefficient(alphaRad, aero) * ground.liftFactor;
+  const stalled = Math.abs(alphaRad) > aero.clMaxAlphaRad;
+  const separation = stalled ? aero.cdSeparation * (Math.abs(alphaRad) - aero.clMaxAlphaRad) ** 1.5 : 0;
   const sideslipDrag = 1.35 * betaRad * betaRad;
   const cd =
-    AERO.cd0 + waveDrag(mach) + inducedFactor(mach) * cl * cl * ground.inducedFactor + separation + sideslipDrag;
-  return { cl, cd, cy: AERO.cyBeta * betaRad, stalled };
+    aero.cd0 + waveDrag(mach, aero) + inducedFactor(mach, aero) * cl * cl * ground.inducedFactor + separation + sideslipDrag;
+  return { cl, cd, cy: aero.cyBeta * betaRad, stalled };
 }
 
 export interface MomentCoefficients {
@@ -97,26 +99,27 @@ export function momentCoefficients(
   rollCommand: number,
   yawCommand: number,
   departed: boolean,
+  aero: AeroSpec = AERO,
 ): MomentCoefficients {
   const surfaceEffectiveness = departed ? 0.25 : 1 - 0.55 * Math.max(0, Math.abs(alphaRad) - 0.35);
   const eff = Math.max(0.2, surfaceEffectiveness);
 
   const cnBeta =
-    Math.abs(betaRad) < AERO.betaDepartureRad
-      ? AERO.cnBeta
-      : AERO.cnBeta * (1 - 2.4 * Math.min(1, (Math.abs(betaRad) - AERO.betaDepartureRad) / 0.3));
+    Math.abs(betaRad) < aero.betaDepartureRad
+      ? aero.cnBeta
+      : aero.cnBeta * (1 - 2.4 * Math.min(1, (Math.abs(betaRad) - aero.betaDepartureRad) / 0.3));
 
   const pitch =
-    AERO.cmZero + AERO.cmAlpha * alphaRad + AERO.cmQ * qHat + AERO.cmPitchCommand * pitchCommand * eff;
+    aero.cmZero + aero.cmAlpha * alphaRad + aero.cmQ * qHat + aero.cmPitchCommand * pitchCommand * eff;
   const roll =
-    AERO.clBeta * betaRad +
-    AERO.clP * pHat +
-    AERO.clR * rHat +
-    (AERO.clRollCommand * rollCommand + AERO.clYawCommand * yawCommand) * eff;
+    aero.clBeta * betaRad +
+    aero.clP * pHat +
+    aero.clR * rHat +
+    (aero.clRollCommand * rollCommand + aero.clYawCommand * yawCommand) * eff;
   const yaw =
     cnBeta * betaRad +
-    AERO.cnP * pHat +
-    AERO.cnR * rHat +
-    (AERO.cnYawCommand * yawCommand + AERO.cnRollCommand * rollCommand) * eff;
+    aero.cnP * pHat +
+    aero.cnR * rHat +
+    (aero.cnYawCommand * yawCommand + aero.cnRollCommand * rollCommand) * eff;
   return { roll, pitch, yaw };
 }

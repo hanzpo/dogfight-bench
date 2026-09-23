@@ -1,7 +1,8 @@
 import { Vector3 } from "three";
 import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
-import { FLARE, MISSILE } from "./config";
-import { applyBlast, isDestroyed } from "./damage";
+import { FLARE, MISSILE, type MissileSpec } from "./config";
+import { airframe, missileSpec } from "./airframes";
+import { applyBlast, hitVolumesFor, isDestroyed } from "./damage";
 import { bodyAxes } from "./flight-model";
 import type { Random } from "./random";
 import { terrainHeight } from "./terrain";
@@ -16,7 +17,9 @@ import { clamp } from "../math";
  * the pilot can do about being seen -- throttle, aspect, flares -- goes
  * through these few lines, so they are kept plain enough to reason about.
  */
-const LOCK_SIGNAL = 1 / (MISSILE.lockRangeReferenceM / 1_000) ** 2;
+function lockSignal(spec: MissileSpec): number {
+  return 1 / (spec.lockRangeReferenceM / 1_000) ** 2;
+}
 
 /** How hot the engine runs: idle is a glow, afterburner is a beacon. */
 export function engineHeat(aircraft: AircraftState): number {
@@ -35,7 +38,7 @@ export function infraredIntensity(target: AircraftState, from: Vector3): number 
   const plume = engineHeat(target) * (0.06 + 0.94 * astern ** 3);
   // The skin, heated by the air: why an all-aspect seeker can see a nose at all.
   const skin = 0.05 * (target.mach / 0.9) ** 2;
-  return plume + skin;
+  return (plume + skin) * airframe(target.airframe).infrared;
 }
 
 export function flareIntensity(flare: FlareState): number {
@@ -45,10 +48,10 @@ export function flareIntensity(flare: FlareState): number {
   return FLARE.intensity * bloom * fade;
 }
 
-/** Signal as a fraction of what it takes to lock. */
-export function seekerSignal(intensity: number, rangeM: number): number {
+/** Signal as a fraction of what it takes this seeker to lock. */
+export function seekerSignal(intensity: number, rangeM: number, spec: MissileSpec = MISSILE): number {
   const rangeKm = Math.max(rangeM / 1_000, 0.1);
-  return intensity / (rangeKm * rangeKm) / LOCK_SIGNAL;
+  return intensity / (rangeKm * rangeKm) / lockSignal(spec);
 }
 
 function angleBetween(a: Vector3, b: Vector3): number {
@@ -83,12 +86,13 @@ function flareThatSeduces(
   trackSignal: number,
   seen: number[],
   rng: Random,
+  spec: MissileSpec,
 ): FlareState | undefined {
   for (const flare of hostileFlares(state, ownerId)) {
     if (seen.includes(flare.id)) continue;
     const toFlare = flare.position.clone().sub(seekerAt);
-    if (angleBetween(toFlare, lineOfSight) > MISSILE.instantaneousFovRad) continue;
-    const signal = seekerSignal(flareIntensity(flare), toFlare.length());
+    if (angleBetween(toFlare, lineOfSight) > spec.instantaneousFovRad) continue;
+    const signal = seekerSignal(flareIntensity(flare), toFlare.length(), spec);
     // Not yet bright enough to judge: it gets its chance once it blooms.
     if (flare.age < 0.15) continue;
     seen.push(flare.id);
@@ -96,7 +100,10 @@ function flareThatSeduces(
     // By how many times it outshines the track, and in doublings rather than
     // proportion: otherwise any flare swamps any jet and the throttle stops
     // mattering.
-    const chance = Math.min(FLARE.maxSeduction, FLARE.seduction * Math.log2(1 + signal / Math.max(trackSignal, 1e-9)));
+    const chance = Math.min(
+      FLARE.maxSeduction,
+      FLARE.seduction * spec.flareSusceptibility * Math.log2(1 + signal / Math.max(trackSignal, 1e-9)),
+    );
     if (rng.next() < chance) return flare;
   }
   return undefined;
@@ -119,16 +126,17 @@ export function updateSeeker(state: MatchState, aircraft: AircraftState, rng: Ra
   }
 
   const nose = bodyAxes(aircraft.orientation).nose;
+  const spec = missileSpec(airframe(aircraft.airframe).missile);
 
   if (seeker.targetId) {
     const target = state.aircraft.find((candidate) => candidate.id === seeker.targetId);
     if (target?.alive) {
       const lineOfSight = target.position.clone().sub(aircraft.position);
-      const signal = seekerSignal(infraredIntensity(target, aircraft.position), lineOfSight.length());
-      const held = angleBetween(lineOfSight, nose) <= MISSILE.gimbalLimitRad && signal >= MISSILE.trackHoldFraction;
+      const signal = seekerSignal(infraredIntensity(target, aircraft.position), lineOfSight.length(), spec);
+      const held = angleBetween(lineOfSight, nose) <= spec.gimbalLimitRad && signal >= spec.trackHoldFraction;
       const decoy =
         held &&
-        flareThatSeduces(state, aircraft.id, aircraft.position, lineOfSight, signal, seeker.flaresSeen, rng);
+        flareThatSeduces(state, aircraft.id, aircraft.position, lineOfSight, signal, seeker.flaresSeen, rng, spec);
       if (held && !decoy) {
         seeker.tone = "lock";
         seeker.signal = signal;
@@ -141,8 +149,8 @@ export function updateSeeker(state: MatchState, aircraft: AircraftState, rng: Ra
   let best: { target: AircraftState; signal: number } | undefined;
   for (const target of enemiesOf(state, aircraft.id)) {
     const lineOfSight = target.position.clone().sub(aircraft.position);
-    if (angleBetween(lineOfSight, nose) > MISSILE.acquisitionConeRad) continue;
-    const signal = seekerSignal(infraredIntensity(target, aircraft.position), lineOfSight.length());
+    if (angleBetween(lineOfSight, nose) > spec.acquisitionConeRad) continue;
+    const signal = seekerSignal(infraredIntensity(target, aircraft.position), lineOfSight.length(), spec);
     if (!best || signal > best.signal) best = { target, signal };
   }
 
@@ -173,8 +181,10 @@ export function launchMissile(
   stores.missileHeld = pressed;
   if (!pressedNow || !aircraft.alive || stores.missiles <= 0 || stores.launchCooldownS > 0) return undefined;
 
+  const frame = airframe(aircraft.airframe);
+  const spec = missileSpec(frame.missile);
   const axes = bodyAxes(aircraft.orientation);
-  const rail = MISSILE.rails[(stores.missileStations - stores.missiles) % MISSILE.rails.length]!;
+  const rail = frame.rails[(stores.missileStations - stores.missiles) % frame.rails.length]!;
   const position = aircraft.position
     .clone()
     .addScaledVector(axes.right, rail[0])
@@ -186,6 +196,7 @@ export function launchMissile(
     : undefined;
   const missile: MissileState = {
     id: nextId(),
+    kind: frame.missile,
     ownerId: aircraft.id,
     position,
     previousPosition: position.clone(),
@@ -193,14 +204,14 @@ export function launchMissile(
     // of attack the two are twenty degrees apart.
     velocity: axes.nose.clone().multiplyScalar(aircraft.velocity.length()),
     age: 0,
-    motorRemainingS: MISSILE.burnS,
-    massKg: MISSILE.launchMassKg,
+    motorRemainingS: spec.burnS,
+    massKg: spec.launchMassKg,
     ...(track ? { track } : {}),
     flaresSeen: [...aircraft.seeker.flaresSeen],
   };
   state.missiles.push(missile);
   stores.missiles -= 1;
-  stores.launchCooldownS = MISSILE.launchIntervalS;
+  stores.launchCooldownS = spec.launchIntervalS;
 
   const target = track ? state.aircraft.find((candidate) => candidate.id === track.id) : undefined;
   state.events.push({
@@ -209,8 +220,8 @@ export function launchMissile(
     actorId: aircraft.id,
     ...(target ? { targetId: target.id } : {}),
     detail: target
-      ? `${MISSILE.name}, locked at ${(target.position.distanceTo(aircraft.position) / 1_000).toFixed(1)} km`
-      : `${MISSILE.name}, boresight with no lock`,
+      ? `${spec.name}, locked at ${(target.position.distanceTo(aircraft.position) / 1_000).toFixed(1)} km`
+      : `${spec.name}, boresight with no lock`,
     position: position.toArray() as [number, number, number],
   });
   return missile;
@@ -293,6 +304,7 @@ interface Resolved {
 }
 
 function resolveTrack(state: MatchState, missile: MissileState): Resolved | undefined {
+  const spec = missileSpec(missile.kind);
   const track = missile.track;
   if (!track) return undefined;
   if (track.kind === "aircraft") {
@@ -301,7 +313,7 @@ function resolveTrack(state: MatchState, missile: MissileState): Resolved | unde
     return {
       position: target.position,
       velocity: target.velocity,
-      signal: seekerSignal(infraredIntensity(target, missile.position), target.position.distanceTo(missile.position)),
+      signal: seekerSignal(infraredIntensity(target, missile.position), target.position.distanceTo(missile.position), spec),
     };
   }
   const flare = state.flares.find((candidate) => candidate.id === track.id);
@@ -309,7 +321,7 @@ function resolveTrack(state: MatchState, missile: MissileState): Resolved | unde
   return {
     position: flare.position,
     velocity: flare.velocity,
-    signal: seekerSignal(flareIntensity(flare), flare.position.distanceTo(missile.position)),
+    signal: seekerSignal(flareIntensity(flare), flare.position.distanceTo(missile.position), spec),
   };
 }
 
@@ -326,6 +338,7 @@ function lose(state: MatchState, missile: MissileState, reason: string): void {
 
 /** The seeker in flight: hold the track, or lose it, or be pulled off it. */
 function stepMissileSeeker(state: MatchState, missile: MissileState, rng: Random): Resolved | undefined {
+  const spec = missileSpec(missile.kind);
   const heading = missile.velocity.clone().normalize();
   const resolved = resolveTrack(state, missile);
 
@@ -338,15 +351,15 @@ function stepMissileSeeker(state: MatchState, missile: MissileState, rng: Random
     const rate = range > 1 ? lineOfSight.clone().cross(relative).length() / (range * range) : 0;
     // Past the target the line of sight swings through the gimbal limit in a
     // tick; the fuze has already had its chance by then, so say nothing.
-    if (angleBetween(lineOfSight, heading) > MISSILE.gimbalLimitRad) {
-      if (range > MISSILE.fuzeRadiusM * 4) lose(state, missile, "gimbal limit");
+    if (angleBetween(lineOfSight, heading) > spec.gimbalLimitRad) {
+      if (range > spec.fuzeRadiusM * 4) lose(state, missile, "gimbal limit");
       else missile.track = undefined;
-    } else if (rate > MISSILE.trackRateLimitRadS && range > MISSILE.fuzeRadiusM * 4) {
+    } else if (rate > spec.trackRateLimitRadS && range > spec.fuzeRadiusM * 4) {
       lose(state, missile, "line of sight too fast to track");
-    } else if (resolved.signal < MISSILE.trackHoldFraction) {
+    } else if (resolved.signal < spec.trackHoldFraction) {
       lose(state, missile, "signal faded");
     } else {
-      const decoy = flareThatSeduces(state, missile.ownerId, missile.position, lineOfSight, resolved.signal, missile.flaresSeen, rng);
+      const decoy = flareThatSeduces(state, missile.ownerId, missile.position, lineOfSight, resolved.signal, missile.flaresSeen, rng, spec);
       if (decoy) {
         missile.track = { kind: "flare", id: decoy.id };
         state.events.push({
@@ -367,8 +380,8 @@ function stepMissileSeeker(state: MatchState, missile: MissileState, rng: Random
   let best: { track: MissileTrack; signal: number } | undefined;
   for (const target of enemiesOf(state, missile.ownerId)) {
     const lineOfSight = target.position.clone().sub(missile.position);
-    if (angleBetween(lineOfSight, heading) > MISSILE.reacquireConeRad) continue;
-    const signal = seekerSignal(infraredIntensity(target, missile.position), lineOfSight.length());
+    if (angleBetween(lineOfSight, heading) > spec.reacquireConeRad) continue;
+    const signal = seekerSignal(infraredIntensity(target, missile.position), lineOfSight.length(), spec);
     if (signal >= 1 && (!best || signal > best.signal)) best = { track: { kind: "aircraft", id: target.id }, signal };
   }
   // A flare the seeker has already judged and rejected is not a candidate:
@@ -376,8 +389,8 @@ function stepMissileSeeker(state: MatchState, missile: MissileState, rng: Random
   for (const flare of hostileFlares(state, missile.ownerId)) {
     if (missile.flaresSeen.includes(flare.id)) continue;
     const lineOfSight = flare.position.clone().sub(missile.position);
-    if (angleBetween(lineOfSight, heading) > MISSILE.reacquireConeRad) continue;
-    const signal = seekerSignal(flareIntensity(flare), lineOfSight.length());
+    if (angleBetween(lineOfSight, heading) > spec.reacquireConeRad) continue;
+    const signal = seekerSignal(flareIntensity(flare), lineOfSight.length(), spec);
     if (signal >= 1 && (!best || signal > best.signal)) best = { track: { kind: "flare", id: flare.id }, signal };
   }
   if (!best) return undefined;
@@ -392,7 +405,7 @@ function stepMissileSeeker(state: MatchState, missile: MissileState, rng: Random
  * where the target is now. Gravity is flown out, and whatever the airframe
  * cannot give at this dynamic pressure is simply not given.
  */
-function guidance(missile: MissileState, target: Resolved | undefined): Vector3 {
+function guidance(missile: MissileState, target: Resolved | undefined, spec: MissileSpec): Vector3 {
   const command = new Vector3();
   if (target && missile.velocity.lengthSq() > 1) {
     const range = target.position.clone().sub(missile.position);
@@ -401,7 +414,7 @@ function guidance(missile: MissileState, target: Resolved | undefined): Vector3 
     const relative = target.velocity.clone().sub(missile.velocity);
     const rotation = range.clone().cross(relative).divideScalar(distance * distance);
     const closing = Math.max(-relative.dot(unit), 50);
-    command.copy(rotation.cross(unit)).multiplyScalar(MISSILE.navigationGain * closing);
+    command.copy(rotation.cross(unit)).multiplyScalar(spec.navigationGain * closing);
     command.y += GRAVITY_MPS2;
   }
   const heading = missile.velocity.clone().normalize();
@@ -426,8 +439,20 @@ function closestApproach(
 function detonate(state: MatchState, missile: MissileState, target: AircraftState, t: number, dt: number, distance: number, rng: Random): void {
   const burst = missile.previousPosition.clone().lerp(missile.position, t);
   const targetAt = target.position.clone().addScaledVector(target.velocity, -dt * (1 - t));
+  const spec = missileSpec(missile.kind);
   const axes = bodyAxes(target.orientation);
-  const loss = applyBlast(target.damage, burst, targetAt, axes.right, axes.up, axes.nose, MISSILE.lethalRadiusM, rng.next());
+  const { volumes } = hitVolumesFor(airframe(target.airframe).geometry);
+  const loss = applyBlast(
+    target.damage,
+    burst,
+    targetAt,
+    axes.right,
+    axes.up,
+    axes.nose,
+    spec.lethalRadiusM,
+    rng.next(),
+    volumes,
+  );
   target.health = target.damage.integrity;
   const where = burst.toArray() as [number, number, number];
 
@@ -436,7 +461,7 @@ function detonate(state: MatchState, missile: MissileState, target: AircraftStat
     type: "missile-detonation",
     actorId: missile.ownerId,
     targetId: target.id,
-    detail: `${MISSILE.name} burst at ${distance.toFixed(1)} m`,
+    detail: `${spec.name} burst at ${distance.toFixed(1)} m`,
     position: where,
   });
   if (loss > 0) {
@@ -445,14 +470,14 @@ function detonate(state: MatchState, missile: MissileState, target: AircraftStat
       type: "hit",
       actorId: missile.ownerId,
       targetId: target.id,
-      detail: `${MISSILE.name} blast, ${Math.round(loss * 100)}% of the airframe`,
+      detail: `${spec.name} blast, ${Math.round(loss * 100)}% of the airframe`,
       position: where,
     });
   }
   if (target.alive && isDestroyed(target.damage)) {
     target.alive = false;
     target.destroyedBy = missile.ownerId;
-    target.destroyedReason = target.damage.pilotIncapacitated ? "pilot incapacitated" : `${MISSILE.name}`;
+    target.destroyedReason = target.damage.pilotIncapacitated ? "pilot incapacitated" : `${spec.name}`;
     state.events.push({
       time: state.time,
       type: "kill",
@@ -478,6 +503,7 @@ export function stepMissiles(state: MatchState, dt: number, rng: Random): void {
   const survivors: MissileState[] = [];
   for (const missile of state.missiles) {
     missile.previousPosition.copy(missile.position);
+    const spec = missileSpec(missile.kind);
     const target = stepMissileSeeker(state, missile, rng);
 
     const air = atmosphere(missile.position.y);
@@ -485,24 +511,24 @@ export function stepMissiles(state: MatchState, dt: number, rng: Random): void {
     const heading = missile.velocity.clone().divideScalar(speed);
     const mach = speed / air.speedOfSoundMps;
     const pressure = 0.5 * air.densityKgM3 * speed * speed;
-    const aerodynamic = pressure * MISSILE.referenceAreaM2;
+    const aerodynamic = pressure * spec.referenceAreaM2;
 
-    const guided = speed >= MISSILE.minGuidedSpeedMps || missile.motorRemainingS > 0;
-    const lateral = guided ? guidance(missile, target) : new Vector3();
+    const guided = speed >= spec.minGuidedSpeedMps || missile.motorRemainingS > 0;
+    const lateral = guided ? guidance(missile, target, spec) : new Vector3();
     const available = Math.min(
-      MISSILE.structuralLimitG * GRAVITY_MPS2,
-      (aerodynamic * MISSILE.normalForceMax) / missile.massKg,
+      spec.structuralLimitG * GRAVITY_MPS2,
+      (aerodynamic * spec.normalForceMax) / missile.massKg,
     );
     if (lateral.length() > available) lateral.setLength(available);
 
     const normalForce = (missile.massKg * lateral.length()) / Math.max(aerodynamic, 1e-6);
-    const drag = (aerodynamic * (missileZeroLiftDrag(mach) + MISSILE.inducedDragK * normalForce ** 2)) / missile.massKg;
+    const drag = (aerodynamic * (missileZeroLiftDrag(mach) + spec.inducedDragK * normalForce ** 2)) / missile.massKg;
 
     let thrust = 0;
     if (missile.motorRemainingS > 0) {
       const burn = Math.min(dt, missile.motorRemainingS);
-      thrust = (MISSILE.thrustN * burn) / dt / missile.massKg;
-      missile.massKg -= (MISSILE.propellantKg / MISSILE.burnS) * burn;
+      thrust = (spec.thrustN * burn) / dt / missile.massKg;
+      missile.massKg -= (spec.propellantKg / spec.burnS) * burn;
       missile.motorRemainingS -= burn;
     }
 
@@ -513,13 +539,13 @@ export function stepMissiles(state: MatchState, dt: number, rng: Random): void {
     missile.age += dt;
 
     let gone = false;
-    if (missile.age >= MISSILE.armingS) {
+    if (missile.age >= spec.armingS) {
       for (const aircraft of enemiesOf(state, missile.ownerId)) {
         const approach = closestApproach(missile, aircraft, dt);
         // Past its closest point during this tick, or so close already that
         // waiting for the next one would put it through the airframe.
         const fuzes =
-          approach.distance <= MISSILE.fuzeRadiusM && (approach.t < 1 || approach.distance <= MISSILE.fuzeRadiusM / 3);
+          approach.distance <= spec.fuzeRadiusM && (approach.t < 1 || approach.distance <= spec.fuzeRadiusM / 3);
         if (!fuzes) continue;
         detonate(state, missile, aircraft, approach.t, dt, approach.distance, rng);
         gone = true;
@@ -530,9 +556,9 @@ export function stepMissiles(state: MatchState, dt: number, rng: Random): void {
 
     if (missile.position.y <= terrainHeight(missile.position.x, missile.position.z)) {
       expire(state, missile, "hit the ground");
-    } else if (missile.age >= MISSILE.maxFlightS) {
+    } else if (missile.age >= spec.maxFlightS) {
       expire(state, missile, "time of flight exceeded");
-    } else if (missile.motorRemainingS <= 0 && missile.velocity.length() < MISSILE.minGuidedSpeedMps * 0.8) {
+    } else if (missile.motorRemainingS <= 0 && missile.velocity.length() < spec.minGuidedSpeedMps * 0.8) {
       expire(state, missile, "out of energy");
     } else {
       survivors.push(missile);

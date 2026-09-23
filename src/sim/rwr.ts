@@ -1,5 +1,6 @@
 import { Vector3 } from "three";
-import { MISSILE, RWR } from "./config";
+import { RWR } from "./config";
+import { airframe, missileSpec } from "./airframes";
 import { bodyAxes } from "./flight-model";
 import type { AircraftState, MatchState } from "./types";
 import { clamp, degrees } from "../math";
@@ -88,10 +89,11 @@ export function rwrContacts(state: MatchState, ownId: string): RwrContact[] {
  * shots at a jet flying straight, which is the most any launch zone promises.
  */
 export function missileLaunchZone(own: AircraftState, target: AircraftState): { minM: number; maxM: number } {
+  const spec = missileSpec(airframe(own.airframe).missile);
   const lineOfSight = target.position.clone().sub(own.position).normalize();
   const closure = own.velocity.clone().sub(target.velocity).dot(lineOfSight);
   const altitudeFactor = clamp(0.7 + own.position.y / 20_000, 0.7, 1.3);
-  const maxM = clamp((5_500 + closure * 4) * altitudeFactor, 1_500, 12_000);
+  const maxM = clamp((5_500 + closure * 4) * altitudeFactor * spec.rangeFactor, 1_500, 12_000);
   const headOn = closure > own.velocity.length();
-  return { minM: headOn ? 1_000 : 500, maxM: Math.max(maxM, MISSILE.fuzeRadiusM * 100) };
+  return { minM: headOn ? 1_000 : 500, maxM };
 }

@@ -1,6 +1,10 @@
+import type { AirframeId } from "../sim/airframes";
+
 export interface ViewerAircraft {
   id: string;
   team: "blue" | "red";
+  /** Which aeroplane to draw; an F-16 when not said. */
+  airframe?: AirframeId;
   position: [number, number, number];
   orientation: [number, number, number, number];
   alive: boolean;

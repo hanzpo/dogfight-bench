@@ -32,6 +32,7 @@ export function makeTestAircraft(options: TestAircraftOptions): AircraftState {
   return {
     id: "probe",
     team: "blue",
+    airframe: "f16c",
     position: new Vector3(0, options.altitudeM, 0),
     velocity: new Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(options.speedMps),
     acceleration: new Vector3(),

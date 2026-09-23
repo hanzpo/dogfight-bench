@@ -1,6 +1,6 @@
 import { alphaForLiftCoefficient, dragFromLiftCoefficient, liftCoefficient } from "./aero";
 import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
-import { AERO, FLCS, GEOMETRY } from "./config";
+import { F16_FLIGHT, type FlightSpec } from "./config";
 import { thrustAtPower } from "./engine";
 import { degrees } from "../math";
 
@@ -15,16 +15,31 @@ function turnRate(loadFactor: number, speedMps: number): number {
   return (GRAVITY_MPS2 * Math.sqrt(Math.max(loadFactor * loadFactor - 1, 0))) / speedMps;
 }
 
-export const LIMITER_CL = liftCoefficient(FLCS.alphaLimitRad);
-
-export function liftLimitedLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
-  const air = atmosphere(altitudeM);
-  const qbar = 0.5 * air.densityKgM3 * speedMps * speedMps;
-  return (qbar * GEOMETRY.wingAreaM2 * LIMITER_CL) / (massKg * GRAVITY_MPS2);
+/** The lift coefficient at the angle-of-attack limit, which is where the flight computer stops the pull. */
+export function limiterCl(flight: FlightSpec = F16_FLIGHT): number {
+  return liftCoefficient(flight.flcs.alphaLimitRad, flight.aero);
 }
 
-export function availableLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
-  return Math.min(FLCS.maxLoadFactor, liftLimitedLoadFactor(altitudeM, speedMps, massKg));
+export const LIMITER_CL = limiterCl();
+
+export function liftLimitedLoadFactor(
+  altitudeM: number,
+  speedMps: number,
+  massKg: number,
+  flight: FlightSpec = F16_FLIGHT,
+): number {
+  const air = atmosphere(altitudeM);
+  const qbar = 0.5 * air.densityKgM3 * speedMps * speedMps;
+  return (qbar * flight.geometry.wingAreaM2 * limiterCl(flight)) / (massKg * GRAVITY_MPS2);
+}
+
+export function availableLoadFactor(
+  altitudeM: number,
+  speedMps: number,
+  massKg: number,
+  flight: FlightSpec = F16_FLIGHT,
+): number {
+  return Math.min(flight.flcs.maxLoadFactor, liftLimitedLoadFactor(altitudeM, speedMps, massKg, flight));
 }
 
 export function specificExcessPower(
@@ -33,27 +48,34 @@ export function specificExcessPower(
   loadFactor: number,
   massKg: number,
   afterburner = true,
+  flight: FlightSpec = F16_FLIGHT,
 ): number {
   const air = atmosphere(altitudeM);
   const qbar = 0.5 * air.densityKgM3 * speedMps * speedMps;
   const mach = speedMps / air.speedOfSoundMps;
   const weight = massKg * GRAVITY_MPS2;
-  const cl = (loadFactor * weight) / (qbar * GEOMETRY.wingAreaM2);
-  const drag = qbar * GEOMETRY.wingAreaM2 * dragFromLiftCoefficient(cl, mach);
-  const thrust = thrustAtPower(afterburner ? 2 : 1, altitudeM, mach);
+  const area = flight.geometry.wingAreaM2;
+  const cl = (loadFactor * weight) / (qbar * area);
+  const drag = qbar * area * dragFromLiftCoefficient(cl, mach, flight.aero);
+  const thrust = thrustAtPower(afterburner ? 2 : 1, altitudeM, mach, flight.engine);
   return (speedMps * (thrust - drag)) / weight;
 }
 
 export { alphaForLiftCoefficient };
 
-export function sustainedLoadFactor(altitudeM: number, speedMps: number, massKg: number): number {
-  const ceiling = availableLoadFactor(altitudeM, speedMps, massKg);
-  if (specificExcessPower(altitudeM, speedMps, 1, massKg) < 0) return 0;
+export function sustainedLoadFactor(
+  altitudeM: number,
+  speedMps: number,
+  massKg: number,
+  flight: FlightSpec = F16_FLIGHT,
+): number {
+  const ceiling = availableLoadFactor(altitudeM, speedMps, massKg, flight);
+  if (specificExcessPower(altitudeM, speedMps, 1, massKg, true, flight) < 0) return 0;
   let low = 1;
   let high = ceiling;
   for (let i = 0; i < 50; i += 1) {
     const mid = (low + high) / 2;
-    if (specificExcessPower(altitudeM, speedMps, mid, massKg) > 0) low = mid;
+    if (specificExcessPower(altitudeM, speedMps, mid, massKg, true, flight) > 0) low = mid;
     else high = mid;
   }
   return (low + high) / 2;
@@ -69,9 +91,11 @@ function scanSpeeds(altitudeM: number, score: (speed: number) => number): { spee
   return best;
 }
 
-export function bestSustainedTurn(altitudeM: number, massKg: number): TurnPoint {
-  const best = scanSpeeds(altitudeM, (speed) => turnRate(sustainedLoadFactor(altitudeM, speed, massKg), speed));
-  const loadFactor = sustainedLoadFactor(altitudeM, best.speedMps, massKg);
+export function bestSustainedTurn(altitudeM: number, massKg: number, flight: FlightSpec = F16_FLIGHT): TurnPoint {
+  const best = scanSpeeds(altitudeM, (speed) =>
+    turnRate(sustainedLoadFactor(altitudeM, speed, massKg, flight), speed),
+  );
+  const loadFactor = sustainedLoadFactor(altitudeM, best.speedMps, massKg, flight);
   return {
     speedMps: best.speedMps,
     loadFactor,
@@ -80,9 +104,11 @@ export function bestSustainedTurn(altitudeM: number, massKg: number): TurnPoint 
   };
 }
 
-export function cornerSpeed(altitudeM: number, massKg: number): TurnPoint {
-  const best = scanSpeeds(altitudeM, (speed) => turnRate(availableLoadFactor(altitudeM, speed, massKg), speed));
-  const loadFactor = availableLoadFactor(altitudeM, best.speedMps, massKg);
+export function cornerSpeed(altitudeM: number, massKg: number, flight: FlightSpec = F16_FLIGHT): TurnPoint {
+  const best = scanSpeeds(altitudeM, (speed) =>
+    turnRate(availableLoadFactor(altitudeM, speed, massKg, flight), speed),
+  );
+  const loadFactor = availableLoadFactor(altitudeM, best.speedMps, massKg, flight);
   return {
     speedMps: best.speedMps,
     loadFactor,
@@ -91,17 +117,24 @@ export function cornerSpeed(altitudeM: number, massKg: number): TurnPoint {
   };
 }
 
-export function maximumLevelSpeed(altitudeM: number): number {
+/** The mass it fights at: empty, plus the fuel it starts a match with. */
+export function combatMass(flight: FlightSpec = F16_FLIGHT): number {
+  return flight.mass.emptyKg + flight.mass.internalFuelKg * flight.mass.startFuelFraction;
+}
+
+export function maximumLevelSpeed(altitudeM: number, flight: FlightSpec = F16_FLIGHT): number {
   const air = atmosphere(altitudeM);
-  const mass = 11_105;
+  const mass = flight === F16_FLIGHT ? 11_105 : combatMass(flight);
   let fastest = 0;
   for (let speed = 100; speed <= 2.3 * air.speedOfSoundMps; speed += 1) {
-    if (specificExcessPower(altitudeM, speed, 1, mass) > 0) fastest = speed;
+    if (specificExcessPower(altitudeM, speed, 1, mass, true, flight) > 0) fastest = speed;
   }
   return fastest;
 }
 
-export function stallSpeed(altitudeM: number, massKg: number): number {
+export function stallSpeed(altitudeM: number, massKg: number, flight: FlightSpec = F16_FLIGHT): number {
   const air = atmosphere(altitudeM);
-  return Math.sqrt((2 * massKg * GRAVITY_MPS2) / (air.densityKgM3 * GEOMETRY.wingAreaM2 * LIMITER_CL));
+  return Math.sqrt(
+    (2 * massKg * GRAVITY_MPS2) / (air.densityKgM3 * flight.geometry.wingAreaM2 * limiterCl(flight)),
+  );
 }

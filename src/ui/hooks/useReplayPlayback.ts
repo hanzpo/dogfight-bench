@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Quaternion, Vector3 } from "three";
 import { atmosphere } from "../../sim/atmosphere";
-import { MASS, MISSILE } from "../../sim/config";
+import { MISSILE } from "../../sim/config";
+import { airframe } from "../../sim/airframes";
 import { createDamageState } from "../../sim/damage";
 import { createFlcsState } from "../../sim/flcs";
 import { heightAboveGround } from "../../sim/terrain";
@@ -83,15 +84,17 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
     impacts,
     aircraft: current.aircraft.map((aircraft, index) => {
       const later = next.aircraft[index] ?? aircraft;
+      const frame = airframe(replay.scenario.airframes?.[aircraft.id]);
       return {
         id: aircraft.id,
         team: aircraft.id.startsWith("red") ? ("red" as const) : ("blue" as const),
+        airframe: frame.id,
         position: lerp3(aircraft.p, later.p, blend),
         orientation: slerpish(aircraft.q, later.q, blend),
         alive: aircraft.alive,
         integrity: aircraft.health,
         afterburner: (aircraft.s?.[4] ?? 0) === 1,
-        rails: railsLoaded(aircraft.m ? MISSILE.carried : 0, aircraft.m?.[0] ?? 0),
+        rails: railsLoaded(aircraft.m ? Math.min(MISSILE.carried, frame.rails.length) : 0, aircraft.m?.[0] ?? 0),
       };
     }),
     tracers: (current.projectiles ?? []).map((segment) => ({
@@ -134,6 +137,7 @@ function bracket(replay: ReplayFile, time: number): { current: ReplayFrame; next
 
 function rebuildState(replay: ReplayFile, time: number): MatchState {
   const { current, next, blend } = bracket(replay, time);
+  const frameOf = (id: string) => replay.scenario.airframes?.[id] ?? "f16c";
   return {
     time,
     tick: current.tick,
@@ -143,6 +147,7 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
     missiles: (current.missiles ?? []).map(
       ([x, y, z, vx, vy, vz, motor, team], index): MissileState => ({
         id: index,
+        kind: airframe(frameOf(team === 1 ? "red-1" : "blue-1")).missile,
         ownerId: team === 1 ? "red-1" : "blue-1",
         position: new Vector3(x, y, z),
         previousPosition: new Vector3(x, y, z),
@@ -172,9 +177,11 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
       const velocity = new Vector3(...lerp3(frame.v, later.v, blend));
       const air = atmosphere(position.y);
 
+      const spec = airframe(frameOf(frame.id));
       const aircraft: AircraftState = {
         id: frame.id,
         team: frame.id.startsWith("red") ? "red" : "blue",
+        airframe: spec.id,
         position,
         velocity,
         acceleration: new Vector3(),
@@ -190,7 +197,7 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
           fuelFlowKgS: 0,
           afterburner: afterburner === 1,
         },
-        massKg: MASS.emptyKg + fuelKg,
+        massKg: spec.mass.emptyKg + fuelKg,
         aoaRad: radians(aoaDeg),
         sideslipRad: 0,
         loadFactor,
@@ -202,7 +209,7 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
         gunSpin: 0,
         roundsThisBurst: 0,
         stores: {
-          missileStations: frame.m ? MISSILE.carried : 0,
+          missileStations: frame.m ? Math.min(MISSILE.carried, spec.rails.length) : 0,
           missiles,
           flares,
           missileHeld: false,

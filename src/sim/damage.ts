@@ -1,4 +1,5 @@
 import { Vector3 } from "three";
+import { GEOMETRY, type GeometrySpec } from "./config";
 import type { DamageState, Subsystem } from "./types";
 import { clamp } from "../math";
 
@@ -69,10 +70,36 @@ export const HIT_VOLUMES: readonly HitVolume[] = [
   },
 ];
 
-export const HULL_RADIUS_M = HIT_VOLUMES.reduce(
-  (max, volume) => Math.max(max, Math.hypot(...volume.offset) + volume.radiusM),
-  0,
-);
+function hullRadius(volumes: readonly HitVolume[]): number {
+  return volumes.reduce((max, volume) => Math.max(max, Math.hypot(...volume.offset) + volume.radiusM), 0);
+}
+
+export const HULL_RADIUS_M = hullRadius(HIT_VOLUMES);
+
+const scaled = new WeakMap<GeometrySpec, { volumes: readonly HitVolume[]; hullRadiusM: number }>();
+
+/**
+ * The F-16's hit table stretched to another airframe: sideways by span,
+ * fore and aft by length, and each sphere by the mean of the two. A Su-27
+ * is a bigger target than an F-5 because it is bigger, not because of a
+ * number picked for it.
+ */
+export function hitVolumesFor(geometry: GeometrySpec = GEOMETRY): { volumes: readonly HitVolume[]; hullRadiusM: number } {
+  if (geometry === GEOMETRY) return { volumes: HIT_VOLUMES, hullRadiusM: HULL_RADIUS_M };
+  const known = scaled.get(geometry);
+  if (known) return known;
+  const across = geometry.wingSpanM / GEOMETRY.wingSpanM;
+  const along = geometry.lengthM / GEOMETRY.lengthM;
+  const size = (across + along) / 2;
+  const volumes = HIT_VOLUMES.map((volume) => ({
+    ...volume,
+    offset: [volume.offset[0] * across, volume.offset[1] * size, volume.offset[2] * along] as const,
+    radiusM: volume.radiusM * size,
+  }));
+  const entry = { volumes, hullRadiusM: hullRadius(volumes) };
+  scaled.set(geometry, entry);
+  return entry;
+}
 
 export function createDamageState(): DamageState {
   return {
@@ -105,8 +132,15 @@ export function volumeCenter(
     .addScaledVector(nose, volume.offset[2]);
 }
 
-export function applyHit(damage: DamageState, volume: HitVolume, energyFraction: number, roll: number): void {
-  const scale = clamp(energyFraction, 0.25, 1);
+/** `damageScale` is the round against a 20 mm one: a 30 mm shell does about twice the harm. */
+export function applyHit(
+  damage: DamageState,
+  volume: HitVolume,
+  energyFraction: number,
+  roll: number,
+  damageScale = 1,
+): void {
+  const scale = clamp(energyFraction, 0.25, 1) * damageScale;
   damage.hitsTaken += 1;
   damage.integrity = Math.max(0, damage.integrity - volume.integrityLoss * scale);
   damage.subsystems[volume.subsystem] = Math.max(
@@ -144,10 +178,11 @@ export function applyBlast(
   nose: Vector3,
   lethalRadiusM: number,
   roll: number,
+  volumes: readonly HitVolume[] = HIT_VOLUMES,
 ): number {
   const before = damage.integrity;
   let struck = false;
-  for (const volume of HIT_VOLUMES) {
+  for (const volume of volumes) {
     const centre = volumeCenter(volume, position, right, up, nose);
     const distance = Math.max(0, centre.distanceTo(burst) - volume.radiusM);
     const exposure = clamp(1 - distance / lethalRadiusM, 0, 1) ** 2;
