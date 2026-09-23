@@ -99,9 +99,10 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
     // are a few hundredths of a second apart and a missile does not turn much
     // in that, while missiles appearing and vanishing between frames would
     // pair the wrong ones up.
-    missiles: (current.missiles ?? []).map(([x, y, z, vx, vy, vz, motor]) => {
+    missiles: (current.missiles ?? []).map(([x, y, z, vx, vy, vz, motor], index) => {
       const ahead = time - current.t;
       return {
+        id: index,
         position: [x + vx * ahead, y + vy * ahead, z + vz * ahead] as [number, number, number],
         velocity: [vx, vy, vz] as [number, number, number],
         motor: motor === 1,

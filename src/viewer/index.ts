@@ -59,6 +59,7 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
     }),
     impacts,
     missiles: state.missiles.map((missile) => ({
+      id: missile.id,
       position: missile.position.toArray() as [number, number, number],
       velocity: missile.velocity.toArray() as [number, number, number],
       motor: missile.motorRemainingS > 0,
@@ -135,7 +136,9 @@ const PLUME_LENGTH_M = 7;
 
 const MISSILE_LENGTH_M = 2.87;
 const MISSILE_RADIUS_M = 0.064;
-const SMOKE_EVERY_S = 0.025;
+/** Smoke is laid by distance, not by frame, so a slow frame rate leaves no gaps. */
+const SMOKE_SPACING_M = 9;
+const MAX_PUFFS_PER_FRAME = 240;
 const FLARE_SMOKE_EVERY_S = 0.07;
 /** Past this many live sprites a new puff is skipped rather than added. */
 const MAX_EFFECTS = 2_400;
@@ -164,7 +167,7 @@ export class DogfightViewer {
     peak: number;
   }> = [];
   private lastEffectTime = 0;
-  private lastSmokeTime = 0;
+  private readonly smokeFrom = new Map<number, { position: THREE.Vector3; time: number }>();
   private lastFlareSmokeTime = 0;
   private readonly missileMeshes: THREE.Group[] = [];
   private readonly flareSprites: THREE.Sprite[] = [];
@@ -639,29 +642,52 @@ export class DogfightViewer {
 
   private drawMissiles(snapshot: ViewerSnapshot): void {
     const missiles = snapshot.missiles ?? [];
-    const smoke = snapshot.time - this.lastSmokeTime >= SMOKE_EVERY_S || snapshot.time < this.lastSmokeTime;
-    if (smoke) this.lastSmokeTime = snapshot.time;
     const forward = new THREE.Vector3(0, 0, 1);
+    const seen = new Set<number>();
+    let budget = MAX_PUFFS_PER_FRAME;
     missiles.forEach((missile, index) => {
       const mesh = this.missileMesh(index);
       mesh.visible = true;
       mesh.position.fromArray(missile.position);
       const velocity = new THREE.Vector3().fromArray(missile.velocity);
-      if (velocity.lengthSq() > 1) mesh.quaternion.setFromUnitVectors(forward, velocity.normalize());
+      const speed = velocity.length();
+      if (speed > 1) mesh.quaternion.setFromUnitVectors(forward, velocity.clone().divideScalar(speed));
       const flame = mesh.getObjectByName("flame");
       if (flame) {
         flame.visible = missile.motor;
         flame.scale.setScalar(1.3 + Math.random() * 0.7);
       }
-      if (smoke && missile.motor) {
-        this.addEffect(this.missileSmokeMaterial, missile.position, snapshot.time, {
-          life: 5,
-          grow: 3.5,
-          size: 2.2,
-          peak: 0.5,
-        });
+
+      seen.add(missile.id);
+      const here = new THREE.Vector3().fromArray(missile.position);
+      const from = this.smokeFrom.get(missile.id);
+      // A jump further than it could have flown is a seek or a new match, not a trail.
+      const plausible =
+        from && snapshot.time > from.time && here.distanceTo(from.position) < speed * (snapshot.time - from.time) * 1.5 + 50;
+      if (missile.motor && from && plausible) {
+        const path = here.clone().sub(from.position);
+        const length = path.length();
+        const puffs = Math.min(Math.floor(length / SMOKE_SPACING_M), budget);
+        for (let puff = 1; puff <= puffs; puff += 1) {
+          const along = (puff * SMOKE_SPACING_M) / length;
+          this.addEffect(
+            this.missileSmokeMaterial,
+            from.position.clone().addScaledVector(path, along),
+            from.time + (snapshot.time - from.time) * along,
+            { life: 6, grow: 4, size: 3.5, peak: 0.6 },
+          );
+        }
+        budget -= puffs;
+        if (puffs > 0) {
+          const laid = (puffs * SMOKE_SPACING_M) / length;
+          from.position.addScaledVector(path, laid);
+          from.time += (snapshot.time - from.time) * laid;
+        }
+      } else {
+        this.smokeFrom.set(missile.id, { position: here, time: snapshot.time });
       }
     });
+    for (const id of this.smokeFrom.keys()) if (!seen.has(id)) this.smokeFrom.delete(id);
     for (let index = missiles.length; index < this.missileMeshes.length; index += 1) {
       this.missileMeshes[index]!.visible = false;
     }

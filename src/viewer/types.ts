@@ -14,6 +14,8 @@ export interface ViewerTracer {
 }
 
 export interface ViewerMissile {
+  /** Stable while it flies, so its smoke trail joins up from frame to frame. */
+  id: number;
   position: [number, number, number];
   velocity: [number, number, number];
   /** Burning motors trail smoke; a coasting missile is all but invisible. */
