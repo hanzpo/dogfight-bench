@@ -146,6 +146,48 @@ missiles and flares (format version 4), and version 3 replays still play.
 The model adapters are not told about missiles yet, so only the scripted
 pilots and people use them.
 
+## Aircraft
+
+Eight jets, each built to win a different kind of fight rather than to beat
+the others outright. All numbers are in `src/sim/airframes.ts`.
+
+| Jet | Role | Gun | IR missile |
+|---|---|---|---|
+| F-16C | All-rounder | M61A1, 511 | AIM-9M |
+| MiG-29A | Brawler: hardest first turn of the twins | GSh-30-1, 150 | R-60M |
+| F/A-18C | Slow-speed knife fighter: 35° angle of attack | M61A1, 578 | AIM-9M |
+| F-15C | Energy fighter: most thrust, climbs away | M61A1, 940 | AIM-9M |
+| Su-27S | Long-haul brawler: huge fuel, hot and big | GSh-30-1, 150 | R-73 |
+| Mirage 2000C | First-turn delta: brutal first turn, bleeds speed | 2× DEFA 554, 250 | Magic II |
+| F-5E | Underdog: small, cool, hard to lock | 2× M39A2, 560 | AIM-9P |
+| Gripen C | Precision dogfighter: quick roll, small | BK-27, 120 | AIM-9M |
+
+Each is a flight-model spec (geometry, mass, thrust, lift and drag, g and
+angle-of-attack limits, roll rate), a gun, a missile, a heat signature, hit
+volumes scaled to its size, and where its nozzles, rails and cockpit are.
+The flight control laws are shared. Only the F-16's aerodynamics come from
+wind-tunnel data; the others are approximations fitted to published
+dimensions and performance, then tuned against each other in scripted
+fights. Every missile's seeker is held to roughly an AIM-9M's, so no jet
+gets a helmet-sight merge.
+
+### Models
+
+Jets without a model are drawn as placeholders built from their numbers. To
+use a real one, put a `.glb` at `public/aircraft/<id>.glb` and set `model:
+"/aircraft/<id>.glb"` on the airframe. The file needs to be:
+
+- **Oriented** nose along +z, up +y, left wing along +x, as the F-16's is.
+- **Real size, in metres**, with the origin halfway along the fuselage.
+- **Light-coloured `MeshStandardMaterial`s**, because the teams are shown by
+  tinting them blue and red.
+- **Lined up with the airframe's numbers:** `nozzles` (where afterburner
+  plumes start), `rails` (where the carried missiles hang) and `cockpitEye`
+  (the cockpit camera) are in body axes, right-up-nose, so move them to
+  match the model or model to match them.
+
+A file that fails to load falls back to the placeholder.
+
 ## Cameras
 
 Five, because a fight asks five different questions. **Free look** is the
