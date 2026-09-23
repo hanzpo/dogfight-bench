@@ -1,6 +1,7 @@
 import {
   AERO,
   ENGINE,
+  F16_CG,
   F16_FLIGHT,
   FLCS,
   GEOMETRY,
@@ -16,6 +17,7 @@ import {
   type GunSpec,
   type MissileSpec,
 } from "./config";
+import { HIT_VOLUMES, type HitVolume } from "./damage";
 import { radians } from "../math";
 
 export const AIRFRAME_IDS = ["f16c", "mig29a", "fa18c", "f15c", "su27s", "m2000c", "f5e", "jas39c"] as const;
@@ -54,6 +56,15 @@ export interface Airframe extends FlightSpec {
   /** Launch rails in the order they are fired. */
   rails: readonly BodyPoint[];
   cockpitEye: BodyPoint;
+  /**
+   * Centre of gravity on the model. Nozzles, rails, the cockpit eye, the gun
+   * muzzle and hit volumes are all given on the model, as measured off it;
+   * `fromModel` turns them into positions from the centre of gravity, which
+   * is the point the simulation moves and turns about.
+   */
+  cg: BodyPoint;
+  /** Hit volumes placed on the model; the F-16's, stretched, when not given. */
+  hitVolumes?: readonly HitVolume[];
   /** A real model at this path replaces the placeholder: nose along +z, up +y, metres, origin mid-length. */
   model?: string;
   /** Turns a model that was exported facing another way, so its source file need not change. */
@@ -262,6 +273,49 @@ function pylons(outM: number, along: number, up: number): readonly BodyPoint[] {
   ];
 }
 
+const SLUG_FT2_TO_KG_M2 = 1.355_818;
+
+/**
+ * The F/A-18 High Alpha Research Vehicle's measured inertia, from NASA
+ * TP-1998-208464, at its 1,111.6 slug (16,223 kg).
+ */
+const HORNET_HARV = {
+  massKg: 1_111.6 * 14.593_9,
+  ixx: 22_632 * SLUG_FT2_TO_KG_M2,
+  iyy: 174_246.3 * SLUG_FT2_TO_KG_M2,
+  izz: 189_336.4 * SLUG_FT2_TO_KG_M2,
+  ixz: 2_131.8 * SLUG_FT2_TO_KG_M2,
+};
+
+/** Measured inertia, scaled to this airframe's weight with full fuel. */
+function measuredMass(
+  emptyKg: number,
+  internalFuelKg: number,
+  startFuelFraction: number,
+  measured: typeof HORNET_HARV,
+): FlightSpec["mass"] {
+  const ratio = (emptyKg + internalFuelKg) / measured.massKg;
+  return {
+    ...MASS,
+    emptyKg,
+    internalFuelKg,
+    startFuelFraction,
+    ixxKgM2: measured.ixx * ratio,
+    iyyKgM2: measured.iyy * ratio,
+    izzKgM2: measured.izz * ratio,
+    ixzKgM2: measured.ixz * ratio,
+  };
+}
+
+/** The F-16's hit table with each volume moved onto another model: same damage, new place and size. */
+function onModel(places: Record<HitVolume["subsystem"], [BodyPoint, number]>): readonly HitVolume[] {
+  return HIT_VOLUMES.map((volume) => ({
+    ...volume,
+    offset: places[volume.subsystem][0],
+    radiusM: places[volume.subsystem][1],
+  }));
+}
+
 const F16C: Airframe = {
   ...F16_FLIGHT,
   id: "f16c",
@@ -274,6 +328,7 @@ const F16C: Airframe = {
   nozzleRadiusM: NOZZLE.exitRadiusM,
   rails: MISSILE.rails,
   cockpitEye: [0, 1.05, 3.3],
+  cg: F16_CG,
   model: "/F16_Clean.glb",
   placeholder: {
     fuselageRadiusM: 0.62, wing: "trapezoid", wingRootAt: 0.45, wingRootChordM: 5.0, wingTipChordM: 1.1,
@@ -282,7 +337,7 @@ const F16C: Airframe = {
 };
 
 /** The F-16's rival: more thrust, a harder first turn, higher angle of attack; fewer, heavier rounds and a thirsty pair of engines. */
-const MIG29A: Airframe = {
+const MIG29A: Airframe = drawnAbout({
   id: "mig29a",
   name: "MiG-29A",
   role: "Brawler",
@@ -306,7 +361,7 @@ const MIG29A: Airframe = {
     fuselageRadiusM: 0.7, wing: "trapezoid", wingRootAt: 0.42, wingRootChordM: 5.6, wingTipChordM: 1.2,
     wingSweepDeg: 42, tailplane: true, fins: 2, finCantDeg: 8, finHeightM: 2.2, canards: false,
   },
-};
+});
 
 /** Points its nose at angles nothing else can; wins slow and loses fast, because it cannot get its energy back. */
 const FA18C: Airframe = {
@@ -314,7 +369,7 @@ const FA18C: Airframe = {
   name: "F/A-18C",
   role: "Slow-speed knife fighter",
   geometry: geometry(37.16, 11.43, 17.07, 3.51),
-  mass: scaledMass(10_400, 4_900, 0.55, 11.43, 17.07),
+  mass: measuredMass(10_400, 4_900, 0.55, HORNET_HARV),
   engine: engine(97_900, 158_400, 2.3e-5, 4.9e-5),
   aero: aero({
     clAlpha: 4.3, clMax: 2.12, clMaxAlphaRad: radians(36), clStallFloor: 0.7,
@@ -323,18 +378,35 @@ const FA18C: Airframe = {
   }),
   surfaces: SURFACES,
   flcs: flcs(7.5, 35, 240),
-  gun: { ...GUNS.m61, ammunition: 578, muzzleOffsetM: [0, 0.6, 7.2] as const },
+  // The M61 sits on top of the nose, just behind the radome.
+  gun: { ...GUNS.m61, ammunition: 578, muzzleOffsetM: [0, 0.55, 6.6] as const },
   missile: "aim9m",
   infrared: 1.4,
-  // Measured off the model: nozzle exits, the Mount_Wingtip nodes, and a seat
-  // under the canopy, which runs from 1.8 to 5.2 m forward with its top at 1.44 m.
+  // Measured off the model: nozzle exits, the wingtip rails, and a seat under
+  // the canopy, which runs from 1.8 to 5.2 m forward with its top at 1.44 m.
   nozzles: [[-0.56, 0.03, -7.99], [0.56, 0.03, -7.99]],
-  nozzleRadiusM: 0.51,
+  // The opening at the exit, not the petals' widest point upstream of it.
+  nozzleRadiusM: 0.33,
+  // On the outboard face of each tip rail, level with it: the rail runs 5.68
+  // to 5.86 m out, so the missile's axis sits its own radius and a hair beyond
+  // that, with its nose well ahead of the wing's leading edge.
   rails: [
-    [-5.77, -0.1, -2.87],
-    [5.77, -0.1, -2.87],
+    [-5.935, -0.055, -2.2],
+    [5.935, -0.055, -2.2],
   ],
   cockpitEye: [0, 1.2, 4.0],
+  // A quarter of the way back along its mean aerodynamic chord, which the
+  // model's wing puts 3.29 m long with its leading edge 0.49 m behind the
+  // origin -- and the 37 m² it measures is the real Hornet's wing area.
+  cg: [0, 0, -1.31],
+  hitVolumes: onModel({
+    cockpit: [[0, 1.0, 3.5], 1.05],
+    "forward-fuselage": [[0, 0.2, 1.2], 1.6],
+    "left-wing": [[-3.6, 0.05, -2.7], 1.9],
+    "right-wing": [[3.6, 0.05, -2.7], 1.9],
+    engine: [[0, 0, -5.3], 1.6],
+    tail: [[0, 1.7, -6.6], 1.6],
+  }),
   model: "/aircraft/fa18c.glb",
   // Exported nose-aft, along -z.
   modelYawDeg: 180,
@@ -345,7 +417,7 @@ const FA18C: Airframe = {
 };
 
 /** The energy fighter: the most thrust and the biggest wing, wins going up; a big, hot target that is slow to roll. */
-const F15C: Airframe = {
+const F15C: Airframe = drawnAbout({
   id: "f15c",
   name: "F-15C",
   role: "Energy fighter",
@@ -369,10 +441,10 @@ const F15C: Airframe = {
     fuselageRadiusM: 0.8, wing: "trapezoid", wingRootAt: 0.44, wingRootChordM: 7.0, wingTipChordM: 1.8,
     wingSweepDeg: 45, tailplane: true, fins: 2, finCantDeg: 0, finHeightM: 3.0, canards: false,
   },
-};
+});
 
 /** Endurance: agile for its size and full of fuel; the biggest, hottest thing in the sky and slow to roll. */
-const SU27S: Airframe = {
+const SU27S: Airframe = drawnAbout({
   id: "su27s",
   name: "Su-27S",
   role: "Long-haul brawler",
@@ -396,10 +468,10 @@ const SU27S: Airframe = {
     fuselageRadiusM: 0.85, wing: "trapezoid", wingRootAt: 0.42, wingRootChordM: 6.8, wingTipChordM: 1.6,
     wingSweepDeg: 42, tailplane: true, fins: 2, finCantDeg: 0, finHeightM: 3.2, canards: false,
   },
-};
+});
 
 /** A delta: the hardest first turn in the sky, and the fastest to bleed the speed it turned with. */
-const M2000C: Airframe = {
+const M2000C: Airframe = drawnAbout({
   id: "m2000c",
   name: "Mirage 2000C",
   role: "First-turn delta",
@@ -424,10 +496,10 @@ const M2000C: Airframe = {
     fuselageRadiusM: 0.62, wing: "delta", wingRootAt: 0.38, wingRootChordM: 8.0, wingTipChordM: 0.3,
     wingSweepDeg: 58, tailplane: false, fins: 1, finCantDeg: 0, finHeightM: 2.6, canards: false,
   },
-};
+});
 
 /** Small and cool: hard to see, hard to lock and hard to hit, and outclassed on paper by everything here. */
-const F5E: Airframe = {
+const F5E: Airframe = drawnAbout({
   id: "f5e",
   name: "F-5E",
   role: "Underdog",
@@ -452,10 +524,10 @@ const F5E: Airframe = {
     fuselageRadiusM: 0.55, wing: "trapezoid", wingRootAt: 0.47, wingRootChordM: 3.6, wingTipChordM: 0.7,
     wingSweepDeg: 32, tailplane: true, fins: 1, finCantDeg: 0, finHeightM: 2.0, canards: false,
   },
-};
+});
 
 /** Small and quick, the newest jet here; kept honest with a modest engine and a short magazine. */
-const JAS39C: Airframe = {
+const JAS39C: Airframe = drawnAbout({
   id: "jas39c",
   name: "Gripen C",
   role: "Precision dogfighter",
@@ -480,7 +552,7 @@ const JAS39C: Airframe = {
     fuselageRadiusM: 0.6, wing: "delta", wingRootAt: 0.45, wingRootChordM: 6.4, wingTipChordM: 0.6,
     wingSweepDeg: 50, tailplane: false, fins: 1, finCantDeg: 0, finHeightM: 2.3, canards: true,
   },
-};
+});
 
 export const AIRFRAMES: Record<AirframeId, Airframe> = {
   f16c: F16C,
@@ -492,6 +564,34 @@ export const AIRFRAMES: Record<AirframeId, Airframe> = {
   f5e: F5E,
   jas39c: JAS39C,
 };
+
+/**
+ * The centre of gravity a placeholder is drawn about: 30% of the mean
+ * aerodynamic chord of the wing it is drawn with, found the same way as the
+ * real models' -- the root and tip chords, the sweep and the span give the
+ * chord's length and where its leading edge is.
+ */
+export function placeholderCg(frame: Pick<Airframe, "geometry" | "placeholder">): BodyPoint {
+  const shape = frame.placeholder;
+  const length = frame.geometry.lengthM;
+  const semiSpan = frame.geometry.wingSpanM / 2 - shape.fuselageRadiusM * 0.8;
+  const taper = shape.wingTipChordM / shape.wingRootChordM;
+  const mac = ((2 / 3) * shape.wingRootChordM * (1 + taper + taper * taper)) / (1 + taper);
+  const macStation = ((semiSpan / 3) * (1 + 2 * taper)) / (1 + taper);
+  const rootLeading = length / 2 - shape.wingRootAt * length;
+  const macLeading = rootLeading - Math.tan(radians(shape.wingSweepDeg)) * macStation;
+  return [0, 0, macLeading - 0.3 * mac];
+}
+
+/** A placeholder airframe, with its centre of gravity where its drawn wing puts it. */
+function drawnAbout(frame: Omit<Airframe, "cg">): Airframe {
+  return { ...frame, cg: placeholderCg(frame) };
+}
+
+/** A point measured on the model, as a position from the centre of gravity. */
+export function fromModel(frame: Pick<Airframe, "cg">, point: BodyPoint): BodyPoint {
+  return [point[0] - frame.cg[0], point[1] - frame.cg[1], point[2] - frame.cg[2]];
+}
 
 export const DEFAULT_AIRFRAME: AirframeId = "f16c";
 

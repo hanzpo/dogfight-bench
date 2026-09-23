@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NOZZLE } from "../src/sim/config";
-import { AIRFRAMES } from "../src/sim/airframes";
+import { AIRFRAMES, fromModel, type Airframe } from "../src/sim/airframes";
+import { hitVolumesFor } from "../src/sim/damage";
 
 interface Primitive {
   name: string;
@@ -148,16 +149,28 @@ describe("the F/A-18 asset", () => {
     expect(noseInFile * facing).toBeGreaterThan(6);
   });
 
-  it("carries its missiles on the model's own wingtip mounts", () => {
+  it("carries its missiles beside its wingtip rails, not through them", () => {
+    const radius = 0.0635;
     for (const [rail, name] of [
       [hornet.rails[0]!, "Mount_Wingtip_L"],
       [hornet.rails[1]!, "Mount_Wingtip_R"],
     ] as const) {
       const mount = node(name);
       expect(mount, `${name} should still be in the file`).toBeDefined();
-      expect(-rail[0] * facing).toBeCloseTo(mount![0], 1);
-      expect(rail[1]).toBeCloseTo(mount![1], 1);
-      expect(rail[2] * facing).toBeCloseTo(mount![2], 1);
+      // Level with the rail and along it, beside the mount point.
+      const x = -rail[0] * facing;
+      const z = rail[2] * facing;
+      expect(Math.abs(x - mount![0])).toBeLessThan(0.3);
+      expect(Math.abs(rail[1] - mount![1])).toBeLessThan(0.15);
+      // Nothing of the airframe inside the missile's body, anywhere along it.
+      const inside = vertices.filter(
+        (vertex) =>
+          Math.abs(vertex[2] - z) < 1.425 && Math.hypot(vertex[0] - x, vertex[1] - rail[1]) < radius,
+      );
+      expect(inside, `${name}: airframe inside the missile`).toHaveLength(0);
+      // And outboard of the rail: the tip of the wing is inboard of the missile's inner side.
+      const tip = Math.max(...vertices.filter((vertex) => Math.sign(vertex[0]) === Math.sign(x)).map((vertex) => Math.abs(vertex[0])));
+      expect(Math.abs(x) - radius).toBeGreaterThanOrEqual(tip - 1e-3);
     }
   });
 
@@ -169,6 +182,99 @@ describe("the F/A-18 asset", () => {
         (vertex) => Math.hypot(vertex[0] - x, vertex[1] - up) < hornet.nozzleRadiusM + 0.1 && Math.abs(vertex[2] - z) < 0.2,
       );
       expect(near.length, `a nozzle ring at (${x}, ${up}, ${z}) in the file`).toBeGreaterThan(8);
+      // The plume starts the size of the opening: the innermost ring at the exit.
+      const opening = Math.min(...near.map((vertex) => Math.hypot(vertex[0] - x, vertex[1] - up)));
+      expect(hornet.nozzleRadiusM).toBeCloseTo(opening, 1);
     }
+  });
+});
+
+/**
+ * Every vertex of a model in body axes -- right, up, nose -- as the airframe
+ * says to read it: the file turned by its yaw.
+ */
+function modelVertices(frame: Airframe): [number, number, number][] {
+  const facing = frame.modelYawDeg === 180 ? -1 : 1;
+  const buffer = readFileSync(`public${frame.model}`);
+  const jsonLength = buffer.readUInt32LE(12);
+  const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString("utf8")) as {
+    scenes: Array<{ nodes: number[] }>;
+    nodes: Array<{ mesh?: number; translation?: [number, number, number]; children?: number[] }>;
+    meshes: Array<{ primitives: Array<{ attributes: { POSITION: number } }> }>;
+    accessors: Array<{ bufferView: number; byteOffset?: number; count: number }>;
+    bufferViews: Array<{ byteOffset?: number; byteStride?: number }>;
+  };
+  const start = 20 + jsonLength + 8;
+  const out: [number, number, number][] = [];
+  const visit = (index: number, at: [number, number, number]) => {
+    const node = gltf.nodes[index]!;
+    const t = node.translation ?? [0, 0, 0];
+    const here: [number, number, number] = [at[0] + t[0], at[1] + t[1], at[2] + t[2]];
+    for (const primitive of node.mesh === undefined ? [] : gltf.meshes[node.mesh]!.primitives) {
+      const accessor = gltf.accessors[primitive.attributes.POSITION]!;
+      const view = gltf.bufferViews[accessor.bufferView]!;
+      const offset = start + (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+      const stride = view.byteStride ?? 12;
+      for (let i = 0; i < accessor.count; i += 1) {
+        const x = buffer.readFloatLE(offset + i * stride) + here[0];
+        const y = buffer.readFloatLE(offset + i * stride + 4) + here[1];
+        const z = buffer.readFloatLE(offset + i * stride + 8) + here[2];
+        // Model +x is left, so right is -x; the yaw flips x and z together.
+        out.push([-x * facing, y, z * facing]);
+      }
+    }
+    for (const child of node.children ?? []) visit(child, here);
+  };
+  for (const root of gltf.scenes[0]!.nodes) visit(root, [0, 0, 0]);
+  return out;
+}
+
+describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c])("the $name model, calibrated", (frame) => {
+  const vertices = modelVertices(frame);
+
+  it("has its centre of gravity inside the wing's root chord", () => {
+    // The inner wing panel, clear of the fuselage and its strakes, near the wing's plane.
+    const root = vertices.filter(
+      (vertex) => Math.abs(vertex[0]) > 1.45 && Math.abs(vertex[0]) < 3.8 && Math.abs(vertex[1]) < 0.5,
+    );
+    const leading = Math.max(...root.map((vertex) => vertex[2]));
+    const trailing = Math.min(...root.map((vertex) => vertex[2]));
+    expect(frame.cg[2]).toBeLessThan(leading);
+    expect(frame.cg[2]).toBeGreaterThan(trailing);
+    // Forward half of it: a jet balanced behind its mid-chord would not fly.
+    expect(frame.cg[2]).toBeGreaterThan((leading + trailing) / 2);
+  });
+
+  it("has every hit volume on the airframe, not in the air beside it", () => {
+    for (const volume of hitVolumesFor(frame).volumes) {
+      // Back onto the model: hit volumes are measured from the centre of gravity.
+      const centre = [volume.offset[0] + frame.cg[0], volume.offset[1] + frame.cg[1], volume.offset[2] + frame.cg[2]];
+      const touching = vertices.some(
+        (vertex) => Math.hypot(vertex[0] - centre[0]!, vertex[1] - centre[1]!, vertex[2] - centre[2]!) < volume.radiusM,
+      );
+      expect(touching, `${volume.subsystem} at ${centre.map((value) => value.toFixed(1)).join(", ")}`).toBe(true);
+    }
+  });
+
+  it("fires its gun from the skin of its nose", () => {
+    const muzzle = frame.gun.muzzleOffsetM;
+    const nearest = Math.min(
+      ...vertices.map((vertex) => Math.hypot(vertex[0] - muzzle[0], vertex[1] - muzzle[1], vertex[2] - muzzle[2])),
+    );
+    expect(nearest).toBeLessThan(0.8);
+    // And ahead of the centre of gravity, where a gun is.
+    expect(fromModel(frame, muzzle)[2]).toBeGreaterThan(0);
+  });
+
+  it("puts the pilot's eye inside the canopy", () => {
+    const [right, up, nose] = frame.cockpitEye;
+    const above = vertices.filter(
+      (vertex) => Math.abs(vertex[0] - right) < 0.3 && Math.abs(vertex[2] - nose) < 0.4 && vertex[1] > up,
+    );
+    const below = vertices.filter(
+      (vertex) => Math.abs(vertex[0] - right) < 0.3 && Math.abs(vertex[2] - nose) < 0.4 && vertex[1] < up,
+    );
+    expect(above.length, "canopy above the eye").toBeGreaterThan(0);
+    expect(below.length, "fuselage below the eye").toBeGreaterThan(0);
   });
 });

@@ -3,7 +3,7 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 import { clamp, radians } from "../math";
 import { terrainHeight } from "../sim/terrain";
 import type { ViewerAircraft } from "./types";
-import { airframe } from "../sim/airframes";
+import { airframe, fromModel } from "../sim/airframes";
 
 export type ViewMode = "free" | "chase" | "track" | "arena" | "cockpit";
 
@@ -266,7 +266,8 @@ export class CameraDirector {
   private placeCockpit(aircraft: ViewerAircraft): void {
     const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
     // The pilot's eye in body axes, up out of the seat and forward under the canopy.
-    const [right, up, nose] = airframe(aircraft.airframe).cockpitEye;
+    const frame = airframe(aircraft.airframe);
+    const [right, up, nose] = fromModel(frame, frame.cockpitEye);
     this.camera.position
       .set(-right, up, nose)
       .applyQuaternion(orientation)

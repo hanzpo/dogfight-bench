@@ -2,7 +2,7 @@ import { Vector3 } from "three";
 import { atmosphere } from "./atmosphere";
 import { kineticEnergyJ, projectileDeceleration } from "./ballistics";
 import { MIN_LETHAL_ENERGY_J } from "./config";
-import { airframe } from "./airframes";
+import { airframe, fromModel } from "./airframes";
 import { applyHit, hitVolumesFor, isDestroyed, volumeCenter, type HitVolume } from "./damage";
 import { bodyAxes } from "./flight-model";
 import type { Random } from "./random";
@@ -16,7 +16,9 @@ export function fireGun(
   rng: Random,
   nextId: () => number,
 ): void {
-  const gun = airframe(aircraft.airframe).gun;
+  const frame = airframe(aircraft.airframe);
+  const gun = frame.gun;
+  const [muzzleRight, muzzleUp, muzzleNose] = fromModel(frame, gun.muzzleOffsetM);
   const wantsToFire = aircraft.alive && aircraft.controls.fire && aircraft.ammo > 0;
   if (!wantsToFire) {
     aircraft.gunSpin = Math.max(0, aircraft.gunSpin - dt / gun.spinDownSeconds);
@@ -45,9 +47,9 @@ export function fireGun(
       .normalize();
     const muzzle = aircraft.position
       .clone()
-      .addScaledVector(axes.right, gun.muzzleOffsetM[0])
-      .addScaledVector(axes.up, gun.muzzleOffsetM[1])
-      .addScaledVector(axes.nose, gun.muzzleOffsetM[2]);
+      .addScaledVector(axes.right, muzzleRight)
+      .addScaledVector(axes.up, muzzleUp)
+      .addScaledVector(axes.nose, muzzleNose);
 
     state.projectiles.push({
       id: nextId(),
@@ -98,7 +100,7 @@ export function stepProjectiles(state: MatchState, dt: number, rng: Random): voi
     for (const target of state.aircraft) {
       if (!target.alive || target.id === shot.ownerId) continue;
 
-      const { volumes, hullRadiusM } = hitVolumesFor(airframe(target.airframe).geometry);
+      const { volumes, hullRadiusM } = hitVolumesFor(airframe(target.airframe));
       const targetPrevious = target.position.clone().addScaledVector(target.velocity, -dt);
       const relativeStart = shot.previousPosition.clone().sub(targetPrevious);
       const relativeEnd = shot.position.clone().sub(target.position);

@@ -1,10 +1,11 @@
 import { Vector3 } from "three";
-import { GEOMETRY, type GeometrySpec } from "./config";
+import { F16_CG, GEOMETRY, type GeometrySpec } from "./config";
 import type { DamageState, Subsystem } from "./types";
 import { clamp } from "../math";
 
 export interface HitVolume {
   subsystem: Subsystem;
+  /** Body axes, right-up-nose. `HIT_VOLUMES` are on the F-16's model; `hitVolumesFor` measures from the CG. */
   offset: readonly [number, number, number];
   radiusM: number;
   integrityLoss: number;
@@ -76,28 +77,48 @@ function hullRadius(volumes: readonly HitVolume[]): number {
 
 export const HULL_RADIUS_M = hullRadius(HIT_VOLUMES);
 
-const scaled = new WeakMap<GeometrySpec, { volumes: readonly HitVolume[]; hullRadiusM: number }>();
+/** What the hit table needs to know about an airframe; an F-16 when not said. */
+export interface HitFrame {
+  geometry: GeometrySpec;
+  /** Centre of gravity on the model, in body axes. */
+  cg: readonly [number, number, number];
+  /** Volumes placed on the model itself, in model coordinates; otherwise the F-16's, stretched. */
+  hitVolumes?: readonly HitVolume[];
+}
+
+const F16_HIT_FRAME: HitFrame = { geometry: GEOMETRY, cg: F16_CG };
+
+const placed = new WeakMap<HitFrame, { volumes: readonly HitVolume[]; hullRadiusM: number }>();
 
 /**
- * The F-16's hit table stretched to another airframe: sideways by span,
- * fore and aft by length, and each sphere by the mean of the two. A Su-27
- * is a bigger target than an F-5 because it is bigger, not because of a
- * number picked for it.
+ * The hit table for an airframe, measured from its centre of gravity, which
+ * is where the simulation holds it.
+ *
+ * An airframe with a model can place its volumes on it; one without gets
+ * the F-16's stretched sideways by span, fore and aft by length and each
+ * sphere by the mean of the two. A Su-27 is a bigger target than an F-5
+ * because it is bigger, not because of a number picked for it.
  */
-export function hitVolumesFor(geometry: GeometrySpec = GEOMETRY): { volumes: readonly HitVolume[]; hullRadiusM: number } {
-  if (geometry === GEOMETRY) return { volumes: HIT_VOLUMES, hullRadiusM: HULL_RADIUS_M };
-  const known = scaled.get(geometry);
+export function hitVolumesFor(frame: HitFrame = F16_HIT_FRAME): { volumes: readonly HitVolume[]; hullRadiusM: number } {
+  const known = placed.get(frame);
   if (known) return known;
-  const across = geometry.wingSpanM / GEOMETRY.wingSpanM;
-  const along = geometry.lengthM / GEOMETRY.lengthM;
+  const across = frame.geometry.wingSpanM / GEOMETRY.wingSpanM;
+  const along = frame.geometry.lengthM / GEOMETRY.lengthM;
   const size = (across + along) / 2;
-  const volumes = HIT_VOLUMES.map((volume) => ({
+  const onModel =
+    frame.hitVolumes ??
+    HIT_VOLUMES.map((volume) => ({
+      ...volume,
+      offset: [volume.offset[0] * across, volume.offset[1] * size, volume.offset[2] * along] as const,
+      radiusM: volume.radiusM * size,
+    }));
+  const [cgRight, cgUp, cgNose] = frame.cg;
+  const volumes = onModel.map((volume) => ({
     ...volume,
-    offset: [volume.offset[0] * across, volume.offset[1] * size, volume.offset[2] * along] as const,
-    radiusM: volume.radiusM * size,
+    offset: [volume.offset[0] - cgRight, volume.offset[1] - cgUp, volume.offset[2] - cgNose] as const,
   }));
   const entry = { volumes, hullRadiusM: hullRadius(volumes) };
-  scaled.set(geometry, entry);
+  placed.set(frame, entry);
   return entry;
 }
 

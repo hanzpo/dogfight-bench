@@ -1,7 +1,7 @@
 import { Vector3 } from "three";
 import { GRAVITY_MPS2, atmosphere } from "./atmosphere";
 import { FLARE, MISSILE, type MissileSpec } from "./config";
-import { airframe, missileSpec } from "./airframes";
+import { airframe, fromModel, missileSpec } from "./airframes";
 import { applyBlast, hitVolumesFor, isDestroyed } from "./damage";
 import { bodyAxes } from "./flight-model";
 import type { Random } from "./random";
@@ -184,7 +184,7 @@ export function launchMissile(
   const frame = airframe(aircraft.airframe);
   const spec = missileSpec(frame.missile);
   const axes = bodyAxes(aircraft.orientation);
-  const rail = frame.rails[(stores.missileStations - stores.missiles) % frame.rails.length]!;
+  const rail = fromModel(frame, frame.rails[(stores.missileStations - stores.missiles) % frame.rails.length]!);
   const position = aircraft.position
     .clone()
     .addScaledVector(axes.right, rail[0])
@@ -441,7 +441,7 @@ function detonate(state: MatchState, missile: MissileState, target: AircraftStat
   const targetAt = target.position.clone().addScaledVector(target.velocity, -dt * (1 - t));
   const spec = missileSpec(missile.kind);
   const axes = bodyAxes(target.orientation);
-  const { volumes } = hitVolumesFor(airframe(target.airframe).geometry);
+  const { volumes } = hitVolumesFor(airframe(target.airframe));
   const loss = applyBlast(
     target.damage,
     burst,

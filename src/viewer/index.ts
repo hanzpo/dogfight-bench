@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { airframe, type Airframe, type AirframeId } from "../sim/airframes";
+import { airframe, fromModel, type Airframe, type AirframeId } from "../sim/airframes";
 import { buildPlaceholder } from "./placeholder";
 import { AIM9_LENGTH_M, aim9Materials, createAim9 } from "./aim9";
 import {
@@ -76,6 +76,18 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
 /** Rails are emptied in order, so the first ones fired are the first ones bare. */
 export function railsLoaded(stations: number, remaining: number): boolean[] {
   return Array.from({ length: stations }, (_unused, rail) => rail >= stations - remaining);
+}
+
+/**
+ * The model moved so its centre of gravity sits on the group's origin, which
+ * is where the simulation's position is: the jet then turns about the point
+ * it really turns about.
+ */
+function aboutCentreOfGravity(frame: Airframe, model: THREE.Object3D): THREE.Group {
+  const group = new THREE.Group();
+  model.position.copy(modelPoint(frame.cg).negate());
+  group.add(model);
+  return group;
 }
 
 /** A point in body axes (right, up, nose) as a point in model space, where +x is left. */
@@ -314,23 +326,17 @@ export class DogfightViewer {
   private async loadModel(frame: Airframe): Promise<void> {
     if (this.models.has(frame.id) || this.loading.has(frame.id)) return;
     if (!frame.model) {
-      this.models.set(frame.id, buildPlaceholder(frame));
+      this.models.set(frame.id, aboutCentreOfGravity(frame, buildPlaceholder(frame)));
       return;
     }
     this.loading.add(frame.id);
     try {
       const gltf = await new GLTFLoader().loadAsync(frame.model);
       const model = extractAirframe(gltf.scene);
-      if (frame.modelYawDeg) {
-        const turned = new THREE.Group();
-        model.rotation.y = (frame.modelYawDeg * Math.PI) / 180;
-        turned.add(model);
-        this.models.set(frame.id, turned);
-      } else {
-        this.models.set(frame.id, model);
-      }
+      model.rotation.y = ((frame.modelYawDeg ?? 0) * Math.PI) / 180;
+      this.models.set(frame.id, aboutCentreOfGravity(frame, model));
     } catch {
-      this.models.set(frame.id, buildPlaceholder(frame));
+      this.models.set(frame.id, aboutCentreOfGravity(frame, buildPlaceholder(frame)));
     } finally {
       this.loading.delete(frame.id);
     }
@@ -546,7 +552,7 @@ export class DogfightViewer {
       frame.rails.forEach((mount, rail) => {
         const carried = this.aim9Template.clone(true);
         carried.name = `rail-${rail}`;
-        carried.position.copy(modelPoint(mount));
+        carried.position.copy(modelPoint(fromModel(frame, mount)));
         carried.visible = false;
         mesh.add(carried);
       });
@@ -635,7 +641,9 @@ export class DogfightViewer {
       plume.visible = lit;
       if (!lit) return;
       plume.quaternion.fromArray(aircraft.orientation);
-      plume.position.fromArray(aircraft.position).add(modelPoint(frame.nozzles[index]!).applyQuaternion(plume.quaternion));
+      plume.position
+        .fromArray(aircraft.position)
+        .add(modelPoint(fromModel(frame, frame.nozzles[index]!)).applyQuaternion(plume.quaternion));
       const material = plume.material as THREE.MeshBasicMaterial;
       material.opacity = 0.42 + Math.random() * 0.22;
       plume.scale.setZ(0.85 + Math.random() * 0.3);
