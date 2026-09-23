@@ -77,6 +77,15 @@ export function LivePage() {
   const viewer = useRef<DogfightViewer>(undefined);
   const [view, setView] = useState<ViewMode>("free");
   const [detailsOpen, setDetailsOpen] = useState(() => globalThis.innerWidth > 900);
+  // It opens only on a wide window, and closes if the window is narrowed past
+  // that: below it the panel would sit over the head-up display.
+  useEffect(() => {
+    const narrowed = () => {
+      if (globalThis.innerWidth <= 900) setDetailsOpen(false);
+    };
+    addEventListener("resize", narrowed);
+    return () => removeEventListener("resize", narrowed);
+  }, []);
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";
@@ -178,7 +187,13 @@ export function LivePage() {
           instance.setView(view);
         }}
       />
-      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} detailsOpen={detailsOpen} />
+      <FlightDisplay
+        stateRef={match.liveStateRef}
+        viewerRef={viewer}
+        followId={followId}
+        detailsOpen={detailsOpen}
+        showControls
+      />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={followId} />
       {view === "free" && !pointerFlying ? (
         <div className="orbit-help">DRAG TO ORBIT · SCROLL TO ZOOM</div>

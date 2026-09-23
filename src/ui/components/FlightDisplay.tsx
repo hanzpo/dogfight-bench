@@ -17,19 +17,30 @@ const LADDER_GAP = 0.34;
 const HUD_FIELD_DEG = { horizontal: 30, vertical: 24 };
 
 const CONTROL_BOX_HALF = 22;
+const RWR_RADIUS = 32;
+const BINGO_KG = 450;
 
-const RWR_RADIUS = 46;
-
+/**
+ * The head-up display, laid out as one: airspeed and altitude either side of
+ * the middle, heading beneath, weapons and engine in the lower corners of the
+ * same box -- where a pilot's eye already is, not pinned to the edges of the
+ * window. One colour, thin strokes, no panels behind anything.
+ *
+ * `showControls` adds a stick-and-throttle readout, for the lab, where seeing
+ * what the input is doing is the point.
+ */
 export function FlightDisplay({
   stateRef,
   viewerRef,
   followId,
   detailsOpen,
+  showControls = false,
 }: {
   stateRef: RefObject<MatchState | undefined>;
   viewerRef: RefObject<DogfightViewer | undefined>;
   followId: string;
   detailsOpen: boolean;
+  showControls?: boolean;
 }) {
   const root = useRef<SVGSVGElement>(null);
   const conformal = useRef<SVGGElement>(null);
@@ -65,43 +76,43 @@ export function FlightDisplay({
       const height = svg.clientHeight;
       if (!own || !width || !height) return;
 
-      layout(groups.current, width, height, details.current);
+      const box = layout(groups.current, width, height, details.current);
 
       const axes = bodyAxes(own.orientation);
       const speed = own.velocity.length();
       const air = atmosphere(own.position.y);
       const cockpit = viewer.viewMode === "cockpit";
-
       const heading = compass(axes.nose);
-      const track = speed > 1 ? compass(own.velocity) : heading;
 
       const set = (key: string, value: string) => {
         const node = text.current[key];
         if (node && node.textContent !== value) node.textContent = value;
       };
 
-      set("cas", String(Math.round(equivalentAirspeed(speed, own.position.y) * KNOTS)));
+      const knots = equivalentAirspeed(speed, own.position.y) * KNOTS;
+      set("cas", String(Math.round(knots)));
       set("mach", `M ${(speed / air.speedOfSoundMps).toFixed(2)}`);
-      set("g", `${own.loadFactor.toFixed(1)}G`);
+      set("g", `G ${own.loadFactor.toFixed(1)}`);
+      set("aoa", `AOA ${degrees(own.aoaRad).toFixed(1)}`);
       set("alt", Math.round(own.position.y * FEET).toLocaleString());
       set("agl", `R ${Math.round(own.heightAboveGroundM * FEET).toLocaleString()}`);
       set("vs", signedCount(own.velocity.y * FEET * 60));
       set("heading", String(Math.round(heading)).padStart(3, "0"));
-      set("track", `TRK ${String(Math.round(track)).padStart(3, "0")}`);
-      set("aoa", `${degrees(own.aoaRad).toFixed(1)}° AOA`);
-      set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
-      set("ammo", String(own.ammo));
+      set("throttleLabel", throttleLabel(own.engine.afterburner, own.controls.throttle));
+      const fuel = Math.round(own.engine.fuelKg);
+      set("fuel", fuel < BINGO_KG ? `BINGO ${fuel}` : `FUEL ${fuel.toLocaleString()}`);
+      text.current["fuel"]?.setAttribute("class", fuel < BINGO_KG ? "hud-sub hud-caution" : "hud-sub");
+
+      const frameSpec = airframe(own.airframe);
+      set("ammo", `GUN ${own.ammo}`);
       const armed = own.stores.missileStations > 0;
-      // Removed rather than hidden: a hidden SVG group still has a size, and the
-      // missile columns would push the stores readout into the throttle's space
-      // on a narrow window in a fight that has no missiles.
+      // Removed rather than hidden: a hidden SVG group still takes up room.
       groups.current["srm"]?.setAttribute("display", armed ? "inline" : "none");
       groups.current["rwr"]?.setAttribute("display", armed ? "inline" : "none");
       if (armed) {
-        set("missileName", missileSpec(airframe(own.airframe).missile).name.toUpperCase());
-        set("missiles", String(own.stores.missiles));
-        set("seeker", own.stores.missiles > 0 ? SEEKER_LABEL[own.seeker.tone] : "");
-        set("flares", String(own.stores.flares));
+        const tone = own.stores.missiles > 0 ? SEEKER_LABEL[own.seeker.tone] : "";
+        set("missiles", `${missileSpec(frameSpec.missile).name.toUpperCase()} ${own.stores.missiles}${tone ? ` ${tone}` : ""}`);
+        set("flares", `FLR ${own.stores.flares}`);
         const contacts = rwrContacts(state, own.id);
         drawRwr(rwrContactsGroup.current, rendered.current, contacts);
         const inbound = contacts
@@ -109,45 +120,29 @@ export function FlightDisplay({
           .sort((a, b) => (a.timeToGoS ?? Infinity) - (b.timeToGoS ?? Infinity))[0];
         missileWarning.current?.setAttribute("visibility", inbound ? "visible" : "hidden");
         if (inbound) {
-          set("warning", `MISSILE ${clock(inbound.bearingDeg)} O'CLOCK`);
-          set("warningDetail", `${(inbound.rangeM / 1_000).toFixed(1)} KM · ${Math.max(0, inbound.timeToGoS ?? 0).toFixed(1)} S`);
+          set(
+            "warning",
+            `MISSILE ${clock(inbound.bearingDeg)} O'CLOCK  ${(inbound.rangeM / 1_000).toFixed(1)} KM`,
+          );
         }
       } else {
         missileWarning.current?.setAttribute("visibility", "hidden");
       }
-      set("throttleLabel", throttleLabel(own.engine.afterburner, own.controls.throttle));
-      throttleFill.current?.setAttribute("width", (clamp(own.controls.throttle, 0, 1) * 84).toFixed(1));
-      throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
 
-      stickDot.current?.setAttribute("cx", (clamp(own.controls.roll, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
-      stickDot.current?.setAttribute("cy", (-clamp(own.controls.pitch, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
-      const rudder = clamp(own.controls.yaw, -1, 1) * CONTROL_BOX_HALF;
-      rudderBar.current?.setAttribute("x", Math.min(0, rudder).toFixed(1));
-      rudderBar.current?.setAttribute("width", Math.abs(rudder).toFixed(1));
+      if (showControls) {
+        const filled = clamp(own.controls.throttle, 0, 1) * CONTROL_BOX_HALF * 2;
+        throttleFill.current?.setAttribute("y", (CONTROL_BOX_HALF - filled).toFixed(1));
+        throttleFill.current?.setAttribute("height", filled.toFixed(1));
+        stickDot.current?.setAttribute("cx", (clamp(own.controls.roll, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
+        stickDot.current?.setAttribute("cy", (-clamp(own.controls.pitch, -1, 1) * CONTROL_BOX_HALF).toFixed(1));
+        const rudder = clamp(own.controls.yaw, -1, 1) * CONTROL_BOX_HALF;
+        rudderBar.current?.setAttribute("x", Math.min(0, rudder).toFixed(1));
+        rudderBar.current?.setAttribute("width", Math.abs(rudder).toFixed(1));
+      }
 
-      renderTape(
-        speedTicks.current,
-        rendered.current,
-        "speed",
-        equivalentAirspeed(speed, own.position.y) * KNOTS,
-        20,
-        100,
-        height,
-        false,
-        panelScale(width, height),
-      );
-      renderTape(
-        altTicks.current,
-        rendered.current,
-        "alt",
-        own.position.y * FEET,
-        500,
-        2_000,
-        height,
-        true,
-        panelScale(width, height),
-      );
-      renderHeadingTape(headingTicks.current, rendered.current, heading, width);
+      renderTape(speedTicks.current, rendered.current, "speed", knots, 10, 100, box.halfHeight * 0.8, -1);
+      renderTape(altTicks.current, rendered.current, "alt", own.position.y * FEET, 100, 1_000, box.halfHeight * 0.8, 1);
+      renderHeadingTape(headingTicks.current, rendered.current, heading, box.halfWidth * 0.6);
 
       if (cockpit) {
         conformal.current?.setAttribute("visibility", "visible");
@@ -178,7 +173,7 @@ export function FlightDisplay({
 
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [stateRef, viewerRef, followId]);
+  }, [stateRef, viewerRef, followId, showControls]);
 
   const label = (key: string) => (node: SVGTextElement | null) => {
     text.current[key] = node;
@@ -198,82 +193,89 @@ export function FlightDisplay({
       <g ref={conformal} className="conformal" clipPath="url(#hud-field)" visibility="hidden">
         <g ref={ladder} />
         <g ref={flightPath} className="fpm" visibility="hidden">
-          <circle r="9" />
-          <line x1="-19" y1="0" x2="-9" y2="0" />
-          <line x1="9" y1="0" x2="19" y2="0" />
-          <line x1="0" y1="-9" x2="0" y2="-17" />
+          <circle r="7" />
+          <line x1="-17" y1="0" x2="-7" y2="0" />
+          <line x1="7" y1="0" x2="17" y2="0" />
+          <line x1="0" y1="-7" x2="0" y2="-14" />
           <g ref={aoaBracket} className="aoa-bracket" visibility="hidden">
-            <path d="M -30 -9 L -36 -9 L -36 9 L -30 9" />
+            <path d="M -26 -8 L -31 -8 L -31 8 L -26 8" />
           </g>
         </g>
       </g>
 
       <g ref={group("speed")} className="tape-group speed-group">
         <g ref={speedTicks} className="tape-ticks" />
-        <g ref={group("speedReadout")}>
         <g className="tape-box">
-          <path d="M 0 -13 L 58 -13 L 58 13 L 0 13 L -8 0 Z" />
-          <text ref={label("cas")} x="50" y="5" textAnchor="end">
+          <rect x="-58" y="-11" width="58" height="22" />
+          <text ref={label("cas")} x="-6" y="5" textAnchor="end">
             0
           </text>
         </g>
-        <text className="tape-caption" x="0" y="-26">
-          KCAS
-        </text>
-        <text ref={label("mach")} className="tape-sub" x="0" y="42">
+        <text ref={label("mach")} className="hud-sub" x="0" y="30" textAnchor="end">
           M 0.00
         </text>
-        <text ref={label("g")} className="tape-sub" x="0" y="58">
-          1.0G
+        <text ref={label("g")} className="hud-sub" x="0" y="45" textAnchor="end">
+          G 1.0
         </text>
-        <text ref={label("aoa")} className="tape-sub" x="0" y="74">
-          0.0° AOA
+        <text ref={label("aoa")} className="hud-sub" x="0" y="60" textAnchor="end">
+          0.0
         </text>
-        </g>
       </g>
 
       <g ref={group("alt")} className="tape-group alt-group">
         <g ref={altTicks} className="tape-ticks" />
-        <g ref={group("altReadout")}>
         <g className="tape-box">
-          <path d="M 0 -13 L -72 -13 L -72 13 L 0 13 L 8 0 Z" />
-          <text ref={label("alt")} x="-8" y="5" textAnchor="end">
+          <rect x="0" y="-11" width="66" height="22" />
+          <text ref={label("alt")} x="60" y="5" textAnchor="end">
             0
           </text>
         </g>
-        <text className="tape-caption" y="-26" textAnchor="end">
-          FEET
-        </text>
-        <text ref={label("vs")} className="tape-sub" y="42" textAnchor="end">
-          +0
-        </text>
-        <text ref={label("agl")} className="tape-sub" y="58" textAnchor="end">
+        <text ref={label("agl")} className="hud-sub" x="0" y="30">
           R 0
         </text>
-        </g>
+        <text ref={label("vs")} className="hud-sub" x="0" y="45">
+          +0
+        </text>
       </g>
 
       <g ref={group("heading")} className="heading-group">
         <g ref={headingTicks} className="tape-ticks" />
-        <path className="heading-caret" d="M 0 4 L -6 13 L 6 13 Z" />
+        <path className="heading-caret" d="M -4 9 L 0 3 L 4 9" />
         <g className="tape-box">
-          <rect x="-25" y="-19" width="50" height="22" />
-          <text ref={label("heading")} y="-3" textAnchor="middle">
+          <rect x="-22" y="12" width="44" height="20" />
+          <text ref={label("heading")} y="27" textAnchor="middle">
             000
           </text>
         </g>
-        <text ref={label("track")} className="tape-sub" y="54" textAnchor="middle">
-          TRK 000
+      </g>
+
+      <g ref={group("stores")} className="stores-group">
+        <text ref={label("ammo")} className="hud-sub">
+          GUN 511
         </text>
+        <g ref={group("srm")} display="none">
+          <text ref={label("missiles")} className="hud-sub" y="15">
+            AIM-9M 2
+          </text>
+          <text ref={label("flares")} className="hud-sub" y="30">
+            FLR 30
+          </text>
+        </g>
       </g>
 
       <g ref={group("engine")} className="engine-group">
-        <text className="tape-caption" y="-8">
-          THROTTLE
+        <text ref={label("throttleLabel")} className="hud-sub" textAnchor="end">
+          THR 85
         </text>
-        <rect className="throttle-track" x="0" y="0" width="84" height="8" />
-        <rect ref={throttleFill} className="throttle-fill" x="0" y="0" width="0" height="8" />
-        <g className="control-indicator" transform="translate(126 -20)">
+        <text ref={label("fuel")} className="hud-sub" y="15" textAnchor="end">
+          FUEL 0
+        </text>
+      </g>
+
+      {showControls ? (
+        <g ref={group("controls")} className="control-indicator">
+          <rect className="throttle-track" x="-60" y={-CONTROL_BOX_HALF} width="8" height={CONTROL_BOX_HALF * 2} />
+          <rect ref={throttleFill} className="throttle-fill" x="-60" y={CONTROL_BOX_HALF} width="8" height="0" />
           <rect
             className="control-box"
             x={-CONTROL_BOX_HALF}
@@ -283,62 +285,24 @@ export function FlightDisplay({
           />
           <line className="control-cross" x1={-CONTROL_BOX_HALF} y1="0" x2={CONTROL_BOX_HALF} y2="0" />
           <line className="control-cross" x1="0" y1={-CONTROL_BOX_HALF} x2="0" y2={CONTROL_BOX_HALF} />
-          <circle ref={stickDot} className="control-dot" cx="0" cy="0" r="3.2" />
-          <rect ref={rudderBar} className="control-rudder" x="0" y={CONTROL_BOX_HALF + 5} width="0" height="4" />
+          <circle ref={stickDot} className="control-dot" cx="0" cy="0" r="3" />
+          <rect ref={rudderBar} className="control-rudder" x="0" y={CONTROL_BOX_HALF + 5} width="0" height="3" />
         </g>
-        <text ref={label("throttleLabel")} className="tape-sub" x="92" y="8">
-          IDLE
-        </text>
-        <text ref={label("fuel")} className="tape-sub" y="26">
-          0 KG
-        </text>
-      </g>
-
-      <g ref={group("stores")} className="stores-group">
-        <text className="tape-caption" y="-8" textAnchor="end">
-          GUN
-        </text>
-        <text ref={label("ammo")} className="stores-value" y="14" textAnchor="end">
-          511
-        </text>
-        <g ref={group("srm")} display="none">
-          <text ref={label("missileName")} className="tape-caption" x="-64" y="-8" textAnchor="end">
-            AIM-9M
-          </text>
-          <text ref={label("missiles")} className="stores-value" x="-64" y="14" textAnchor="end">
-            2
-          </text>
-          <text ref={label("seeker")} className="tape-sub seeker-state" x="-64" y="30" textAnchor="end">
-            SRCH
-          </text>
-          <text className="tape-caption" x="-136" y="-8" textAnchor="end">
-            FLARES
-          </text>
-          <text ref={label("flares")} className="stores-value" x="-136" y="14" textAnchor="end">
-            30
-          </text>
-        </g>
-      </g>
+      ) : null}
 
       <g ref={group("rwr")} className="rwr" display="none">
         <circle className="rwr-scope" r={RWR_RADIUS} />
         <circle className="rwr-ring" r={RWR_RADIUS / 2} />
-        <path className="rwr-ownship" d="M 0 -6 L 0 6 M -6 1 L 6 1 M -3 5 L 3 5" />
-        <text className="tape-caption" y={-RWR_RADIUS - 8} textAnchor="middle">
-          RWR
-        </text>
+        <path className="rwr-ownship" d="M 0 -4 L 0 4 M -4 1 L 4 1" />
         <g ref={rwrContactsGroup} />
       </g>
 
       <g ref={group("warning")}>
-      <g ref={missileWarning} className="missile-warning" visibility="hidden">
-        <text ref={label("warning")} className="missile-warning-title" textAnchor="middle">
-          MISSILE
-        </text>
-        <text ref={label("warningDetail")} className="missile-warning-detail" y="18" textAnchor="middle">
-          0.0 KM
-        </text>
-      </g>
+        <g ref={missileWarning} className="missile-warning" visibility="hidden">
+          <text ref={label("warning")} className="missile-warning-title" textAnchor="middle">
+            MISSILE
+          </text>
+        </g>
       </g>
     </svg>
   );
@@ -346,7 +310,7 @@ export function FlightDisplay({
 
 const UP = new Vector3(0, 1, 0);
 
-const SEEKER_LABEL = { off: "", search: "SRCH", growl: "GROWL", lock: "LOCK" } as const;
+const SEEKER_LABEL = { off: "", search: "", growl: "TONE", lock: "LOCK" } as const;
 
 function clock(bearingDeg: number): number {
   const hour = Math.round((((bearingDeg % 360) + 360) % 360) / 30) % 12;
@@ -362,15 +326,15 @@ function drawRwr(group: SVGGElement | null, cache: Record<string, string>, conta
   if (!group) return;
   const marks = contacts.map((contact) => {
     const radius =
-      contact.kind === "missile" ? RWR_RADIUS * 0.34 : contact.level === "track" ? RWR_RADIUS * 0.62 : RWR_RADIUS * 0.84;
+      contact.kind === "missile" ? RWR_RADIUS * 0.36 : contact.level === "track" ? RWR_RADIUS * 0.64 : RWR_RADIUS * 0.86;
     const angle = (contact.bearingDeg * Math.PI) / 180;
     const x = (Math.sin(angle) * radius).toFixed(1);
     const y = (-Math.cos(angle) * radius).toFixed(1);
     if (contact.kind === "missile") {
-      return `<g class="rwr-missile" transform="translate(${x} ${y})"><path d="M 0 -8 L 7 6 L -7 6 Z" /><text y="4" text-anchor="middle">M</text></g>`;
+      return `<g class="rwr-missile" transform="translate(${x} ${y})"><text y="3.5" text-anchor="middle">M</text></g>`;
     }
-    const box = contact.level === "track" ? `<path class="rwr-track" d="M 0 -10 L 10 0 L 0 10 L -10 0 Z" />` : "";
-    return `<g class="rwr-radar" transform="translate(${x} ${y})">${box}<text y="4" text-anchor="middle">16</text></g>`;
+    const box = contact.level === "track" ? `<path class="rwr-track" d="M 0 -8 L 8 0 L 0 8 L -8 0 Z" />` : "";
+    return `<g class="rwr-radar" transform="translate(${x} ${y})">${box}<text y="3.5" text-anchor="middle">16</text></g>`;
   });
   setMarkup(group, cache, "rwr", marks.join(""));
 }
@@ -378,58 +342,46 @@ function drawRwr(group: SVGGElement | null, cache: Record<string, string>, conta
 function throttleLabel(afterburner: boolean, throttle: number): string {
   if (afterburner) return "AB";
   if (throttle <= 0.02) return "IDLE";
-  return `${Math.round(throttle * 100)}%`;
-}
-
-/** How much the panel instruments shrink on a small window. */
-function panelScale(width: number, height: number): number {
-  return clamp(Math.min(width / 1_500, height / 880), 0.82, 1.3);
+  return `THR ${Math.round(throttle * 100)}`;
 }
 
 /**
- * The band the airspeed and altitude readouts occupy, either side of centre.
- *
- * The tape runs behind them, so a tick label landing inside this would be drawn
- * across the Mach number or the angle of attack.
+ * Where everything goes, as one head-up box around the middle of the window.
+ * Returns the box's half-width and half-height for the tapes to size to.
  */
-function readoutBand(scale: number): { top: number; bottom: number } {
-  return { top: -30 * scale, bottom: 84 * scale };
-}
-
 function layout(
   groups: Record<string, SVGGElement | null>,
   width: number,
   height: number,
   detailsOpen: boolean,
-): void {
-  const scale = panelScale(width, height);
-  const margin = clamp(width * 0.05, 26, 92);
-  const rightEdge = width - (detailsOpen ? 318 : margin);
-  const place = (key: string, x: number, y: number, scaled = true) =>
-    groups[key]?.setAttribute(
-      "transform",
-      `translate(${x.toFixed(1)} ${y.toFixed(1)})${scaled ? ` scale(${scale.toFixed(3)})` : ""}`,
-    );
-
-  place("speed", margin, 0, false);
-  place("speedReadout", 0, height / 2);
-  place("alt", rightEdge, 0, false);
-  place("altReadout", 0, height / 2);
-  place("heading", width / 2, 86);
-  // Measured off the control bar rather than assumed: the bar wraps to two rows
-  // on a narrow window, and a fixed offset put the throttle and the ammunition
-  // count underneath it.
+): { halfWidth: number; halfHeight: number } {
+  // The details panel takes the right edge; the box moves over for it.
+  const usable = detailsOpen ? width - 300 : width;
+  // Above the lab's control bar where there is one; it wraps, so it is measured.
   const bar = document.querySelector(".controls")?.getBoundingClientRect().top;
-  // With no bar -- the game screen has none -- the instruments sit at the bottom edge.
-  const bottom = (bar === undefined ? height - 24 : bar > height * 0.4 ? bar : height - 132) - 42;
-  place("engine", margin, bottom);
-  place("stores", rightEdge, bottom);
-  // Above the throttle, clear of the airspeed readout that ends a little
-  // below the middle of the screen.
-  const rwrY = Math.max(height / 2 + 150 * scale, bottom - 100 * scale);
-  place("rwr", margin + (RWR_RADIUS + 4) * scale, rwrY);
-  // Below the heading tape and its track readout.
-  place("warning", width / 2, 196);
+  const floor = bar !== undefined && bar > height * 0.5 ? bar : height;
+  const cx = usable / 2;
+  let cy = height / 2;
+  const halfWidth = clamp(usable * 0.2, 190, 320);
+  // The weapons and engine lines hang 40 px below the box's bottom edge:
+  // shrink the box to keep them clear of the floor, and move it up if that
+  // is not enough.
+  const room = floor - 44 - cy;
+  const halfHeight = clamp(Math.min(height * 0.3, room), 110, 250);
+  if (cy + halfHeight + 44 > floor) cy = floor - 44 - halfHeight;
+  const place = (key: string, x: number, y: number) =>
+    groups[key]?.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+
+  place("speed", cx - halfWidth, cy);
+  place("alt", cx + halfWidth, cy);
+  place("heading", cx, cy + halfHeight);
+  place("stores", cx - halfWidth - 58, cy + halfHeight - 6);
+  place("engine", cx + halfWidth + 66, cy + halfHeight - 6);
+  place("warning", cx, cy - halfHeight + 4);
+  const margin = clamp(width * 0.03, 20, 40);
+  place("rwr", margin + RWR_RADIUS, floor - margin - RWR_RADIUS);
+  place("controls", margin + 2 * RWR_RADIUS + 90, floor - margin - 30);
+  return { halfWidth, halfHeight };
 }
 
 function sizeHudField(
@@ -462,6 +414,10 @@ function setMarkup(group: SVGGElement, cache: Record<string, string>, key: strin
   group.innerHTML = markup;
 }
 
+/**
+ * A vertical scale beside a readout box, centred on the current value.
+ * `side` is -1 to hang it off the left of the box, 1 off the right.
+ */
 function renderTape(
   group: SVGGElement | null,
   cache: Record<string, string>,
@@ -469,60 +425,55 @@ function renderTape(
   value: number,
   step: number,
   span: number,
-  height: number,
-  right: boolean,
-  scale: number,
+  halfHeight: number,
+  side: -1 | 1,
 ): void {
   if (!group) return;
-  const signature = `${Math.round(value)}|${Math.round(height)}|${scale.toFixed(2)}`;
+  const signature = `${Math.round(value)}|${Math.round(halfHeight)}`;
   if (cache[key] === signature) return;
   cache[key] = signature;
-  const centre = height / 2;
-  const pixelsPerUnit = (height * 0.62) / span;
+  const pixelsPerUnit = halfHeight / (span / 2);
+  // Measured from the box's outer edge, which is 58 px out on the left and 66 on the right.
+  const edge = side < 0 ? -64 : 72;
   const first = Math.ceil((value - span / 2) / step) * step;
   const marks: string[] = [];
   for (let tick = first; tick <= value + span / 2; tick += step) {
-    const y = centre - (tick - value) * pixelsPerUnit;
+    const y = -(tick - value) * pixelsPerUnit;
     const major = tick % (step * 5) === 0;
-    const length = major ? 15 : 8;
-    marks.push(
-      right
-        ? `<line x1="0" y1="${y.toFixed(1)}" x2="${-length}" y2="${y.toFixed(1)}" />`
-        : `<line x1="0" y1="${y.toFixed(1)}" x2="${length}" y2="${y.toFixed(1)}" />`,
-    );
-    const band = readoutBand(scale);
-    if (major && (y - centre < band.top || y - centre > band.bottom)) {
+    const length = major ? 9 : 5;
+    marks.push(`<line x1="${edge}" y1="${y.toFixed(1)}" x2="${edge + side * length}" y2="${y.toFixed(1)}" />`);
+    // Labels stay clear of the box they would otherwise be written across.
+    if (major && Math.abs(y) > 18) {
       marks.push(
-        `<text x="${right ? -20 : 20}" y="${(y + 4).toFixed(1)}" text-anchor="${right ? "end" : "start"}">${Math.round(tick)}</text>`,
+        `<text x="${edge + side * 13}" y="${(y + 4).toFixed(1)}" text-anchor="${side < 0 ? "end" : "start"}">${Math.round(tick)}</text>`,
       );
     }
   }
   setMarkup(group, cache, key, marks.join(""));
 }
 
+/** The heading scale, laid flat along the bottom of the box. */
 function renderHeadingTape(
   group: SVGGElement | null,
   cache: Record<string, string>,
   heading: number,
-  width: number,
+  halfWidth: number,
 ): void {
   if (!group) return;
-  const signature = `${heading.toFixed(1)}|${Math.round(width)}`;
+  const signature = `${heading.toFixed(1)}|${Math.round(halfWidth)}`;
   if (cache["heading"] === signature) return;
   cache["heading"] = signature;
-  const pixelsPerDegree = Math.min(width * 0.32, 420) / 60;
+  const pixelsPerDegree = halfWidth / 30;
   const marks: string[] = [];
   for (let offset = -35; offset <= 35; offset += 5) {
     const bearing = (Math.round(heading / 5) * 5 + offset + 360) % 360;
     const delta = ((bearing - heading + 540) % 360) - 180;
-    if (Math.abs(delta) > 32) continue;
+    if (Math.abs(delta) > 30) continue;
     const x = delta * pixelsPerDegree;
     const major = bearing % 10 === 0;
-    marks.push(`<line x1="${x.toFixed(1)}" y1="14" x2="${x.toFixed(1)}" y2="${major ? 26 : 21}" />`);
+    marks.push(`<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${major ? -8 : -4}" />`);
     if (major) {
-      marks.push(
-        `<text x="${x.toFixed(1)}" y="41" text-anchor="middle">${String(bearing / 10).padStart(2, "0")}</text>`,
-      );
+      marks.push(`<text x="${x.toFixed(1)}" y="-12" text-anchor="middle">${String(bearing / 10).padStart(2, "0")}</text>`);
     }
   }
   setMarkup(group, cache, "heading", marks.join(""));

@@ -96,16 +96,9 @@ export function InstantReplay({
         Replay
       </div>
 
-      <button
-        className="hud-button game-view-button"
-        onClick={() =>
-          setView((current) => views[(views.findIndex((entry) => entry.value === current) + 1) % views.length]!.value)
-        }
-        aria-label={`Camera: ${viewLabel}. Change camera`}
-      >
-        <kbd aria-hidden>V</kbd>
-        <span aria-hidden>{viewLabel}</span>
-      </button>
+      <div key={view} className="view-toast" role="status">
+        {viewLabel}
+      </div>
 
       <div className="replay-bar" role="group" aria-label="Replay controls">
         <button

@@ -22,7 +22,6 @@ export function TacticalOverlay({
   const reticleRing = useRef<SVGCircleElement>(null);
   const targetBox = useRef<SVGGElement>(null);
   const boxRect = useRef<SVGRectElement>(null);
-  const leadLine = useRef<SVGLineElement>(null);
   const rangeLabel = useRef<SVGTextElement>(null);
   const arrow = useRef<SVGGElement>(null);
   const shootCue = useRef<SVGGElement>(null);
@@ -53,7 +52,6 @@ export function TacticalOverlay({
           reticle.current,
           targetBox.current,
           arrow.current,
-          leadLine.current,
           shootCue.current,
           seekerCircle.current,
           lockDiamond.current,
@@ -157,24 +155,15 @@ export function TacticalOverlay({
         boxRect.current?.setAttribute("width", (half * 2).toFixed(1));
         boxRect.current?.setAttribute("height", (half * 2).toFixed(1));
         targetBox.current?.setAttribute("transform", `translate(${targetX.toFixed(1)} ${targetY.toFixed(1)})`);
-        rangeLabel.current?.setAttribute("y", (half + 15).toFixed(1));
+        rangeLabel.current?.setAttribute("x", (half + 6).toFixed(1));
+        rangeLabel.current?.setAttribute("y", (half + 4).toFixed(1));
         if (rangeLabel.current) {
           rangeLabel.current.textContent =
             range >= 1_000 ? `${(range / 1_000).toFixed(1)} KM` : `${Math.round(range)} M`;
         }
 
-        if (!aim.behind) {
-          show(leadLine.current);
-          leadLine.current?.setAttribute("x1", aimX.toFixed(1));
-          leadLine.current?.setAttribute("y1", aimY.toFixed(1));
-          leadLine.current?.setAttribute("x2", targetX.toFixed(1));
-          leadLine.current?.setAttribute("y2", targetY.toFixed(1));
-        } else {
-          hide(leadLine.current);
-        }
       } else {
         hide(targetBox.current);
-        hide(leadLine.current);
         show(arrow.current);
         const dx = (target.x - 0.5) * (target.behind ? -1 : 1);
         const dy = (target.y - 0.5) * (target.behind ? -1 : 1);
@@ -207,33 +196,27 @@ export function TacticalOverlay({
 
   return (
     <svg ref={root} className="tactical" aria-hidden>
-      <line ref={leadLine} className="lead-line" x1="0" y1="0" x2="0" y2="0" visibility="hidden" />
-
       <g ref={reticle} className="reticle" visibility="hidden">
         <circle ref={reticleRing} r="26" />
-        <line x1="-34" y1="0" x2="-12" y2="0" />
-        <line x1="12" y1="0" x2="34" y2="0" />
-        <line x1="0" y1="-34" x2="0" y2="-12" />
-        <line x1="0" y1="12" x2="0" y2="34" />
-        <circle className="pip" r="1.8" />
+        <circle className="pip" r="1.6" />
       </g>
 
       <g ref={targetBox} className="target-box" visibility="hidden">
         <rect ref={boxRect} x="-18" y="-18" width="36" height="36" />
-        <text ref={rangeLabel} y="33" textAnchor="middle">
+        <text ref={rangeLabel} y="33">
           0 M
         </text>
       </g>
 
       <g ref={arrow} className="bandit-arrow" visibility="hidden">
-        <path d="M 0 0 L -22 -9 L -16 0 L -22 9 Z" />
+        <path d="M -9 -7 L 0 0 L -9 7" />
       </g>
 
       <circle ref={seekerCircle} className="seeker-circle" r="40" visibility="hidden" />
 
       <g ref={lockDiamond} className="lock-diamond" visibility="hidden">
-        <path d="M 0 -17 L 17 0 L 0 17 L -17 0 Z" />
-        <text ref={lockLabel} className="lock-label" y="-24" textAnchor="middle">
+        <path d="M 0 -14 L 14 0 L 0 14 L -14 0 Z" />
+        <text ref={lockLabel} className="lock-label" y="-20" textAnchor="middle">
           LOCK
         </text>
       </g>

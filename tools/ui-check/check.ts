@@ -415,27 +415,30 @@ const altitude = placed["altitude"]!;
 const heading = placed["heading"]!;
 const headingTicks = placed["headingTicks"]!;
 const throttle = placed["throttle"]!;
+// The instruments are one head-up box around the middle of whatever the
+// details panel leaves; they are placed against each other, not the window.
+const boxCentre = (speed.x + altitude.x) / 2;
 check(
-  speed.x < viewport.w * 0.25 && Math.abs(speed.y - viewport.y / 2) < viewport.y * 0.2,
-  `airspeed sits on the left at mid-height (${Math.round(speed.x)}, ${Math.round(speed.y)})`,
+  speed.x < altitude.x - 300 && Math.abs(speed.y - viewport.y / 2) < viewport.y * 0.1,
+  `airspeed sits left of centre at mid-height (${Math.round(speed.x)}, ${Math.round(speed.y)})`,
 );
 check(
-  altitude.x > viewport.w * 0.55 && Math.abs(altitude.y - viewport.y / 2) < viewport.y * 0.2,
-  `altitude sits on the right at mid-height (${Math.round(altitude.x)}, ${Math.round(altitude.y)})`,
+  Math.abs(altitude.y - speed.y) < 4,
+  `altitude sits level with it on the right (${Math.round(altitude.x)}, ${Math.round(altitude.y)})`,
 );
 check(
-  Math.abs(heading.x - viewport.w / 2) < viewport.w * 0.12 && heading.y < viewport.y * 0.25,
-  `heading sits across the top centre (${Math.round(heading.x)}, ${Math.round(heading.y)})`,
+  Math.abs(heading.x - boxCentre) < 30 && heading.y > viewport.y * 0.6,
+  `heading sits across the bottom of the box (${Math.round(heading.x)}, ${Math.round(heading.y)})`,
 );
 // Only the box above it was ever measured, so a version shipped with the whole
 // compass rose translated half a screen right and every assertion still passed.
 check(
-  Math.abs(headingTicks.x - viewport.w / 2) < viewport.w * 0.06 && headingTicks.w > 120,
-  `heading scale is centred under its box and on screen (${Math.round(headingTicks.x)}, ${Math.round(headingTicks.w)} px)`,
+  Math.abs(headingTicks.x - heading.x) < 20 && headingTicks.w > 120,
+  `heading scale is centred on its box (${Math.round(headingTicks.x)}, ${Math.round(headingTicks.w)} px)`,
 );
 check(
-  throttle.x < viewport.w * 0.3 && throttle.y > viewport.y * 0.7,
-  `throttle sits bottom-left (${Math.round(throttle.x)}, ${Math.round(throttle.y)})`,
+  throttle.x > boxCentre && throttle.y > viewport.y * 0.6,
+  `engine readout sits in the lower right of the box (${Math.round(throttle.x)}, ${Math.round(throttle.y)})`,
 );
 check(
   (await page.locator(".conformal").getAttribute("visibility")) === "hidden",

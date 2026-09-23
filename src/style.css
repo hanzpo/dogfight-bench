@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=B612+Mono:wght@400;700&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   --bg: #0b0d10;
@@ -260,93 +260,75 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .scope input { width: auto; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); }
 .scope span span { display: block; font-size: 11px; }
 
-.flight-display {
+/* ---------------------------------------------------------------- head-up display
+
+   Drawn as a head-up display is: one colour of light, thin strokes, and a
+   typeface made for cockpit screens. Nothing is filled; the only thing behind
+   the symbology is a faint dark halo, so it stays legible against a bright
+   sky without becoming a panel. Amber is kept for what needs acting on. */
+
+.flight-display, .tactical {
   position: fixed; inset: 0; width: 100%; height: 100%;
   z-index: 2; pointer-events: none;
-  --hud: #6bff9e;
-  --ab: #ffb347;
+  --hud: #9cff8f;
+  --hud-dim: #9cff8fa6;
+  --caution: #ffc24d;
   color: var(--hud);
-  font: 12px "JetBrains Mono"; letter-spacing: .06em;
 }
-.flight-display text { fill: var(--hud); font: 11px "JetBrains Mono"; letter-spacing: .06em; }
-.flight-display line, .flight-display path, .flight-display rect, .flight-display circle { vector-effect: non-scaling-stroke; }
-
-.flight-display > g { filter: drop-shadow(0 0 3px #0b3d1f) drop-shadow(0 0 1px #000c); }
-
-.tape-ticks line { stroke: var(--hud); stroke-width: 1.2; opacity: .75; }
-.tape-ticks text { font-size: 10px; opacity: .85; }
-.tape-box path, .tape-box rect { fill: #02150acc; stroke: var(--hud); stroke-width: 1.3; }
-.tape-box text { font: 600 17px "Barlow Condensed"; letter-spacing: .06em; fill: #eafff1; }
-.tape-caption { font-size: 9px; letter-spacing: .2em; opacity: .7; }
-.tape-sub { font-size: 10px; opacity: .9; }
-
-.heading-caret { fill: var(--hud); }
-
-.throttle-track { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
-.throttle-fill { opacity: .8; }
-
-.control-box { fill: #02150a99; stroke: var(--hud); stroke-width: 1.1; }
-.control-cross { stroke: var(--hud); stroke-width: .8; opacity: .35; }
-.control-dot { fill: var(--hud); }
-.control-rudder { fill: var(--hud); opacity: .85; }
-.stores-value { font: 600 19px "Barlow Condensed"; letter-spacing: .05em; fill: #eafff1; }
-
-.seeker-state { font-weight: 600; }
-.rwr-scope { fill: #02150a99; stroke: var(--hud); stroke-width: 1.2; }
-.rwr-ring { fill: none; stroke: var(--hud); stroke-width: .8; stroke-dasharray: 2 4; opacity: .5; }
-.rwr-ownship { fill: none; stroke: var(--hud); stroke-width: 1.2; }
-.flight-display .rwr-radar text { font: 600 11px "Barlow Condensed"; fill: #eafff1; }
-.rwr-track { fill: none; stroke: #ffd98a; stroke-width: 1.2; }
-.rwr-missile path { fill: #ff5a4a; stroke: none; }
-.flight-display .rwr-missile text { font: 700 9px "Barlow Condensed"; fill: #1a0503; }
-.rwr-missile { animation: pulse .35s steps(2) infinite; }
-.flight-display .missile-warning-title { font: 700 22px "Barlow Condensed"; letter-spacing: .28em; fill: #ff5a4a; }
-.flight-display .missile-warning-detail { font-size: 11px; fill: #ffb0a6; }
-.missile-warning { animation: pulse .5s steps(2) infinite; }
-
-.conformal line { stroke: var(--hud); stroke-width: 1.6; }
-.conformal .horizon { stroke-width: 2.1; }
-.conformal .rung-label { font-size: 10px; }
-.fpm circle { fill: none; stroke: var(--hud); stroke-width: 2; }
-.fpm line { stroke-width: 2; }
-.aoa-bracket path { fill: none; stroke: var(--ab); stroke-width: 2.2; }
-
-.tactical {
-  position: fixed; inset: 0; width: 100%; height: 100%;
-  z-index: 2; pointer-events: none;
-  --hud: #6bff9e;
-  --shoot: #b9ff6b;
+.flight-display text, .tactical text {
+  fill: var(--hud); font: 400 12px "B612 Mono", "JetBrains Mono", monospace; letter-spacing: .02em;
 }
-.tactical text { font: 9px "JetBrains Mono"; letter-spacing: .12em; fill: var(--hud); }
+.flight-display line, .flight-display path, .flight-display rect, .flight-display circle,
+.tactical line, .tactical path, .tactical rect, .tactical circle { vector-effect: non-scaling-stroke; }
+.flight-display > g, .tactical > * { filter: drop-shadow(0 0 1px #000c) drop-shadow(0 0 3px #0006); }
 
-.reticle { stroke: var(--hud); stroke-width: 1.4; fill: none; filter: drop-shadow(0 0 3px #0009); }
-.reticle circle { stroke: inherit; }
-.reticle .pip { fill: var(--hud); stroke: none; }
+.tape-ticks line { stroke: var(--hud); stroke-width: 1; }
+.flight-display .tape-ticks text { font-size: 10.5px; fill: var(--hud-dim); }
+.tape-box rect, .tape-box path { fill: none; stroke: var(--hud); stroke-width: 1; }
+.flight-display .tape-box text { font-size: 15px; font-weight: 700; }
+.flight-display .hud-sub { font-size: 11.5px; }
+.flight-display .hud-caution { fill: var(--caution); }
+.heading-caret { fill: none; stroke: var(--hud); stroke-width: 1; }
 
-.target-box { filter: drop-shadow(0 0 3px #000a); }
-.target-box rect { fill: none; stroke: #ffd98a; stroke-width: 1.4; }
-.target-box text { fill: #ffd98a; }
+.control-indicator { opacity: .8; }
+.throttle-track, .control-box { fill: none; stroke: var(--hud-dim); stroke-width: 1; }
+.throttle-fill { fill: var(--hud); }
+.control-cross { stroke: var(--hud-dim); stroke-width: .6; }
+.control-dot, .control-rudder { fill: var(--hud); }
 
-.lead-line { stroke: #ffd98a; stroke-width: 1; stroke-dasharray: 3 4; opacity: .75; }
-
-.bandit-arrow path { fill: #ffd98a; filter: drop-shadow(0 0 4px #000a); }
-
-.shoot-cue text {
-  fill: var(--shoot); font: 600 15px "Barlow Condensed"; letter-spacing: .3em;
-  paint-order: stroke; stroke: #06140caa; stroke-width: 3px;
-  text-anchor: middle;
-}
+.rwr-scope { fill: none; stroke: var(--hud-dim); stroke-width: 1; }
+.rwr-ring { fill: none; stroke: var(--hud-dim); stroke-width: .6; stroke-dasharray: 2 3; }
+.rwr-ownship { fill: none; stroke: var(--hud-dim); stroke-width: 1; }
+.flight-display .rwr-radar text { font-size: 10px; font-weight: 700; }
+.rwr-track { fill: none; stroke: var(--hud); stroke-width: 1; }
+.flight-display .rwr-missile text { font-size: 11px; font-weight: 700; fill: var(--caution); }
+.rwr-missile { animation: blink .5s steps(2) infinite; }
+.flight-display .missile-warning-title { font-size: 13px; font-weight: 700; letter-spacing: .12em; fill: var(--caution); }
+.missile-warning { animation: blink .6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .35; }
 }
-.shoot-cue { animation: pulse .7s ease-in-out infinite; }
 
-.seeker-circle { fill: none; stroke: var(--hud); stroke-width: 1.3; stroke-dasharray: 4 5; opacity: .75; }
-.seeker-circle.growl { stroke-dasharray: none; opacity: 1; }
-.lock-diamond path { fill: none; stroke: var(--shoot); stroke-width: 1.8; filter: drop-shadow(0 0 3px #000a); }
-.lock-label { fill: var(--hud); font: 600 12px "Barlow Condensed"; letter-spacing: .22em; }
-.lock-label.in-range { fill: var(--shoot); animation: pulse .7s ease-in-out infinite; }
+.conformal line { stroke: var(--hud); stroke-width: 1.2; }
+.conformal .horizon { stroke-width: 1.4; }
+.flight-display .conformal .rung-label { font-size: 11px; }
+.fpm circle, .fpm line { fill: none; stroke: var(--hud); stroke-width: 1.4; }
+.aoa-bracket path { fill: none; stroke: var(--hud); stroke-width: 1.4; }
+
+.reticle { stroke: var(--hud); stroke-width: 1.1; fill: none; }
+.reticle circle { stroke: inherit; }
+.reticle .pip { fill: var(--hud); stroke: none; }
+.target-box rect { fill: none; stroke: var(--hud); stroke-width: 1; }
+.tactical .target-box text { font-size: 11px; fill: var(--hud-dim); }
+.bandit-arrow path { fill: none; stroke: var(--hud); stroke-width: 1.4; }
+.tactical .shoot-cue text { font-size: 13px; font-weight: 700; letter-spacing: .18em; text-anchor: middle; }
+.seeker-circle { fill: none; stroke: var(--hud-dim); stroke-width: 1; stroke-dasharray: 3 4; }
+.seeker-circle.growl { stroke: var(--hud); stroke-dasharray: none; }
+.lock-diamond path { fill: none; stroke: var(--hud); stroke-width: 1.2; }
+.tactical .lock-label { font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+.tactical .lock-label.in-range { animation: blink .6s steps(2) infinite; }
 
 .details {
   position: fixed; top: var(--details-top); right: 16px; z-index: 3; width: 286px;
@@ -703,17 +685,24 @@ kbd {
 
 /* ---------------------------------------------------------------- in flight */
 
-.hud-button {
-  position: fixed; z-index: 4;
-  min-height: 40px; padding: 0 10px 0 12px; gap: 10px;
-  background: #0b0d10a6; border: 1px solid var(--line); border-radius: var(--radius);
-  color: var(--text); font-size: 13px; font-weight: 500;
-  backdrop-filter: blur(10px);
+.hud-menu {
+  position: fixed; z-index: 4; top: 12px; left: 12px;
+  width: 40px; min-height: 40px; padding: 0; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: #e6f5e6; font-size: 22px;
+  filter: drop-shadow(0 0 2px #000c); transition: opacity .4s;
 }
-.hud-button:hover:not(:disabled) { background: #14171cd9; border-color: var(--line-strong); }
-.hud-button svg { font-size: 18px; }
-.game-menu-button { top: 16px; left: 16px; }
-.game-view-button { top: 16px; right: 16px; padding: 0 14px 0 8px; }
+.hud-menu:hover:not(:disabled) { background: #0b0d1066; border: none; }
+.hud-menu.idle { opacity: 0; }
+.hud-menu:focus-visible { opacity: 1; }
+
+.view-toast {
+  position: fixed; z-index: 3; top: 16%; left: 50%; transform: translateX(-50%);
+  pointer-events: none;
+  font: 700 13px "B612 Mono", monospace; letter-spacing: .2em; text-transform: uppercase;
+  color: #9cff8f; text-shadow: 0 0 1px #000, 0 0 4px #000a;
+  animation: toast 1.6s ease forwards;
+}
+@keyframes toast { 0%, 60% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
 
 .capture-hint {
   position: fixed; z-index: 4; top: 28%; left: 50%; transform: translateX(-50%);
@@ -734,20 +723,6 @@ kbd {
 .results .dialog-title { font-size: 40px; }
 .results-matchup { margin: 18px 0 0; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 
-.matchup {
-  position: fixed; z-index: 3; top: 22%; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: baseline; gap: 14px; pointer-events: none;
-  font-size: clamp(24px, 3.4vw, 40px); font-weight: 800; font-stretch: 112%; letter-spacing: -.01em;
-  color: #f6f3ec; text-shadow: 0 2px 18px #000c;
-  animation: matchup 3.8s ease forwards;
-}
-.matchup-vs { font-size: .5em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
-.matchup-enemy { color: #ffb4a8; }
-@keyframes matchup {
-  0% { opacity: 0; transform: translate(-50%, 8px); }
-  12%, 70% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, -4px); }
-}
 .results-won .dialog-title { color: var(--good); }
 .results-lost .dialog-title { color: var(--danger); }
 .results-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0 0; }
@@ -763,7 +738,6 @@ kbd {
   .home-shade { background: linear-gradient(0deg, #0b0d10f2 30%, #0b0d10b3 100%); }
   .results-stats { grid-template-columns: repeat(2, 1fr); }
   .dialog-panel { padding: 24px 20px 22px; }
-  .game-view-button span { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

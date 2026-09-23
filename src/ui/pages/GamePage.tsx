@@ -105,6 +105,23 @@ export function GamePage() {
   const [introOpen, setIntroOpen] = useState(() => !introSeen());
   const [menuOpen, setMenuOpen] = useState(false);
   const [watching, setWatching] = useState<Watching>();
+  // The menu button is there for a mouse, and out of sight while nobody is moving one.
+  const [pointerIdle, setPointerIdle] = useState(true);
+  useEffect(() => {
+    let timer = 0;
+    const moved = () => {
+      // A captured mouse is the stick, not a pointer: its movement is flying.
+      if (document.pointerLockElement) return;
+      setPointerIdle(false);
+      clearTimeout(timer);
+      timer = window.setTimeout(() => setPointerIdle(true), 2_500);
+    };
+    addEventListener("pointermove", moved);
+    return () => {
+      removeEventListener("pointermove", moved);
+      clearTimeout(timer);
+    };
+  }, []);
   const finished = match.state?.finished === true;
   const holding = introOpen || menuOpen || watching !== undefined;
 
@@ -210,8 +227,6 @@ export function GamePage() {
   const outcome = finished && match.state ? outcomeOf(match.state) : undefined;
   const jets = match.state?.aircraft.map((aircraft) => airframe(aircraft.airframe).name) ?? [];
   const matchup = jets.length === 2 ? `${jets[0]} vs ${jets[1]}` : "";
-  // The matchup, said once as the fight begins and then out of the way.
-  const announcing = !holding && !finished && (match.state?.time ?? 0) < 4;
   const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";
 
   if (watching) {
@@ -243,29 +258,18 @@ export function GamePage() {
       <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} detailsOpen={false} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} />
 
-      {announcing && matchup ? (
-        <div className="matchup" role="status">
-          <span>{jets[0]}</span>
-          <span className="matchup-vs">vs</span>
-          <span className="matchup-enemy">{jets[1]}</span>
-        </div>
-      ) : null}
-
-      <button className="hud-button game-menu-button" onClick={() => setMenuOpen(true)} aria-label="Pause menu">
-        <List weight="bold" aria-hidden />
-        <kbd aria-hidden>Esc</kbd>
-      </button>
-
       <button
-        className="hud-button game-view-button"
-        onClick={() =>
-          setView((current) => VIEWS[(VIEWS.findIndex((entry) => entry.value === current) + 1) % VIEWS.length]!.value)
-        }
-        aria-label={`Camera: ${viewLabel}. Change camera`}
+        className={`hud-menu${pointerIdle ? " idle" : ""}`}
+        onClick={() => setMenuOpen(true)}
+        aria-label="Pause menu (Esc)"
+        title="Menu (Esc)"
       >
-        <kbd aria-hidden>V</kbd>
-        <span aria-hidden>{viewLabel}</span>
+        <List aria-hidden />
       </button>
+
+      <div key={view} className="view-toast" role="status">
+        {viewLabel}
+      </div>
 
       {pointerFlying && match.canCapturePointer && !holding && !finished ? (
         <button className="capture-hint" onClick={() => void match.inputRef.current.requestPointerLock()}>
