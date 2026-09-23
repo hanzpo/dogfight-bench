@@ -14,6 +14,7 @@ import { OPEN_ACCOUNT_MENU } from "../components/AccountMenu";
 import { ModelKeysPanel } from "../components/ModelKeysPanel";
 import { useLiveMatch, type PilotChoice } from "../hooks/useLiveMatch";
 import { useRoster } from "../hooks/useRoster";
+import { useCockpitAudio } from "../hooks/useCockpitAudio";
 import { loadKey } from "../keys";
 import { CONTROL_SCHEMES, type ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
@@ -79,6 +80,8 @@ export function LivePage() {
   const [keysOpen, setKeysOpen] = useState(false);
   const [keyNonce, setKeyNonce] = useState(0);
   const followId = match.followRed ? "red-1" : "blue-1";
+  // Only in the human's own cockpit: a tone for somebody else's seeker is noise.
+  useCockpitAudio(match.liveStateRef, "blue-1", match.bluePilot === "human" && !match.followRed && !match.paused);
 
   const pilotOptions = useMemo(() => {
     void keyNonce;
