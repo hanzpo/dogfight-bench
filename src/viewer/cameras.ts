@@ -3,6 +3,7 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 import { clamp, radians } from "../math";
 import { terrainHeight } from "../sim/terrain";
 import type { ViewerAircraft } from "./types";
+import { airframe } from "../sim/airframes";
 
 export type ViewMode = "free" | "chase" | "track" | "arena" | "cockpit";
 
@@ -12,8 +13,6 @@ const BODY_FORWARD = new THREE.Vector3(0, 0, 1);
 const BODY_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-/** Pilot's eye in body axes: up out of the seat, forward under the canopy. */
-const COCKPIT_EYE = new THREE.Vector3(0, 1.05, 3.3);
 /** three cameras look down -z, the aircraft's nose is +z, so turn them around. */
 const NOSE_FORWARD = new THREE.Quaternion().setFromAxisAngle(BODY_UP, Math.PI);
 
@@ -266,8 +265,10 @@ export class CameraDirector {
 
   private placeCockpit(aircraft: ViewerAircraft): void {
     const orientation = new THREE.Quaternion().fromArray(aircraft.orientation);
+    // The pilot's eye in body axes, up out of the seat and forward under the canopy.
+    const [right, up, nose] = airframe(aircraft.airframe).cockpitEye;
     this.camera.position
-      .copy(COCKPIT_EYE)
+      .set(-right, up, nose)
       .applyQuaternion(orientation)
       .add(new THREE.Vector3().fromArray(aircraft.position));
     this.camera.quaternion.copy(orientation).multiply(NOSE_FORWARD);

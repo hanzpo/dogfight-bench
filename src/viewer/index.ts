@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { MISSILE, NOZZLE } from "../sim/config";
+import { airframe, type Airframe, type AirframeId } from "../sim/airframes";
+import { buildPlaceholder } from "./placeholder";
 import { AIM9_LENGTH_M, aim9Materials, createAim9 } from "./aim9";
 import {
   SEA_LEVEL_M,
@@ -45,6 +46,7 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       team: aircraft.team,
       position: aircraft.position.toArray() as [number, number, number],
       orientation: aircraft.orientation.toArray() as [number, number, number, number],
+      airframe: aircraft.airframe,
       alive: aircraft.alive,
       afterburner: aircraft.engine.afterburner,
       integrity: aircraft.damage.integrity,
@@ -73,7 +75,12 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
 
 /** Rails are emptied in order, so the first ones fired are the first ones bare. */
 export function railsLoaded(stations: number, remaining: number): boolean[] {
-  return RAIL_MOUNTS.map((_mount, rail) => rail < stations && rail >= stations - remaining);
+  return Array.from({ length: stations }, (_unused, rail) => rail >= stations - remaining);
+}
+
+/** A point in body axes (right, up, nose) as a point in model space, where +x is left. */
+function modelPoint([right, up, nose]: readonly [number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(-right, up, nose);
 }
 
 export function burstsFrom(events: MatchState["events"]): ViewerBurst[] {
@@ -141,16 +148,12 @@ function pinnedRenderScale(): number | undefined {
 
 const PLUME_LENGTH_M = 7;
 
-/** Where each rail's missile sits on the model: sim right is model -x. */
-const RAIL_MOUNTS = MISSILE.rails.map(([right, up, nose]) => new THREE.Vector3(-right, up, nose));
 /** Smoke is laid by distance, not by frame, so a slow frame rate leaves no gaps. */
 const SMOKE_SPACING_M = 9;
 const MAX_PUFFS_PER_FRAME = 240;
 const FLARE_SMOKE_EVERY_S = 0.07;
 /** Past this many live sprites a new puff is skipped rather than added. */
 const MAX_EFFECTS = 2_400;
-
-const PLUME_ANCHOR = new THREE.Vector3(0, NOZZLE.centreYM, NOZZLE.exitZM);
 
 export class DogfightViewer {
   readonly renderer: THREE.WebGLRenderer;
@@ -164,7 +167,7 @@ export class DogfightViewer {
   private readonly tracerLines: THREE.LineSegments;
   private readonly effectGroup = new THREE.Group();
   private sky?: THREE.Mesh;
-  private readonly plumes = new Map<string, THREE.Mesh>();
+  private readonly plumes = new Map<string, THREE.Mesh[]>();
   private readonly effects: Array<{
     mesh: THREE.Sprite;
     born: number;
@@ -179,7 +182,9 @@ export class DogfightViewer {
   private readonly missileMeshes: THREE.Group[] = [];
   private readonly flareSprites: THREE.Sprite[] = [];
   private readonly drawnBursts = new Set<string>();
-  private modelTemplate?: THREE.Object3D;
+  /** Loaded models, and placeholders for airframes that have none yet. */
+  private readonly models = new Map<AirframeId, THREE.Object3D>();
+  private readonly loading = new Set<AirframeId>();
   private followId = "blue-1";
   private readonly tracerMaterial = new THREE.LineBasicMaterial({
     color: 0xffd06a,
@@ -296,9 +301,31 @@ export class DogfightViewer {
     canvas.addEventListener("webglcontextrestored", this.onContextRestored);
   }
 
-  async loadAircraft(url = "/F16_Clean.glb"): Promise<void> {
-    const gltf = await new GLTFLoader().loadAsync(url);
-    this.modelTemplate = extractAirframe(gltf.scene);
+  /** The F-16's model, which everything waits for; the rest arrive as they are asked for. */
+  async loadAircraft(): Promise<void> {
+    await this.loadModel(airframe("f16c"));
+  }
+
+  /**
+   * A real model where the airframe names one, a placeholder where it does
+   * not, and a placeholder too when the file will not load -- a missing
+   * model is a missing model, not a jet nobody can see.
+   */
+  private async loadModel(frame: Airframe): Promise<void> {
+    if (this.models.has(frame.id) || this.loading.has(frame.id)) return;
+    if (!frame.model) {
+      this.models.set(frame.id, buildPlaceholder(frame));
+      return;
+    }
+    this.loading.add(frame.id);
+    try {
+      const gltf = await new GLTFLoader().loadAsync(frame.model);
+      this.models.set(frame.id, extractAirframe(gltf.scene));
+    } catch {
+      this.models.set(frame.id, buildPlaceholder(frame));
+    } finally {
+      this.loading.delete(frame.id);
+    }
   }
 
   setFollow(id: string): void {
@@ -479,10 +506,22 @@ export class DogfightViewer {
   }
 
   private ensureAircraft(snapshot: ViewerSnapshot): void {
-    if (!this.modelTemplate) return;
     for (const aircraft of snapshot.aircraft) {
-      if (this.aircraftMeshes.has(aircraft.id)) continue;
-      const mesh = this.modelTemplate.clone(true);
+      const frame = airframe(aircraft.airframe);
+      const existing = this.aircraftMeshes.get(aircraft.id);
+      // A seat can change aeroplanes between matches without the viewer being rebuilt.
+      if (existing?.userData["airframe"] === frame.id) continue;
+      const template = this.models.get(frame.id);
+      if (!template) {
+        void this.loadModel(frame);
+        continue;
+      }
+      if (existing) {
+        this.scene.remove(existing);
+        this.aircraftMeshes.delete(aircraft.id);
+      }
+      const mesh = template.clone(true);
+      mesh.userData["airframe"] = frame.id;
       mesh.name = aircraft.id;
       const tint = aircraft.team === "red" ? new THREE.Color(1.3, 0.62, 0.58) : new THREE.Color(0.66, 0.84, 1.28);
       const glow = aircraft.team === "red" ? 0x2a0806 : 0x04162c;
@@ -496,10 +535,10 @@ export class DogfightViewer {
         material.emissive = new THREE.Color(glow);
         object.material = material;
       });
-      RAIL_MOUNTS.forEach((mount, rail) => {
+      frame.rails.forEach((mount, rail) => {
         const carried = this.aim9Template.clone(true);
         carried.name = `rail-${rail}`;
-        carried.position.copy(mount);
+        carried.position.copy(modelPoint(mount));
         carried.visible = false;
         mesh.add(carried);
       });
@@ -518,7 +557,7 @@ export class DogfightViewer {
       mesh.position.fromArray(aircraft.position);
       mesh.quaternion.fromArray(aircraft.orientation);
       mesh.visible = aircraft.alive;
-      RAIL_MOUNTS.forEach((_mount, rail) => {
+      airframe(aircraft.airframe).rails.forEach((_mount, rail) => {
         const carried = mesh.getObjectByName(`rail-${rail}`);
         if (carried) carried.visible = aircraft.rails?.[rail] === true;
       });
@@ -567,26 +606,32 @@ export class DogfightViewer {
   }
 
   private updatePlume(aircraft: ViewerAircraft): void {
-    let plume = this.plumes.get(aircraft.id);
-    if (!plume) {
-      const geometry = new THREE.ConeGeometry(NOZZLE.exitRadiusM, PLUME_LENGTH_M, 12, 1, true);
-      geometry.rotateX(-Math.PI / 2);
-      geometry.translate(0, 0, -PLUME_LENGTH_M / 2);
-      plume = new THREE.Mesh(geometry, this.plumeMaterial.clone());
-      this.effectGroup.add(plume);
-      this.plumes.set(aircraft.id, plume);
+    const frame = airframe(aircraft.airframe);
+    let plumes = this.plumes.get(aircraft.id);
+    if (!plumes || plumes.length !== frame.nozzles.length || plumes[0]?.userData["airframe"] !== frame.id) {
+      for (const old of plumes ?? []) this.effectGroup.remove(old);
+      plumes = frame.nozzles.map(() => {
+        const geometry = new THREE.ConeGeometry(frame.nozzleRadiusM, PLUME_LENGTH_M, 12, 1, true);
+        geometry.rotateX(-Math.PI / 2);
+        geometry.translate(0, 0, -PLUME_LENGTH_M / 2);
+        const plume = new THREE.Mesh(geometry, this.plumeMaterial.clone());
+        plume.userData["airframe"] = frame.id;
+        this.effectGroup.add(plume);
+        return plume;
+      });
+      this.plumes.set(aircraft.id, plumes);
     }
 
     const lit = aircraft.alive && aircraft.afterburner === true;
-    plume.visible = lit;
-    if (!lit) return;
-    plume.quaternion.fromArray(aircraft.orientation);
-    plume.position
-      .fromArray(aircraft.position)
-      .add(PLUME_ANCHOR.clone().applyQuaternion(plume.quaternion));
-    const material = plume.material as THREE.MeshBasicMaterial;
-    material.opacity = 0.42 + Math.random() * 0.22;
-    plume.scale.setZ(0.85 + Math.random() * 0.3);
+    plumes.forEach((plume, index) => {
+      plume.visible = lit;
+      if (!lit) return;
+      plume.quaternion.fromArray(aircraft.orientation);
+      plume.position.fromArray(aircraft.position).add(modelPoint(frame.nozzles[index]!).applyQuaternion(plume.quaternion));
+      const material = plume.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.42 + Math.random() * 0.22;
+      plume.scale.setZ(0.85 + Math.random() * 0.3);
+    });
   }
 
   private spawnEffects(snapshot: ViewerSnapshot): void {
