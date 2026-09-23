@@ -30,6 +30,8 @@ export class EnergyFighterAgent implements AgentAdapter {
   private breakHeldUntilS = 0;
   private lastLaunchS = -Infinity;
   private lastFlaresS = -Infinity;
+  /** One pair per missile: a pilot who empties the dispenser at every shot has none for the next. */
+  private readonly flaredAgainst = new Set<string>();
 
   constructor(public readonly id: string) {
     this.info = SCRIPTED_INFO("energy-fighter");
@@ -40,6 +42,7 @@ export class EnergyFighterAgent implements AgentAdapter {
     this.breakHeldUntilS = 0;
     this.lastLaunchS = -Infinity;
     this.lastFlaresS = -Infinity;
+    this.flaredAgainst.clear();
   }
 
   private chooseBreak(observation: AgentObservation): "break_left" | "break_right" {
@@ -149,8 +152,15 @@ export class EnergyFighterAgent implements AgentAdapter {
 
     const now = observation.simTimeS;
     const flares =
-      missileClose && (inbound.timeToGoS ?? Infinity) < 3 && own.flaresRemaining > 0 && now - this.lastFlaresS >= 1.2;
-    if (flares) this.lastFlaresS = now;
+      missileClose &&
+      (inbound.timeToGoS ?? Infinity) < 2.5 &&
+      !this.flaredAgainst.has(inbound.sourceId) &&
+      own.flaresRemaining > 0 &&
+      now - this.lastFlaresS >= 0.5;
+    if (flares) {
+      this.lastFlaresS = now;
+      this.flaredAgainst.add(inbound.sourceId);
+    }
 
     const missile = relative.missileSolution;
     const gunsWillDo = gunSolution.predictedMissM < 150 && relative.rangeM < 1_200;
