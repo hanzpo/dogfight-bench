@@ -7,7 +7,7 @@ import { createFlcsState } from "../../sim/flcs";
 import { heightAboveGround } from "../../sim/terrain";
 import { SEEKER_TONES, type ReplayFile, type ReplayFrame } from "../../sim/replay";
 import type { AircraftState, FlareState, MatchState, MissileState } from "../../sim/types";
-import { burstsFrom, type ViewerSnapshot } from "../../viewer";
+import { burstsFrom, railsLoaded, type ViewerSnapshot } from "../../viewer";
 import { radians } from "../../math";
 
 const UI_REFRESH_MS = 100;
@@ -89,6 +89,7 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
         alive: aircraft.alive,
         integrity: aircraft.health,
         afterburner: (aircraft.s?.[4] ?? 0) === 1,
+        rails: railsLoaded(aircraft.m ? MISSILE.carried : 0, aircraft.m?.[0] ?? 0),
       };
     }),
     tracers: (current.projectiles ?? []).map((segment) => ({

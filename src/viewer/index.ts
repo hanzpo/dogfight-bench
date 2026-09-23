@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { NOZZLE } from "../sim/config";
+import { MISSILE, NOZZLE } from "../sim/config";
+import { AIM9_LENGTH_M, aim9Materials, createAim9 } from "./aim9";
 import {
   SEA_LEVEL_M,
   TERRAIN_CHUNKS,
@@ -47,6 +48,7 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       alive: aircraft.alive,
       afterburner: aircraft.engine.afterburner,
       integrity: aircraft.damage.integrity,
+      rails: railsLoaded(aircraft.stores.missileStations, aircraft.stores.missiles),
     })),
     tracers: state.projectiles.slice(-MAX_TRACERS).map((shot) => {
       const speed = shot.velocity.length();
@@ -67,6 +69,11 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
     flares: state.flares.map((flare) => flare.position.toArray() as [number, number, number]),
     bursts: burstsFrom(state.events.slice(sinceEventIndex)),
   };
+}
+
+/** Rails are emptied in order, so the first ones fired are the first ones bare. */
+export function railsLoaded(stations: number, remaining: number): boolean[] {
+  return RAIL_MOUNTS.map((_mount, rail) => rail < stations && rail >= stations - remaining);
 }
 
 export function burstsFrom(events: MatchState["events"]): ViewerBurst[] {
@@ -134,8 +141,8 @@ function pinnedRenderScale(): number | undefined {
 
 const PLUME_LENGTH_M = 7;
 
-const MISSILE_LENGTH_M = 2.87;
-const MISSILE_RADIUS_M = 0.064;
+/** Where each rail's missile sits on the model: sim right is model -x. */
+const RAIL_MOUNTS = MISSILE.rails.map(([right, up, nose]) => new THREE.Vector3(-right, up, nose));
 /** Smoke is laid by distance, not by frame, so a slow frame rate leaves no gaps. */
 const SMOKE_SPACING_M = 9;
 const MAX_PUFFS_PER_FRAME = 240;
@@ -189,14 +196,8 @@ export class DogfightViewer {
     depthWrite: false,
   });
   private readonly puffTexture = makePuffTexture();
-  private readonly missileBodyGeometry = new THREE.CylinderGeometry(
-    MISSILE_RADIUS_M,
-    MISSILE_RADIUS_M,
-    MISSILE_LENGTH_M,
-    10,
-  ).rotateX(Math.PI / 2);
-  private readonly missileFinGeometry = new THREE.BoxGeometry(0.62, 0.02, 0.3);
-  private readonly missileMaterial = new THREE.MeshStandardMaterial({ color: 0xd9dbd6, roughness: 0.55, metalness: 0.2 });
+  private readonly aim9Materials = aim9Materials();
+  private readonly aim9Template = createAim9(this.aim9Materials);
   private readonly missileFlameMaterial = new THREE.SpriteMaterial({
     map: this.puffTexture,
     color: 0xffc27a,
@@ -495,6 +496,13 @@ export class DogfightViewer {
         material.emissive = new THREE.Color(glow);
         object.material = material;
       });
+      RAIL_MOUNTS.forEach((mount, rail) => {
+        const carried = this.aim9Template.clone(true);
+        carried.name = `rail-${rail}`;
+        carried.position.copy(mount);
+        carried.visible = false;
+        mesh.add(carried);
+      });
       this.aircraftMeshes.set(aircraft.id, mesh);
       this.scene.add(mesh);
     }
@@ -510,6 +518,10 @@ export class DogfightViewer {
       mesh.position.fromArray(aircraft.position);
       mesh.quaternion.fromArray(aircraft.orientation);
       mesh.visible = aircraft.alive;
+      RAIL_MOUNTS.forEach((_mount, rail) => {
+        const carried = mesh.getObjectByName(`rail-${rail}`);
+        if (carried) carried.visible = aircraft.rails?.[rail] === true;
+      });
       this.updatePlume(aircraft);
     }
     this.spawnEffects(snapshot);
@@ -621,18 +633,10 @@ export class DogfightViewer {
     let mesh = this.missileMeshes[index];
     if (mesh) return mesh;
     mesh = new THREE.Group();
-    mesh.add(new THREE.Mesh(this.missileBodyGeometry, this.missileMaterial));
-    for (const roll of [0, Math.PI / 2]) {
-      for (const along of [MISSILE_LENGTH_M * 0.42, -MISSILE_LENGTH_M * 0.42]) {
-        const fin = new THREE.Mesh(this.missileFinGeometry, this.missileMaterial);
-        fin.rotation.z = roll;
-        fin.position.z = along;
-        mesh.add(fin);
-      }
-    }
+    mesh.add(this.aim9Template.clone(true));
     const flame = new THREE.Sprite(this.missileFlameMaterial);
     flame.name = "flame";
-    flame.position.z = -MISSILE_LENGTH_M / 2 - 0.5;
+    flame.position.z = -AIM9_LENGTH_M / 2 - 0.5;
     flame.scale.setScalar(1.6);
     mesh.add(flame);
     this.scene.add(mesh);
@@ -858,9 +862,10 @@ export class DogfightViewer {
       (effect.mesh.material as THREE.Material).dispose();
     }
     this.effects.length = 0;
-    this.missileBodyGeometry.dispose();
-    this.missileFinGeometry.dispose();
-    this.missileMaterial.dispose();
+    this.aim9Template.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.geometry.dispose();
+    });
+    for (const material of Object.values(this.aim9Materials)) material.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

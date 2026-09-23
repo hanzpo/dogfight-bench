@@ -155,10 +155,14 @@ export const MISSILE = {
   maxFlightS: 40,
   minGuidedSpeedMps: 180,
   launchIntervalS: 1.0,
-  /** Wingtip rails, left then right, in body axes (right, up, nose). */
+  /**
+   * Wingtip rails, left then right, in body axes (right, up, nose): the
+   * centre of the missile, just outboard of the launcher rail on the model's
+   * wingtip, which runs from 2.3 to 3.5 m aft of the centre.
+   */
   rails: [
-    [-4.95, -0.05, -1.4],
-    [4.95, -0.05, -1.4],
+    [-4.95, -0.08, -1.9],
+    [4.95, -0.08, -1.9],
   ] as const,
 } as const;
 

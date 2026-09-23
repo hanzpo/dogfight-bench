@@ -6,6 +6,8 @@ export interface ViewerAircraft {
   alive: boolean;
   afterburner?: boolean;
   integrity?: number;
+  /** Which wingtip rails still have a missile on them. */
+  rails?: boolean[];
 }
 
 export interface ViewerTracer {
