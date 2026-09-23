@@ -1,4 +1,5 @@
 import type { Loadout } from "../sim/types";
+import { AIRFRAMES, AIRFRAME_IDS, type AirframeId } from "../sim/airframes";
 import type { ControlScheme } from "./input/pilot-input";
 import type { MatchSetup } from "./hooks/useLiveMatch";
 
@@ -17,6 +18,20 @@ export const OPPONENTS: readonly Choice<Opponent>[] = [
 export const LOADOUTS: readonly Choice<Loadout>[] = [
   { value: "guns", label: "Guns only" },
   { value: "fox2", label: "Guns + missiles" },
+];
+
+export const AIRCRAFT: readonly (Choice<AirframeId> & { role: string })[] = AIRFRAME_IDS.map((id) => ({
+  value: id,
+  label: AIRFRAMES[id].name,
+  role: AIRFRAMES[id].role,
+}));
+
+export type EnemyAircraft = AirframeId | "same" | "random";
+
+export const ENEMY_AIRCRAFT: readonly Choice<EnemyAircraft>[] = [
+  { value: "same", label: "Same as mine" },
+  { value: "random", label: "Random" },
+  ...AIRCRAFT.map(({ value, label }) => ({ value, label })),
 ];
 
 export const SCHEMES: readonly Choice<ControlScheme>[] = [
@@ -67,12 +82,20 @@ export const GAME_KEYS: KeyBinding[] = [
 const STORAGE_KEY = "dogfight.setup";
 
 export interface Setup {
+  aircraft: AirframeId;
+  enemyAircraft: EnemyAircraft;
   opponent: Opponent;
   weapons: Loadout;
   scheme: ControlScheme;
 }
 
-export const DEFAULT_SETUP: Setup = { opponent: "basic-pursuit", weapons: "guns", scheme: "keyboard" };
+export const DEFAULT_SETUP: Setup = {
+  aircraft: "f16c",
+  enemyAircraft: "same",
+  opponent: "basic-pursuit",
+  weapons: "guns",
+  scheme: "keyboard",
+};
 
 function pick<T extends string>(choices: readonly Choice<T>[], value: unknown, fallback: T): T {
   return choices.some((choice) => choice.value === value) ? (value as T) : fallback;
@@ -81,6 +104,8 @@ function pick<T extends string>(choices: readonly Choice<T>[], value: unknown, f
 /** Whatever was stored or typed into the address bar, made into something flyable. */
 export function readSetup(source: Record<string, unknown>): Setup {
   return {
+    aircraft: pick(AIRCRAFT, source["jet"] ?? source["aircraft"], DEFAULT_SETUP.aircraft),
+    enemyAircraft: pick(ENEMY_AIRCRAFT, source["enemy"] ?? source["enemyAircraft"], DEFAULT_SETUP.enemyAircraft),
     opponent: pick(OPPONENTS, source["opponent"], DEFAULT_SETUP.opponent),
     weapons: pick(LOADOUTS, source["weapons"], DEFAULT_SETUP.weapons),
     scheme: pick(SCHEMES, source["controls"] ?? source["scheme"], DEFAULT_SETUP.scheme),
@@ -91,6 +116,8 @@ export function setupFromSearch(search: string): Setup {
   const params = new URLSearchParams(search);
   const stored = loadSetup();
   return readSetup({
+    jet: params.get("jet") ?? stored.aircraft,
+    enemy: params.get("enemy") ?? stored.enemyAircraft,
     opponent: params.get("opponent") ?? stored.opponent,
     weapons: params.get("weapons") ?? stored.weapons,
     controls: params.get("controls") ?? stored.scheme,
@@ -98,7 +125,13 @@ export function setupFromSearch(search: string): Setup {
 }
 
 export function setupToSearch(setup: Setup): string {
-  return `?${new URLSearchParams({ opponent: setup.opponent, weapons: setup.weapons, controls: setup.scheme })}`;
+  return `?${new URLSearchParams({
+    jet: setup.aircraft,
+    enemy: setup.enemyAircraft,
+    opponent: setup.opponent,
+    weapons: setup.weapons,
+    controls: setup.scheme,
+  })}`;
 }
 
 export function loadSetup(): Setup {
@@ -118,7 +151,13 @@ export function saveSetup(setup: Setup): void {
 }
 
 export function toMatchSetup(setup: Setup): MatchSetup {
-  return { opponent: setup.opponent, weapons: setup.weapons, scheme: setup.scheme };
+  return {
+    opponent: setup.opponent,
+    weapons: setup.weapons,
+    scheme: setup.scheme,
+    aircraft: setup.aircraft,
+    enemyAircraft: setup.enemyAircraft,
+  };
 }
 
 const INTRO_KEY = "dogfight.intro-seen";

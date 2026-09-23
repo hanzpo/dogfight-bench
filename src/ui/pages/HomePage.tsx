@@ -4,12 +4,15 @@ import { ArrowRight } from "@phosphor-icons/react";
 import { AttractBackdrop } from "../components/AttractBackdrop";
 import { ChoiceGroup } from "../components/ChoiceGroup";
 import {
+  AIRCRAFT,
+  ENEMY_AIRCRAFT,
   LOADOUTS,
   OPPONENTS,
   SCHEMES,
   loadSetup,
   saveSetup,
   setupToSearch,
+  type EnemyAircraft,
   type Setup,
 } from "../setup";
 
@@ -32,7 +35,7 @@ export function HomePage() {
           <h1 id="home-title" className="home-title">
             Dogfight
           </h1>
-          <p className="home-lede">One-on-one F-16 dogfights in your browser.</p>
+          <p className="home-lede">One-on-one jet dogfights in your browser.</p>
         </section>
 
         <form
@@ -43,7 +46,30 @@ export function HomePage() {
             navigate(`/fly${setupToSearch(setup)}`);
           }}
         >
-          <ChoiceGroup legend="Opponent" name="opponent" choices={OPPONENTS} value={setup.opponent} onChange={update("opponent")} />
+          <ChoiceGroup
+            legend="Aircraft"
+            name="aircraft"
+            choices={AIRCRAFT}
+            value={setup.aircraft}
+            onChange={update("aircraft")}
+            caption={AIRCRAFT.find((choice) => choice.value === setup.aircraft)?.role}
+          />
+          <ChoiceGroup legend="Opponent" name="opponent" choices={OPPONENTS} value={setup.opponent} onChange={update("opponent")}>
+            <label className="choice-select">
+              <span className="visually-hidden">Enemy aircraft</span>
+              <select
+                id="enemy-aircraft"
+                value={setup.enemyAircraft}
+                onChange={(changed) => update("enemyAircraft")(changed.target.value as EnemyAircraft)}
+              >
+                {ENEMY_AIRCRAFT.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.value === "same" || choice.value === "random" ? choice.label : `vs ${choice.label}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </ChoiceGroup>
           <ChoiceGroup legend="Weapons" name="weapons" choices={LOADOUTS} value={setup.weapons} onChange={update("weapons")} />
           <ChoiceGroup legend="Controls" name="controls" choices={SCHEMES} value={setup.scheme} onChange={update("scheme")} />
 

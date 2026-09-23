@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { MISSILE } from "../../sim/config";
+import { airframe, missileSpec } from "../../sim/airframes";
 import { bodyAxes } from "../../sim/flight-model";
 import { bulletImpactPoint, hitThresholdM, solveGunsight, wouldConnect } from "../../sim/gunsight";
 import { missileLaunchZone } from "../../sim/rwr";
@@ -64,6 +64,8 @@ export function TacticalOverlay({
       }
 
       const range = own.position.distanceTo(bandit.position);
+      const jet = airframe(own.airframe);
+      const gun = jet.gun;
       const solution = solveGunsight({
         position: own.position,
         velocity: own.velocity,
@@ -71,9 +73,10 @@ export function TacticalOverlay({
         targetPosition: bandit.position,
         targetVelocity: bandit.velocity,
         targetAcceleration: bandit.acceleration,
+        gun,
       });
 
-      const impact = bulletImpactPoint(own.position, own.velocity, own.orientation, range);
+      const impact = bulletImpactPoint(own.position, own.velocity, own.orientation, range, gun);
       const aim = viewer.project(impact);
       const aimX = aim.x * width;
       const aimY = aim.y * height;
@@ -82,7 +85,7 @@ export function TacticalOverlay({
       } else {
         show(reticle.current);
         reticle.current?.setAttribute("transform", `translate(${aimX.toFixed(1)} ${aimY.toFixed(1)})`);
-        const spreadRadians = Math.atan2(hitThresholdM(range), Math.max(range, 1));
+        const spreadRadians = Math.atan2(hitThresholdM(range, gun), Math.max(range, 1));
         const fieldOfView = radians(viewer.camera.fov);
         const radius = clamp((spreadRadians / fieldOfView) * height, 6, 140);
         reticleRing.current?.setAttribute("r", radius.toFixed(1));
@@ -125,7 +128,7 @@ export function TacticalOverlay({
         const axes = bodyAxes(own.orientation);
         const ahead = own.position.clone().addScaledVector(axes.nose, 1_000);
         const centre = viewer.project(ahead);
-        const edge = viewer.project(ahead.clone().addScaledVector(axes.up, Math.tan(MISSILE.acquisitionConeRad) * 1_000));
+        const edge = viewer.project(ahead.clone().addScaledVector(axes.up, Math.tan(missileSpec(jet.missile).acquisitionConeRad) * 1_000));
         if (centre.behind || edge.behind) {
           hide(seekerCircle.current);
           return;
@@ -184,7 +187,7 @@ export function TacticalOverlay({
 
       drawSeeker();
 
-      const canHit = wouldConnect(solution) && own.ammo > 0;
+      const canHit = wouldConnect(solution, gun) && own.ammo > 0;
       if (canHit) {
         show(shootCue.current);
         const onScreenAim =

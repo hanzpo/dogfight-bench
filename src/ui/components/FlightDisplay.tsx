@@ -3,6 +3,7 @@ import { Vector3 } from "three";
 import { atmosphere, equivalentAirspeed } from "../../sim/atmosphere";
 import { bodyAxes } from "../../sim/flight-model";
 import { rwrContacts, type RwrContact } from "../../sim/rwr";
+import { airframe, missileSpec } from "../../sim/airframes";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
 import { clamp, degrees, radians } from "../../math";
@@ -97,6 +98,7 @@ export function FlightDisplay({
       groups.current["srm"]?.setAttribute("display", armed ? "inline" : "none");
       groups.current["rwr"]?.setAttribute("display", armed ? "inline" : "none");
       if (armed) {
+        set("missileName", missileSpec(airframe(own.airframe).missile).name.toUpperCase());
         set("missiles", String(own.stores.missiles));
         set("seeker", own.stores.missiles > 0 ? SEEKER_LABEL[own.seeker.tone] : "");
         set("flares", String(own.stores.flares));
@@ -300,7 +302,7 @@ export function FlightDisplay({
           511
         </text>
         <g ref={group("srm")} display="none">
-          <text className="tape-caption" x="-64" y="-8" textAnchor="end">
+          <text ref={label("missileName")} className="tape-caption" x="-64" y="-8" textAnchor="end">
             AIM-9M
           </text>
           <text ref={label("missiles")} className="stores-value" x="-64" y="14" textAnchor="end">

@@ -6,6 +6,7 @@ import { ReplayRecorder, type ReplayFile } from "../../sim/replay";
 import { fox2Merge, neutralMerge } from "../../sim/scenario";
 import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
 import type { Loadout, MatchState } from "../../sim/types";
+import { AIRFRAME_IDS, type AirframeId } from "../../sim/airframes";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
 import { api } from "../api";
 import { authConfigured, authHeaders } from "../auth";
@@ -94,6 +95,10 @@ export interface MatchSetup {
   opponent?: PilotChoice;
   weapons?: Loadout;
   scheme?: ControlScheme;
+  /** Your aeroplane; an F-16 when not said. */
+  aircraft?: AirframeId;
+  /** The enemy's: one of them, the same as yours, or a fresh pick at every restart. */
+  enemyAircraft?: AirframeId | "same" | "random";
 }
 
 export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
@@ -135,6 +140,8 @@ export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
   const bluePilotRef = useRef(bluePilot);
   const redPilotRef = useRef(redPilot);
   const weaponsRef = useRef(weapons);
+  const setupRef = useRef(setup);
+  setupRef.current = setup;
   pausedRef.current = paused;
   scaleRef.current = timeScale;
   bluePilotRef.current = bluePilot;
@@ -148,7 +155,16 @@ export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
     const usesModel = [blue, red].some(
       (pilot) => pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit",
     );
-    const scenario = weaponsRef.current === "fox2" ? fox2Merge : neutralMerge;
+    const base = weaponsRef.current === "fox2" ? fox2Merge : neutralMerge;
+    const mine = setupRef.current.aircraft ?? "f16c";
+    const wanted = setupRef.current.enemyAircraft ?? "same";
+    const theirs =
+      wanted === "same"
+        ? mine
+        : wanted === "random"
+          ? AIRFRAME_IDS[Math.floor(Math.random() * AIRFRAME_IDS.length)]!
+          : wanted;
+    const scenario = { ...base, airframes: { "blue-1": mine, "red-1": theirs } };
     const sim = new DogfightSimulation(scenario, { decisionIntervalS: usesModel ? 1 : 0.25 });
 
     const ticketId = () => matchTicket.current?.id;

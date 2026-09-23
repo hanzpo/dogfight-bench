@@ -630,6 +630,19 @@ kbd {
 .choice input:checked + span { background: #f6f3ec; border-color: #f6f3ec; color: #0b0d10; font-weight: 600; }
 .choice input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
 
+.choice-caption { margin: 8px 0 0; font-size: 13px; color: var(--text-faint); }
+.choice-select select {
+  min-height: 40px; padding: 0 34px 0 16px; border-radius: 999px; font-size: 14px;
+  background-color: transparent; border-color: var(--line-strong); color: var(--text);
+  background-position: calc(100% - 19px) 17px, calc(100% - 14px) 17px;
+}
+.choice-select select:hover { border-color: #ffffff40; }
+.choice-select option { background: var(--surface); color: var(--text); }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
 .home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 4px; }
 .home-actions .primary { min-width: 160px; }
 .home-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--warn); }

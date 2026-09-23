@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Choice } from "../setup";
 
 /**
@@ -11,12 +12,18 @@ export function ChoiceGroup<T extends string>({
   choices,
   value,
   onChange,
+  caption,
+  children,
 }: {
   legend: string;
   name: string;
   choices: readonly Choice<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** A line under the options about the one chosen. */
+  caption?: string;
+  /** Anything else that belongs on the same row, after the options. */
+  children?: ReactNode;
 }) {
   return (
     <fieldset className="choice-group">
@@ -34,7 +41,13 @@ export function ChoiceGroup<T extends string>({
             <span>{choice.label}</span>
           </label>
         ))}
+        {children}
       </div>
+      {caption ? (
+        <p className="choice-caption" aria-live="polite">
+          {caption}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
