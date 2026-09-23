@@ -17,7 +17,7 @@ export const OPPONENTS: readonly Choice<Opponent>[] = [
 
 export const LOADOUTS: readonly Choice<Loadout>[] = [
   { value: "guns", label: "Guns only" },
-  { value: "fox2", label: "Guns + missiles" },
+  { value: "fox2", label: "+ Missiles" },
 ];
 
 export const AIRCRAFT: readonly (Choice<AirframeId> & { role: string })[] = AIRFRAME_IDS.map((id) => ({

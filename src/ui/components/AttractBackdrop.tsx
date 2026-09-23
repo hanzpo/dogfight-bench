@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { AIRFRAME_IDS, type AirframeId } from "../../sim/airframes";
 import { EnergyFighterAgent } from "../../agents/baselines";
 import { fox2Merge, scenarioVariant } from "../../sim/scenario";
 import { DogfightSimulation } from "../../sim/simulation";
@@ -10,28 +11,32 @@ const MAX_SHOW_S = 75;
 /** Into the fight before the first frame is drawn, so the opening shot is not two dots eight kilometres apart. */
 const HEAD_START_S = 7;
 
-function newFight(round: number): DogfightSimulation {
-  const sim = new DogfightSimulation(scenarioVariant(fox2Merge.seed + round * 7_919, fox2Merge), {
-    recordDecisions: false,
-  });
+function newFight(round: number, blue: AirframeId, red: AirframeId | "random"): DogfightSimulation {
+  const enemy = red === "random" ? AIRFRAME_IDS[Math.floor(Math.random() * AIRFRAME_IDS.length)]! : red;
+  const scenario = scenarioVariant(fox2Merge.seed + round * 7_919, fox2Merge);
+  const sim = new DogfightSimulation(
+    { ...scenario, airframes: { "blue-1": blue, "red-1": enemy } },
+    { recordDecisions: false },
+  );
   sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
   sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
   return sim;
 }
 
 /**
- * A fight already in progress behind the menu: two scripted pilots with
- * missiles, filmed from behind the blue one, starting over when one of
- * them goes down. Anyone who asks for reduced motion gets one still frame.
+ * A fight already in progress behind the menu, between the two jets picked
+ * on it: two scripted pilots with missiles, filmed from behind the blue one,
+ * starting over when one of them goes down or the pick changes. Anyone who
+ * asks for reduced motion gets one still frame.
  */
-export function AttractBackdrop() {
+export function AttractBackdrop({ blue, red }: { blue: AirframeId; red: AirframeId | "random" }) {
   const snapshotRef = useRef<ViewerSnapshot>(undefined);
   const viewerRef = useRef<DogfightViewer>(undefined);
 
   useEffect(() => {
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let round = Math.floor(Math.random() * 50);
-    let sim = newFight(round);
+    let sim = newFight(round, blue, red);
     let ended = 0;
     let last = performance.now();
     let accumulator = HEAD_START_S;
@@ -51,7 +56,7 @@ export function AttractBackdrop() {
         // Hold on the ending for a moment, then cut to a new merge.
         if (now - ended > 3_000) {
           round += 1;
-          sim = newFight(round);
+          sim = newFight(round, blue, red);
           ended = 0;
           accumulator = HEAD_START_S;
           shownEvents = 0;
@@ -64,7 +69,7 @@ export function AttractBackdrop() {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [blue, red]);
 
   return (
     <div className="attract" aria-hidden>

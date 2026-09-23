@@ -598,18 +598,18 @@ kbd {
 
 .home {
   position: fixed; inset: 0; z-index: 2; overflow: auto;
-  display: flex; flex-direction: column; justify-content: center; gap: 30px;
-  padding: 96px clamp(20px, 6vw, 88px) 40px;
-  max-width: 660px;
+  display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  padding: 80px clamp(20px, 6vw, 88px) 32px;
+  max-width: 700px;
 }
 .home-title {
-  margin: 0; font-size: clamp(56px, 8vw, 116px); line-height: .9;
+  margin: 0; font-size: clamp(48px, 6.6vw, 100px); line-height: .9;
   font-weight: 800; font-stretch: 118%; letter-spacing: -.035em; color: #f6f3ec;
 }
-.home-lede { margin: 14px 0 0; max-width: 44ch; font-size: 18px; line-height: 1.55; color: var(--text-muted); }
+.home-lede { margin: 10px 0 0; max-width: 44ch; font-size: 17px; line-height: 1.55; color: var(--text-muted); }
 
 .home-setup {
-  display: grid; gap: 20px; padding: 22px 22px 18px;
+  display: grid; gap: 18px; padding: 18px 18px 18px;
   background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius-lg);
   backdrop-filter: blur(14px) saturate(1.2);
 }
@@ -656,6 +656,51 @@ kbd {
   .topbar-home .nav a { display: none; }
 }
 
+/* The hangar: every jet as a tile, and what the chosen one is good at. */
+.hangar { margin: 0; padding: 0; border: 0; min-width: 0; }
+.hangar legend {
+  padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.hangar-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.hangar-tile { position: relative; display: block; cursor: pointer; }
+.hangar-tile input { position: absolute; inset: 0; z-index: 1; opacity: 0; margin: 0; cursor: pointer; }
+.hangar-face {
+  display: grid; justify-items: center; gap: 2px; padding: 6px 4px 8px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #ffffff05;
+  color: var(--text-muted); transition: background .15s, border-color .15s, color .15s;
+}
+.hangar-silhouette { width: 100%; height: 58px; fill: currentColor; opacity: .55; transition: opacity .15s; }
+.hangar-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.hangar-tile:hover .hangar-face { border-color: var(--line-strong); color: var(--text); }
+.hangar-tile input:checked + .hangar-face { background: #ffffff12; border-color: #f6f3ec; color: #f6f3ec; }
+.hangar-tile input:checked + .hangar-face .hangar-silhouette { opacity: 1; }
+.hangar-tile input:focus-visible + .hangar-face { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.hangar-detail { display: grid; gap: 10px; margin-top: 12px; }
+.hangar-detail-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.hangar-role { font-size: 15px; font-weight: 650; }
+.hangar-role-kind { font-weight: 500; color: var(--text-muted); }
+.hangar-arms { font-size: 12.5px; color: var(--text-faint); }
+.hangar-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.hangar-stats dt { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+.hangar-stats dd { margin: 5px 0 0; }
+.hangar-bar { display: block; height: 5px; border-radius: 3px; background: #ffffff14; overflow: hidden; }
+.hangar-bar span { display: block; height: 100%; border-radius: 3px; background: #f6f3ec; transition: width .25s cubic-bezier(.2, .8, .2, 1); }
+
+.home-options { display: flex; flex-wrap: wrap; gap: 14px 18px; }
+.choice-group.segmented .choice-options {
+  display: inline-flex; flex-wrap: nowrap; gap: 2px; padding: 3px;
+  background: #ffffff08; border: 1px solid var(--line); border-radius: var(--radius);
+}
+.choice-group.segmented .choice span { min-height: 34px; padding: 0 12px; border: none; border-radius: 9px; font-size: 13px; }
+.choice-group.segmented .choice-select select {
+  min-height: 34px; border: none; border-radius: 9px; background-color: transparent; font-size: 13px;
+  padding: 0 30px 0 10px; background-position: calc(100% - 17px) 14px, calc(100% - 12px) 14px;
+}
+.choice-group.segmented .choice-select select:hover { background-color: #ffffff0d; }
+.home-fly { width: 100%; min-height: 52px; font-size: 16px; }
+
 /* ---------------------------------------------------------------- in flight */
 
 .hud-button {
@@ -687,6 +732,22 @@ kbd {
 }
 
 .results .dialog-title { font-size: 40px; }
+.results-matchup { margin: 18px 0 0; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+
+.matchup {
+  position: fixed; z-index: 3; top: 22%; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: baseline; gap: 14px; pointer-events: none;
+  font-size: clamp(24px, 3.4vw, 40px); font-weight: 800; font-stretch: 112%; letter-spacing: -.01em;
+  color: #f6f3ec; text-shadow: 0 2px 18px #000c;
+  animation: matchup 3.8s ease forwards;
+}
+.matchup-vs { font-size: .5em; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.matchup-enemy { color: #ffb4a8; }
+@keyframes matchup {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  12%, 70% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -4px); }
+}
 .results-won .dialog-title { color: var(--good); }
 .results-lost .dialog-title { color: var(--danger); }
 .results-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0 0; }
@@ -696,6 +757,9 @@ kbd {
 
 @media (max-width: 720px) {
   .home { justify-content: flex-start; max-width: none; }
+  .hangar-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hangar-silhouette { height: 46px; }
+  .hangar-name { font-size: 11.5px; }
   .home-shade { background: linear-gradient(0deg, #0b0d10f2 30%, #0b0d10b3 100%); }
   .results-stats { grid-template-columns: repeat(2, 1fr); }
   .dialog-panel { padding: 24px 20px 22px; }

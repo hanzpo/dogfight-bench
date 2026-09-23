@@ -14,6 +14,7 @@ export function ChoiceGroup<T extends string>({
   onChange,
   caption,
   children,
+  variant = "pills",
 }: {
   legend: string;
   name: string;
@@ -24,9 +25,11 @@ export function ChoiceGroup<T extends string>({
   caption?: string;
   /** Anything else that belongs on the same row, after the options. */
   children?: ReactNode;
+  /** Separate pills, or one joined control. */
+  variant?: "pills" | "segmented";
 }) {
   return (
-    <fieldset className="choice-group">
+    <fieldset className={`choice-group ${variant}`}>
       <legend>{legend}</legend>
       <div className="choice-options">
         {choices.map((choice) => (
