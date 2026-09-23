@@ -17,6 +17,7 @@ import { useRoster } from "../hooks/useRoster";
 import { loadKey } from "../keys";
 import { CONTROL_SCHEMES, type ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
+import type { Loadout } from "../../sim/types";
 
 function pilotNote(hasKey: boolean, free: boolean, exhausted: boolean): string {
   if (hasKey) return "your key";
@@ -64,9 +65,9 @@ function publishDiagnostics(viewer: DogfightViewer, simTimeS: number): void {
 }
 
 const KEYMAP: Record<ControlScheme, string> = {
-  keyboard: "W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE",
-  mouse: "MOUSE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM · Q/E RUDDER · R/F THROTTLE",
-  gamepad: "RIGHT STICK · LEFT STICK RUDDER · TRIGGERS THROTTLE · RB FIRE",
+  keyboard: "W PUSH · S PULL · A/D ROLL · Q/E RUDDER · R/F THROTTLE · SPACE FIRE · X MISSILE · C FLARES",
+  mouse: "MOUSE STICK · LEFT FIRE · RIGHT-DRAG LOOK · WHEEL ZOOM · Q/E RUDDER · R/F THROTTLE · X MISSILE · C FLARES",
+  gamepad: "RIGHT STICK · LEFT STICK RUDDER · TRIGGERS THROTTLE · RB FIRE · LB MISSILE · B FLARES",
 };
 
 export function LivePage() {
@@ -243,6 +244,17 @@ export function LivePage() {
                 {option.label} · {option.flies} · {option.note}
               </option>
             ))}
+          </select>
+        </label>
+        <label>
+          Weapons
+          <select
+            id="weapons"
+            value={match.weapons}
+            onChange={(changed) => match.setWeapons(changed.target.value as Loadout)}
+          >
+            <option value="guns">Guns only</option>
+            <option value="fox2">Guns + 2 × AIM-9M</option>
           </select>
         </label>
         </div>

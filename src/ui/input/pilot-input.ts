@@ -14,6 +14,9 @@ const KEY_AXES = {
   throttle: ["KeyR", "KeyF"],
 } as const;
 
+const MISSILE_KEY = "KeyX";
+const FLARE_KEY = "KeyC";
+
 const SWALLOWED_KEYS = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 export interface PilotInputSettings {
@@ -339,6 +342,8 @@ export class PilotInput {
     let yaw = this.keyAxis(KEY_AXES.yaw);
     let throttleRate = this.keyAxis(KEY_AXES.throttle);
     let fire = this.keys.has("Space");
+    let missile = this.keys.has(MISSILE_KEY);
+    let flare = this.keys.has(FLARE_KEY);
 
     if (this.scheme === "mouse") {
       if (this.locked) {
@@ -363,6 +368,8 @@ export class PilotInput {
       const trigger = (index: number) => pad.buttons[index]?.value ?? 0;
       throttleRate += trigger(7) - trigger(6);
       fire ||= (pad.buttons[5]?.pressed ?? false) || (pad.buttons[0]?.pressed ?? false);
+      missile ||= pad.buttons[4]?.pressed ?? false;
+      flare ||= pad.buttons[1]?.pressed ?? false;
       this.stick.x = clamp(axis(2), -1, 1);
       this.stick.y = clamp(axis(3), -1, 1);
     }
@@ -375,6 +382,8 @@ export class PilotInput {
       yaw: clamp(yaw, -1, 1),
       throttle: this.throttle,
       fire,
+      missile,
+      flare,
     };
     if (this.scheme === "keyboard") {
       this.stick.x = controls.roll;

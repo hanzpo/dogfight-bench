@@ -3,9 +3,9 @@ import { SCRIPTED_INFO, type AgentAdapter, type AgentInfo } from "../../agents/a
 import { BasicPursuitAgent, EnergyFighterAgent } from "../../agents/baselines";
 import { HttpAgent } from "../../agents/http-agent";
 import { ReplayRecorder } from "../../sim/replay";
-import { neutralMerge } from "../../sim/scenario";
+import { fox2Merge, neutralMerge } from "../../sim/scenario";
 import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
-import type { MatchState } from "../../sim/types";
+import type { Loadout, MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
 import { api } from "../api";
 import { authConfigured, authHeaders } from "../auth";
@@ -43,6 +43,7 @@ export interface LiveMatch {
   followRed: boolean;
   bluePilot: PilotChoice;
   redPilot: PilotChoice;
+  weapons: Loadout;
   scheme: ControlScheme;
   inputSettings: PilotInputSettings;
   canCapturePointer: boolean;
@@ -55,6 +56,7 @@ export interface LiveMatch {
   setFollowRed: (follow: boolean) => void;
   setBluePilot: (pilot: PilotChoice) => void;
   setRedPilot: (pilot: PilotChoice) => void;
+  setWeapons: (weapons: Loadout) => void;
   restart: () => void;
   downloadReplay: () => void;
 }
@@ -107,6 +109,7 @@ export function useLiveMatch(): LiveMatch {
   const [followRed, setFollowRed] = useState(false);
   const [bluePilot, setBluePilot] = useState<PilotChoice>(HUMAN);
   const [redPilot, setRedPilot] = useState<PilotChoice>("basic");
+  const [weapons, setWeapons] = useState<Loadout>("guns");
   const [scheme, setSchemeState] = useState<ControlScheme>("keyboard");
   const [inputSettings, setInputSettingsState] = useState<PilotInputSettings>(() => loadSettings());
   const [canCapturePointer, setCanCapturePointer] = useState(false);
@@ -119,10 +122,12 @@ export function useLiveMatch(): LiveMatch {
   const scaleRef = useRef(timeScale);
   const bluePilotRef = useRef(bluePilot);
   const redPilotRef = useRef(redPilot);
+  const weaponsRef = useRef(weapons);
   pausedRef.current = paused;
   scaleRef.current = timeScale;
   bluePilotRef.current = bluePilot;
   redPilotRef.current = redPilot;
+  weaponsRef.current = weapons;
 
   const restart = useCallback(() => {
     const blue = bluePilotRef.current;
@@ -131,7 +136,8 @@ export function useLiveMatch(): LiveMatch {
     const usesModel = [blue, red].some(
       (pilot) => pilot !== HUMAN && pilot !== "basic" && pilot !== "basic-pursuit",
     );
-    const sim = new DogfightSimulation(neutralMerge, { decisionIntervalS: usesModel ? 1 : 0.25 });
+    const scenario = weaponsRef.current === "fox2" ? fox2Merge : neutralMerge;
+    const sim = new DogfightSimulation(scenario, { decisionIntervalS: usesModel ? 1 : 0.25 });
 
     const ticketId = () => matchTicket.current?.id;
     const blueAgent = buildAgent(blue, "blue-1", ticketId);
@@ -140,7 +146,7 @@ export function useLiveMatch(): LiveMatch {
     if (redAgent) sim.attachAgent("red-1", redAgent);
 
     simulation.current = sim;
-    recorder.current = new ReplayRecorder(neutralMerge, {
+    recorder.current = new ReplayRecorder(scenario, {
       "blue-1": infoFor(blue),
       "red-1": infoFor(red),
     });
@@ -153,7 +159,10 @@ export function useLiveMatch(): LiveMatch {
     setRecording({ status: "idle" });
     setPaused(false);
 
-    if (!authConfigured) {
+    if (scenario.weapons === "fox2") {
+      // The ladder is a guns-only ladder; a missile fight is not the same contest.
+      if (blue === HUMAN) setRecording({ status: "unranked", message: "Fox 2 · not ranked" });
+    } else if (!authConfigured) {
       if (blue === HUMAN) {
         setRecording({ status: "unranked", message: "Not recorded" });
       }
@@ -173,7 +182,7 @@ export function useLiveMatch(): LiveMatch {
     }
   }, []);
 
-  useEffect(() => restart(), [restart, bluePilot, redPilot, account.user?.id]);
+  useEffect(() => restart(), [restart, bluePilot, redPilot, weapons, account.user?.id]);
 
   useEffect(() => {
     const host = document.querySelector<HTMLElement>("#viewport") ?? document.body;
@@ -304,6 +313,7 @@ export function useLiveMatch(): LiveMatch {
     followRed,
     bluePilot,
     redPilot,
+    weapons,
     scheme,
     inputSettings,
     canCapturePointer,
@@ -316,6 +326,7 @@ export function useLiveMatch(): LiveMatch {
     setFollowRed,
     setBluePilot,
     setRedPilot,
+    setWeapons,
     restart,
     downloadReplay,
   };
