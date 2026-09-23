@@ -132,10 +132,11 @@ the nose turns every merge into whoever gets tone first.
   a jet flying straight it reaches about 6 km from astern and about 4 km
   head-on, and a beam crossing at a kilometre beats it.
 - **Flares.** One press dispenses a pair. Each flare gets one chance to pull
-  the seeker, weighted by its share of the heat. Against a shot from dead
-  astern, one pair defeats about half the missiles at idle, a third at
-  military power and a quarter in afterburner, so pull the power back while
-  you dispense.
+  the seeker, and the chance grows with how many times brighter it is than
+  the jet. Against a shot from dead astern, one pair defeats about 60% of
+  missiles at idle, 30% at military power and under 20% in afterburner, so
+  pull the power back while you dispense. A nose is dim, so flares do much
+  better against head-on shots.
 - **Warning.** The RWR scope shows the bandit's radar while you are inside
   its scan, and inbound missiles by bearing. The HUD flashes the clock
   position, range and time to go.

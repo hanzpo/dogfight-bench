@@ -172,8 +172,10 @@ export const FLARE = {
   ejectMps: 25,
   /** Deceleration is this times speed squared: a flare stops almost where it was dropped. */
   dragPerMetre: 0.004,
-  /** How much of a flare's share of the signal actually pulls the seeker off; the rest is counter-countermeasures. */
-  seduction: 0.25,
+  /** Chance of pulling the seeker off per doubling by which the flare outshines the track; the rest is counter-countermeasures. */
+  seduction: 0.12,
+  /** However bright the flare, a seeker this good is not fooled more often than this. */
+  maxSeduction: 0.5,
 } as const;
 
 /** Radar and missile-approach warning. */

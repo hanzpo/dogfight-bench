@@ -70,8 +70,8 @@ function hostileFlares(state: MatchState, ownerId: string): FlareState[] {
 /**
  * Gives each new flare in the seeker's view its one chance to pull the track.
  *
- * The chance is the flare's share of the heat, discounted for the seeker's
- * counter-countermeasures. A flare against a jet in afterburner is fighting a
+ * The chance grows with how many times brighter the flare is than what the
+ * seeker is tracking, discounted for its counter-countermeasures. A flare against a jet in afterburner is fighting a
  * bigger signal than one against a jet at idle -- which is why a pilot pulls
  * the throttle back while dispensing.
  */
@@ -93,7 +93,10 @@ function flareThatSeduces(
     if (flare.age < 0.15) continue;
     seen.push(flare.id);
     if (seen.length > 64) seen.shift();
-    const chance = FLARE.seduction * (signal / (signal + Math.max(trackSignal, 1e-9)));
+    // By how many times it outshines the track, and in doublings rather than
+    // proportion: otherwise any flare swamps any jet and the throttle stops
+    // mattering.
+    const chance = Math.min(FLARE.maxSeduction, FLARE.seduction * Math.log2(1 + signal / Math.max(trackSignal, 1e-9)));
     if (rng.next() < chance) return flare;
   }
   return undefined;
