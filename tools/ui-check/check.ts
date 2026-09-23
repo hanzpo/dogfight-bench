@@ -450,6 +450,18 @@ check(
 );
 const ladderRungs = await page.locator(".conformal line").count();
 check(ladderRungs > 4, `pitch ladder is drawn (${ladderRungs} segments)`);
+
+// Asked of what is drawn rather than of an attribute: a child marked visible
+// shows through a hidden parent, which once left the flight path marker frozen
+// on screen after the camera left the cockpit.
+await page.selectOption("#view", "chase");
+await page.waitForTimeout(600);
+check(
+  await page.locator(".fpm").evaluate((element) => getComputedStyle(element).visibility === "hidden"),
+  "the flight path marker leaves with the cockpit view",
+);
+await page.selectOption("#view", "cockpit");
+await page.waitForTimeout(1_000);
 await page.screenshot({ path: `${OUT}/cockpit-${engine.name}.png` });
 
 console.log("cameras");

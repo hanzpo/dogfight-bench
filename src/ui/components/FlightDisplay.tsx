@@ -154,13 +154,16 @@ export function FlightDisplay({
 
         if (speed > 1) {
           const marker = viewer.project(own.position.clone().addScaledVector(own.velocity.clone().normalize(), HUD_RANGE));
+          // "inherit", never "visible": in SVG a child marked visible shows
+          // through a hidden parent, so leaving the cockpit left the marker
+          // frozen on screen where it last was.
           if (!marker.behind) {
-            flightPath.current?.setAttribute("visibility", "visible");
+            flightPath.current?.setAttribute("visibility", "inherit");
             flightPath.current?.setAttribute(
               "transform",
               `translate(${(marker.x * width).toFixed(1)} ${(marker.y * height).toFixed(1)})`,
             );
-            aoaBracket.current?.setAttribute("visibility", own.flcs.limiterActive ? "visible" : "hidden");
+            aoaBracket.current?.setAttribute("visibility", own.flcs.limiterActive ? "inherit" : "hidden");
           } else {
             flightPath.current?.setAttribute("visibility", "hidden");
             aoaBracket.current?.setAttribute("visibility", "hidden");
