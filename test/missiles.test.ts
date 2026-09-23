@@ -7,6 +7,7 @@ import { ReplayRecorder, parseReplay } from "../src/sim/replay";
 import { rwrContacts } from "../src/sim/rwr";
 import { fox2Merge, neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
+import { EnergyFighterAgent } from "../src/agents/baselines";
 import type { AircraftState, ScenarioConfig } from "../src/sim/types";
 
 const ALTITUDE_M = 6_000;
@@ -314,4 +315,18 @@ describe("replays with missiles", () => {
     const old = { ...JSON.parse(recorder.toJSON()), version: 3 };
     expect(() => parseReplay(JSON.stringify(old))).not.toThrow();
   });
+});
+
+describe("the energy fighter with missiles", () => {
+  it("shoots when it has tone and flares when one is coming", async () => {
+    const sim = new DogfightSimulation(fox2Merge, { recordDecisions: false });
+    sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
+    sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
+    await sim.runHeadless();
+    const launches = eventsOf(sim, "missile-launch");
+    expect(launches.length).toBeGreaterThan(0);
+    // Launched on a lock, never blind.
+    for (const launch of launches) expect(launch.detail).toMatch(/locked/);
+    expect(eventsOf(sim, "flares").length).toBeGreaterThan(0);
+  }, 60_000);
 });

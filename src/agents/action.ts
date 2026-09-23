@@ -42,6 +42,10 @@ export interface TacticalAction {
   throttle: ThrottleDetent;
   throttleFraction?: number;
   fire: boolean;
+  /** Press the pickle button. A launch needs a release in between, so hold it for one answer. */
+  launchMissile?: boolean;
+  /** Dispense a salvo of flares, on the same terms. */
+  flares?: boolean;
 }
 
 export type AgentAction = RawAction | TacticalAction;
@@ -63,6 +67,8 @@ export function validateAction(value: unknown): AgentAction {
         yaw: clamp(finite(controls?.["yaw"], 0), -1, 1),
         throttle: clamp(finite(controls?.["throttle"], 0.85), 0, 1),
         fire: controls?.["fire"] === true,
+        ...(controls?.["missile"] === true ? { missile: true } : {}),
+        ...(controls?.["flare"] === true ? { flare: true } : {}),
       },
     };
   }
@@ -83,6 +89,8 @@ export function validateAction(value: unknown): AgentAction {
       ? { throttleFraction: clamp(fraction, 0, 1) }
       : {}),
     fire: record["fire"] === true,
+    ...(record["launchMissile"] === true ? { launchMissile: true } : {}),
+    ...(record["flares"] === true ? { flares: true } : {}),
   };
 }
 

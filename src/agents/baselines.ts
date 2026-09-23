@@ -28,6 +28,8 @@ export class EnergyFighterAgent implements AgentAdapter {
   readonly info: AgentInfo;
   private breakDirection: "break_left" | "break_right" = "break_left";
   private breakHeldUntilS = 0;
+  private lastLaunchS = -Infinity;
+  private lastFlaresS = -Infinity;
 
   constructor(public readonly id: string) {
     this.info = SCRIPTED_INFO("energy-fighter");
@@ -36,6 +38,8 @@ export class EnergyFighterAgent implements AgentAdapter {
   reset(): void {
     this.breakDirection = "break_left";
     this.breakHeldUntilS = 0;
+    this.lastLaunchS = -Infinity;
+    this.lastFlaresS = -Infinity;
   }
 
   private chooseBreak(observation: AgentObservation): "break_left" | "break_right" {
@@ -58,6 +62,10 @@ export class EnergyFighterAgent implements AgentAdapter {
     const behindThem = relative.angleOffTailDeg < 70;
     const theyAreBehindUs = relative.antennaTrainAngleDeg > 120;
     const nearArenaEdge = observation.arena.distanceFromCentreM > observation.arena.radiusM * 0.8;
+    const inbound = (observation.threats ?? [])
+      .filter((threat) => threat.kind === "missile")
+      .sort((a, b) => (a.timeToGoS ?? Infinity) - (b.timeToGoS ?? Infinity))[0];
+    const missileClose = inbound !== undefined && ((inbound.timeToGoS ?? Infinity) < 7 || inbound.rangeM < 4_000);
 
     let maneuver: Maneuver;
     let rationale: string;
@@ -68,6 +76,12 @@ export class EnergyFighterAgent implements AgentAdapter {
       maneuver = "climb";
       committed = true;
       rationale = "Terrain: recovery does not fit, pulling up";
+    } else if (missileClose) {
+      // Into the missile, which makes its line of sight swing fastest and
+      // costs it the most energy to follow.
+      maneuver = inbound.bearingDeg >= 0 ? "break_right" : "break_left";
+      committed = true;
+      rationale = "Defending a missile: breaking into it";
     } else if (relative.threatened && relative.rangeM < 1_800) {
       maneuver = veryLow ? this.chooseBreak(observation) : "defensive_spiral";
       committed = true;
@@ -129,7 +143,28 @@ export class EnergyFighterAgent implements AgentAdapter {
       throttle = "mil";
     }
     if (own.fuelKg < 250 && throttle === "ab") throttle = "mil";
+    // Power back in the last seconds, so the flares outshine the tailpipe.
+    if (missileClose && (inbound.timeToGoS ?? Infinity) < 4) throttle = "idle";
     if (terrain.warning === "pull-up") throttle = "ab";
+
+    const now = observation.simTimeS;
+    const flares =
+      missileClose && (inbound.timeToGoS ?? Infinity) < 3 && own.flaresRemaining > 0 && now - this.lastFlaresS >= 1.2;
+    if (flares) this.lastFlaresS = now;
+
+    const missile = relative.missileSolution;
+    const gunsWillDo = gunSolution.predictedMissM < 150 && relative.rangeM < 1_200;
+    const launchMissile =
+      missile !== undefined &&
+      missile.locked &&
+      missile.inRange &&
+      own.missilesRemaining > 0 &&
+      !gunsWillDo &&
+      now - this.lastLaunchS >= 6;
+    if (launchMissile) {
+      this.lastLaunchS = now;
+      rationale = `${rationale}; Fox 2`;
+    }
 
     return {
       action: {
@@ -138,6 +173,8 @@ export class EnergyFighterAgent implements AgentAdapter {
         targetG,
         throttle,
         fire: own.ammoRemaining > 0 && gunSolution.inLethalRange && relative.rangeM < 2_000,
+        ...(launchMissile ? { launchMissile: true } : {}),
+        ...(flares ? { flares: true } : {}),
       },
       rationale,
     };

@@ -275,6 +275,8 @@ export function resolveTactical(action: TacticalAction, context: SteeringContext
     yaw: gunTrackingYaw(context),
     throttle: Math.max(action.throttleFraction ?? THROTTLE_VALUES[action.throttle], urgency > 0.4 ? 0.85 : 0),
     fire: action.fire && shot.connects,
+    missile: action.launchMissile === true,
+    flare: action.flares === true,
   };
 }
 
