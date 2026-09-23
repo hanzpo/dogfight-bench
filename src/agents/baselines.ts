@@ -164,10 +164,18 @@ export class EnergyFighterAgent implements AgentAdapter {
 
     const missile = relative.missileSolution;
     const gunsWillDo = gunSolution.predictedMissM < 150 && relative.rangeM < 1_200;
+    // From behind, anywhere in the zone; head-on, only close. A long head-on
+    // shot is the first one fired and the first one flared, and a hot target
+    // hands it out early -- which left the cooler jet to fire second, closer,
+    // and win.
+    const goodShot =
+      missile !== undefined &&
+      (relative.angleOffTailDeg < 60 || relative.rangeM < Math.min(missile.maxRangeM * 0.6, 2_500));
     const launchMissile =
       missile !== undefined &&
       missile.locked &&
       missile.inRange &&
+      goodShot &&
       own.missilesRemaining > 0 &&
       !gunsWillDo &&
       now - this.lastLaunchS >= 6;
