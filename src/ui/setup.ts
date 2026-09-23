@@ -5,25 +5,24 @@ import type { MatchSetup } from "./hooks/useLiveMatch";
 export interface Choice<T extends string> {
   value: T;
   label: string;
-  detail: string;
 }
 
 export type Opponent = "basic-pursuit" | "basic";
 
 export const OPPONENTS: readonly Choice<Opponent>[] = [
-  { value: "basic-pursuit", label: "Rookie", detail: "Chases your tail and shoots when it can. Good for learning the jet." },
-  { value: "basic", label: "Veteran", detail: "Manages its energy, defends, and punishes mistakes." },
+  { value: "basic-pursuit", label: "Easy" },
+  { value: "basic", label: "Hard" },
 ];
 
 export const LOADOUTS: readonly Choice<Loadout>[] = [
-  { value: "guns", label: "Guns only", detail: "The classic knife fight. 511 rounds of 20 mm." },
-  { value: "fox2", label: "Guns + missiles", detail: "Adds two AIM-9M heat-seekers and 30 flares." },
+  { value: "guns", label: "Guns only" },
+  { value: "fox2", label: "Guns + missiles" },
 ];
 
 export const SCHEMES: readonly Choice<ControlScheme>[] = [
-  { value: "keyboard", label: "Keyboard", detail: "Fly with W A S D." },
-  { value: "mouse", label: "Mouse", detail: "The mouse is the stick." },
-  { value: "gamepad", label: "Gamepad", detail: "Any standard controller." },
+  { value: "keyboard", label: "Keyboard" },
+  { value: "mouse", label: "Mouse" },
+  { value: "gamepad", label: "Gamepad" },
 ];
 
 export interface KeyBinding {

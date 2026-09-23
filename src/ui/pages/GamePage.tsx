@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { List } from "@phosphor-icons/react";
 import { ChoiceGroup } from "../components/ChoiceGroup";
-import { DetailsPanel } from "../components/DetailsPanel";
 import { Dialog } from "../components/Dialog";
 import { FlightDisplay } from "../components/FlightDisplay";
 import { IntroModal } from "../components/IntroModal";
@@ -10,17 +9,17 @@ import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useCockpitAudio } from "../hooks/useCockpitAudio";
 import { useLiveMatch } from "../hooks/useLiveMatch";
-import { OPPONENTS, SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type Choice } from "../setup";
+import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type Choice } from "../setup";
 import type { ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 import type { MatchState } from "../../sim/types";
 
 const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
-  { value: "chase", label: "Chase", detail: "" },
-  { value: "cockpit", label: "Cockpit", detail: "" },
-  { value: "track", label: "Target track", detail: "" },
-  { value: "arena", label: "Arena", detail: "" },
-  { value: "free", label: "Free look", detail: "" },
+  { value: "chase", label: "Chase" },
+  { value: "cockpit", label: "Cockpit" },
+  { value: "track", label: "Target track" },
+  { value: "arena", label: "Arena" },
+  { value: "free", label: "Free look" },
 ];
 
 const PLAYER = "blue-1";
@@ -38,22 +37,19 @@ interface Outcome {
   stats: Array<{ label: string; value: string }>;
 }
 
-/** Why an aircraft went down, said to the person flying the blue one. */
-function howItEnded(reason: string | undefined, you: boolean): { headline?: string; line: string } {
-  const who = you ? "You" : "The bandit";
+/** Why an aircraft went down, from the player's side. */
+function howItEnded(reason: string | undefined, you: boolean): string {
   switch (reason) {
     case "terrain impact":
-      return { headline: you ? "Crashed" : undefined, line: `${who} flew into the ground.` };
+      return you ? "You crashed." : "The enemy crashed.";
     case "hard deck violation":
-      return { headline: you ? "Too low" : undefined, line: `${who} stayed below the hard deck too long.` };
+      return you ? "You stayed too low." : "The enemy stayed too low.";
     case "left the arena":
-      return { headline: you ? "Out of bounds" : undefined, line: `${who} left the arena.` };
+      return you ? "You left the arena." : "The enemy left the arena.";
     case "AIM-9M":
-      return { line: you ? "A Sidewinder got you." : "Your Sidewinder found it." };
-    case "pilot incapacitated":
-      return { line: you ? "A hit in the cockpit ended it." : "A hit in the cockpit ended it for the bandit." };
+      return you ? "Killed by a missile." : "Missile kill.";
     default:
-      return { line: you ? "Their guns took you apart." : "Your guns took it apart." };
+      return you ? "Killed by guns." : "Guns kill.";
   }
 }
 
@@ -67,21 +63,13 @@ function outcomeOf(state: MatchState): Outcome {
   const minutes = Math.floor(state.time / 60);
   const seconds = Math.floor(state.time % 60);
 
-  let headline = verdict === "won" ? "Splash one" : verdict === "lost" ? "Shot down" : "Draw";
+  const headline = verdict === "won" ? "You won" : verdict === "lost" ? "You lost" : "Draw";
   let reason: string;
-  if (state.finishReason === "mutual destruction") {
-    reason = "You took each other down.";
-  } else if (state.finishReason?.startsWith("time limit")) {
-    reason = verdict === "draw" ? "Time ran out, level on points." : `Time ran out; ${won ? "you" : "the bandit"} won on points.`;
-  } else if (verdict === "lost") {
-    const ended = howItEnded(you?.destroyedReason, true);
-    headline = ended.headline ?? headline;
-    reason = ended.line;
-  } else if (verdict === "won") {
-    reason = howItEnded(bandit?.destroyedReason, false).line;
-  } else {
-    reason = state.finishReason ?? "";
-  }
+  if (state.finishReason === "mutual destruction") reason = "Both jets went down.";
+  else if (state.finishReason?.startsWith("time limit")) reason = "Time ran out. Decided on points.";
+  else if (verdict === "lost") reason = howItEnded(you?.destroyedReason, true);
+  else if (verdict === "won") reason = howItEnded(bandit?.destroyedReason, false);
+  else reason = state.finishReason ?? "";
 
   return {
     verdict,
@@ -89,9 +77,8 @@ function outcomeOf(state: MatchState): Outcome {
     reason,
     stats: [
       { label: "Time", value: `${minutes}:${String(seconds).padStart(2, "0")}` },
-      { label: "Hits scored", value: String(count("hit", PLAYER)) },
+      { label: "Hits", value: String(count("hit", PLAYER)) },
       { label: "Hits taken", value: String(bandit ? count("hit", bandit.id) : 0) },
-      { label: "Missiles fired", value: String(count("missile-launch", PLAYER)) },
     ],
   };
 }
@@ -106,7 +93,6 @@ export function GamePage() {
   const [view, setView] = useState<ViewMode>("chase");
   const [introOpen, setIntroOpen] = useState(() => !introSeen());
   const [menuOpen, setMenuOpen] = useState(false);
-  const [telemetry, setTelemetry] = useState(false);
   const finished = match.state?.finished === true;
   const holding = introOpen || menuOpen;
 
@@ -193,7 +179,6 @@ export function GamePage() {
 
   const outcome = finished && match.state ? outcomeOf(match.state) : undefined;
   const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";
-  const opponent = OPPONENTS.find((choice) => choice.value === setup.opponent)?.label ?? "";
 
   return (
     <div className="game">
@@ -206,7 +191,7 @@ export function GamePage() {
           instance.setPointerCaptured(pointerFlying);
         }}
       />
-      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} detailsOpen={telemetry} />
+      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} detailsOpen={false} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} />
 
       <button className="hud-button game-menu-button" onClick={() => setMenuOpen(true)} aria-label="Pause menu">
@@ -227,15 +212,11 @@ export function GamePage() {
 
       {pointerFlying && match.canCapturePointer && !holding && !finished ? (
         <button className="capture-hint" onClick={() => void match.inputRef.current.requestPointerLock()}>
-          Click to take the stick with your mouse
+          Click to fly with the mouse
         </button>
       ) : null}
 
-      {telemetry ? (
-        <DetailsPanel state={match.state} followId={PLAYER} open onToggle={() => setTelemetry(false)} />
-      ) : null}
-
-      <IntroModal open={introOpen} scheme={match.scheme} onClose={closeIntro} />
+      <IntroModal open={introOpen} scheme={match.scheme} weapons={setup.weapons} onClose={closeIntro} />
 
       <Dialog open={menuOpen} onClose={resume} title="Paused" className="menu">
         <div className="menu-primary">
@@ -254,36 +235,19 @@ export function GamePage() {
         </div>
 
         <ChoiceGroup
-          legend="Camera"
-          name="camera"
-          choices={VIEWS}
-          value={view}
-          onChange={setView}
-          showDetail={false}
-        />
-        <ChoiceGroup
           legend="Controls"
           name="controls"
           choices={SCHEMES}
           value={match.scheme}
           onChange={(scheme: ControlScheme) => match.setScheme(scheme)}
-          showDetail={false}
         />
-
-        <label className="menu-toggle">
-          <input type="checkbox" checked={telemetry} onChange={(event) => setTelemetry(event.target.checked)} />
-          <span>Show flight telemetry</span>
-        </label>
 
         <div className="menu-secondary">
           <button className="quiet" onClick={() => { setMenuOpen(false); setIntroOpen(true); }}>
             How to play
           </button>
-          <button className="quiet" onClick={match.downloadReplay}>
-            Save replay
-          </button>
           <button className="quiet" onClick={() => navigate("/")}>
-            Quit to menu
+            Quit
           </button>
         </div>
       </Dialog>
@@ -304,19 +268,12 @@ export function GamePage() {
             </div>
           ))}
         </dl>
-        <p className="results-context">
-          Against the {opponent.toLowerCase()} pilot{setup.weapons === "fox2" ? ", with missiles" : ", guns only"}.
-          {match.recording.message ? ` ${match.recording.message}.` : ""}
-        </p>
         <div className="dialog-actions">
           <button className="primary large" onClick={match.restart} autoFocus>
             Fly again
           </button>
           <button className="large" onClick={() => navigate("/")}>
-            Change setup
-          </button>
-          <button className="quiet" onClick={match.downloadReplay}>
-            Save replay
+            Menu
           </button>
         </div>
       </Dialog>

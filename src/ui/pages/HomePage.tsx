@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight } from "@phosphor-icons/react";
 import { AttractBackdrop } from "../components/AttractBackdrop";
 import { ChoiceGroup } from "../components/ChoiceGroup";
-import { IntroModal } from "../components/IntroModal";
 import {
   LOADOUTS,
   OPPONENTS,
@@ -17,7 +16,6 @@ import {
 export function HomePage() {
   const navigate = useNavigate();
   const [setup, setSetup] = useState<Setup>(() => loadSetup());
-  const [introOpen, setIntroOpen] = useState(false);
   const [touchOnly] = useState(() => matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches);
 
   useEffect(() => saveSetup(setup), [setup]);
@@ -31,13 +29,10 @@ export function HomePage() {
 
       <main className="home">
         <section className="home-intro" aria-labelledby="home-title">
-          <p className="home-kicker">F-16 · one versus one · real flight model</p>
           <h1 id="home-title" className="home-title">
             Dogfight
           </h1>
-          <p className="home-lede">
-            A close-in air fight against a computer pilot. Out-turn it, out-think it, and get your guns on it first.
-          </p>
+          <p className="home-lede">One-on-one F-16 dogfights in your browser.</p>
         </section>
 
         <form
@@ -57,13 +52,10 @@ export function HomePage() {
               Fly
               <ArrowRight weight="bold" aria-hidden />
             </button>
-            <button type="button" className="quiet" onClick={() => setIntroOpen(true)}>
-              How to play
-            </button>
           </div>
           {touchOnly ? (
             <p className="home-note" role="note">
-              This needs a keyboard, a mouse or a gamepad. On a phone or tablet you can still watch the replays.
+              Needs a keyboard, mouse or gamepad.
             </p>
           ) : null}
         </form>
@@ -71,11 +63,9 @@ export function HomePage() {
         <nav className="home-links" aria-label="More">
           <Link to="/leaderboard">Leaderboard</Link>
           <Link to="/matches">Replays</Link>
-          <Link to="/lab">AI benchmark lab</Link>
+          <Link to="/lab">Lab</Link>
         </nav>
       </main>
-
-      <IntroModal open={introOpen} scheme={setup.scheme} onClose={() => setIntroOpen(false)} />
     </>
   );
 }

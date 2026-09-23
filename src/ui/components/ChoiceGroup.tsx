@@ -1,12 +1,9 @@
-import { useId } from "react";
 import type { Choice } from "../setup";
 
 /**
- * A row of mutually exclusive options, as real radio buttons.
- *
- * Radios rather than a row of toggle buttons because the browser then gives
- * a screen reader the group and its choice, and the arrow keys move within
- * it, without any of that being rebuilt here.
+ * A row of mutually exclusive options, as real radio buttons, so the browser
+ * gives a screen reader the group and its choice and the arrow keys move
+ * within it.
  */
 export function ChoiceGroup<T extends string>({
   legend,
@@ -14,20 +11,15 @@ export function ChoiceGroup<T extends string>({
   choices,
   value,
   onChange,
-  showDetail = true,
 }: {
   legend: string;
   name: string;
   choices: readonly Choice<T>[];
   value: T;
   onChange: (value: T) => void;
-  /** Off where the choices speak for themselves. */
-  showDetail?: boolean;
 }) {
-  const detailId = useId();
-  const selected = choices.find((choice) => choice.value === value);
   return (
-    <fieldset className="choice-group" aria-describedby={showDetail ? detailId : undefined}>
+    <fieldset className="choice-group">
       <legend>{legend}</legend>
       <div className="choice-options">
         {choices.map((choice) => (
@@ -43,11 +35,6 @@ export function ChoiceGroup<T extends string>({
           </label>
         ))}
       </div>
-      {showDetail ? (
-        <p id={detailId} className="choice-detail">
-          {selected?.detail}
-        </p>
-      ) : null}
     </fieldset>
   );
 }

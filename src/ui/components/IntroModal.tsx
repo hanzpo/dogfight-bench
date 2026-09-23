@@ -1,55 +1,33 @@
+import type { Loadout } from "../../sim/types";
 import type { ControlScheme } from "../input/pilot-input";
-import { BINDINGS, GAME_KEYS, SCHEMES } from "../setup";
+import { BINDINGS, GAME_KEYS } from "../setup";
 import { Dialog, KeyList } from "./Dialog";
-
-const TIPS = [
-  {
-    title: "Speed is life",
-    body: "Pulling hard turns you fast but bleeds speed. Keep the jet near 350 knots and you can always turn again.",
-  },
-  {
-    title: "Lead your shots",
-    body: "Put the gunsight circle ahead of the bandit, not on it. It turns green when a burst will hit.",
-  },
-  {
-    title: "Heat-seekers want your tailpipe",
-    body: "If a missile is coming, turn hard toward it, pull the throttle back and drop flares.",
-  },
-];
 
 export function IntroModal({
   open,
   scheme,
+  weapons,
   onClose,
 }: {
   open: boolean;
   scheme: ControlScheme;
+  weapons: Loadout;
   onClose: () => void;
 }) {
-  const schemeLabel = SCHEMES.find((choice) => choice.value === scheme)?.label ?? "Keyboard";
+  const bindings = BINDINGS[scheme].filter(
+    (binding) => weapons === "fox2" || !/missile|flares/i.test(binding.action),
+  );
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="Before you take off"
-      description="You fly the blue F-16. Shoot down the red one before it gets you. Whoever runs out of luck first loses."
-      className="intro"
-    >
-      <ol className="tips">
-        {TIPS.map((tip) => (
-          <li key={tip.title}>
-            <strong>{tip.title}</strong>
-            <span>{tip.body}</span>
-          </li>
-        ))}
-      </ol>
-
-      <h3 className="dialog-subtitle">{schemeLabel} controls</h3>
-      <KeyList bindings={[...BINDINGS[scheme], ...GAME_KEYS]} />
-
+    <Dialog open={open} onClose={onClose} title="How to play" description="Shoot down the red F-16." className="intro">
+      <ul className="tips">
+        <li>Hard turns bleed speed. Stay near 350 knots.</li>
+        <li>Aim the gunsight ahead of the target. It turns green when you&rsquo;ll hit.</li>
+        {weapons === "fox2" ? <li>Missile inbound: turn toward it, throttle back, drop flares.</li> : null}
+      </ul>
+      <KeyList bindings={[...bindings, ...GAME_KEYS]} />
       <div className="dialog-actions">
         <button className="primary large" onClick={onClose} autoFocus>
-          Take off
+          Start
         </button>
       </div>
     </Dialog>
