@@ -7,7 +7,7 @@ import { createFlcsState } from "../../sim/flcs";
 import { heightAboveGround } from "../../sim/terrain";
 import { SEEKER_TONES, type ReplayFile, type ReplayFrame } from "../../sim/replay";
 import type { AircraftState, FlareState, MatchState, MissileState } from "../../sim/types";
-import type { ViewerSnapshot } from "../../viewer";
+import { burstsFrom, type ViewerSnapshot } from "../../viewer";
 import { radians } from "../../math";
 
 const UI_REFRESH_MS = 100;
@@ -95,6 +95,20 @@ export function sampleAt(replay: ReplayFile | undefined, time: number): ViewerSn
       from: [segment[0], segment[1], segment[2]] as [number, number, number],
       to: [segment[3], segment[4], segment[5]] as [number, number, number],
     })),
+    // Carried forward along their velocity rather than blended: the frames
+    // are a few hundredths of a second apart and a missile does not turn much
+    // in that, while missiles appearing and vanishing between frames would
+    // pair the wrong ones up.
+    missiles: (current.missiles ?? []).map(([x, y, z, vx, vy, vz, motor]) => {
+      const ahead = time - current.t;
+      return {
+        position: [x + vx * ahead, y + vy * ahead, z + vz * ahead] as [number, number, number],
+        velocity: [vx, vy, vz] as [number, number, number],
+        motor: motor === 1,
+      };
+    }),
+    flares: current.flares ?? [],
+    bursts: burstsFrom(replay.events.filter((event) => Math.abs(event.time - time) < window)),
   };
 }
 

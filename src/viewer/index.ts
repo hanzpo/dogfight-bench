@@ -15,11 +15,11 @@ import { fractal } from "../sim/noise";
 import { TRACER_TRAIL_SECONDS } from "../sim/tracer";
 import { CameraDirector } from "./cameras";
 import type { ViewMode } from "./cameras";
-import type { ViewerAircraft, ViewerSnapshot } from "./types";
+import type { ViewerAircraft, ViewerBurst, ViewerSnapshot } from "./types";
 import type { MatchState } from "../sim/types";
 
 export type { ViewMode } from "./cameras";
-export type { ViewerAircraft, ViewerSnapshot, ViewerTracer } from "./types";
+export type { ViewerAircraft, ViewerBurst, ViewerMissile, ViewerSnapshot, ViewerTracer } from "./types";
 
 export function extractAirframe(scene: THREE.Object3D): THREE.Object3D {
   const airframe = scene.getObjectByName("F16_Clean") ?? scene;
@@ -58,7 +58,26 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       };
     }),
     impacts,
+    missiles: state.missiles.map((missile) => ({
+      position: missile.position.toArray() as [number, number, number],
+      velocity: missile.velocity.toArray() as [number, number, number],
+      motor: missile.motorRemainingS > 0,
+    })),
+    flares: state.flares.map((flare) => flare.position.toArray() as [number, number, number]),
+    bursts: burstsFrom(state.events.slice(sinceEventIndex)),
   };
+}
+
+export function burstsFrom(events: MatchState["events"]): ViewerBurst[] {
+  const bursts: ViewerBurst[] = [];
+  for (const event of events) {
+    if (!event.position) continue;
+    if (event.type === "missile-detonation") bursts.push({ position: event.position, time: event.time, kind: "warhead" });
+    if (event.type === "missile-expired" && event.detail !== "hit the ground") {
+      bursts.push({ position: event.position, time: event.time, kind: "self-destruct" });
+    }
+  }
+  return bursts;
 }
 
 /** A tiling sheet of soft blobs, thin enough to fly through. */
@@ -114,6 +133,13 @@ function pinnedRenderScale(): number | undefined {
 
 const PLUME_LENGTH_M = 7;
 
+const MISSILE_LENGTH_M = 2.87;
+const MISSILE_RADIUS_M = 0.064;
+const SMOKE_EVERY_S = 0.025;
+const FLARE_SMOKE_EVERY_S = 0.07;
+/** Past this many live sprites a new puff is skipped rather than added. */
+const MAX_EFFECTS = 2_400;
+
 const PLUME_ANCHOR = new THREE.Vector3(0, NOZZLE.centreYM, NOZZLE.exitZM);
 
 export class DogfightViewer {
@@ -138,6 +164,11 @@ export class DogfightViewer {
     peak: number;
   }> = [];
   private lastEffectTime = 0;
+  private lastSmokeTime = 0;
+  private lastFlareSmokeTime = 0;
+  private readonly missileMeshes: THREE.Group[] = [];
+  private readonly flareSprites: THREE.Sprite[] = [];
+  private readonly drawnBursts = new Set<string>();
   private modelTemplate?: THREE.Object3D;
   private followId = "blue-1";
   private readonly tracerMaterial = new THREE.LineBasicMaterial({
@@ -155,6 +186,35 @@ export class DogfightViewer {
     depthWrite: false,
   });
   private readonly puffTexture = makePuffTexture();
+  private readonly missileBodyGeometry = new THREE.CylinderGeometry(
+    MISSILE_RADIUS_M,
+    MISSILE_RADIUS_M,
+    MISSILE_LENGTH_M,
+    10,
+  ).rotateX(Math.PI / 2);
+  private readonly missileFinGeometry = new THREE.BoxGeometry(0.62, 0.02, 0.3);
+  private readonly missileMaterial = new THREE.MeshStandardMaterial({ color: 0xd9dbd6, roughness: 0.55, metalness: 0.2 });
+  private readonly missileFlameMaterial = new THREE.SpriteMaterial({
+    map: this.puffTexture,
+    color: 0xffc27a,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  private readonly flareMaterial = new THREE.SpriteMaterial({
+    map: this.puffTexture,
+    color: 0xfff1c9,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  private readonly missileSmokeMaterial = new THREE.SpriteMaterial({
+    map: this.puffTexture,
+    color: 0xe4e2de,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+  });
   private readonly sparkMaterial = new THREE.SpriteMaterial({
     map: this.puffTexture,
     color: 0xffb257,
@@ -450,6 +510,9 @@ export class DogfightViewer {
       this.updatePlume(aircraft);
     }
     this.spawnEffects(snapshot);
+    this.drawMissiles(snapshot);
+    this.drawFlares(snapshot);
+    this.drawBursts(snapshot);
     this.ageEffects(snapshot.time);
 
     let vertex = 0;
@@ -533,6 +596,119 @@ export class DogfightViewer {
         );
       this.effectGroup.add(puff);
       this.effects.push({ mesh: puff, born: snapshot.time, life: 2.6, grow: 5, size: 6, peak: 0.34 });
+    }
+  }
+
+  private addEffect(
+    material: THREE.SpriteMaterial,
+    position: THREE.Vector3 | [number, number, number],
+    time: number,
+    shape: { life: number; grow: number; size: number; peak: number },
+  ): void {
+    if (this.effects.length >= MAX_EFFECTS) return;
+    const sprite = new THREE.Sprite(material.clone());
+    if (Array.isArray(position)) sprite.position.fromArray(position);
+    else sprite.position.copy(position);
+    sprite.scale.setScalar(shape.size);
+    this.effectGroup.add(sprite);
+    this.effects.push({ mesh: sprite, born: time, ...shape });
+  }
+
+  private missileMesh(index: number): THREE.Group {
+    let mesh = this.missileMeshes[index];
+    if (mesh) return mesh;
+    mesh = new THREE.Group();
+    mesh.add(new THREE.Mesh(this.missileBodyGeometry, this.missileMaterial));
+    for (const roll of [0, Math.PI / 2]) {
+      for (const along of [MISSILE_LENGTH_M * 0.42, -MISSILE_LENGTH_M * 0.42]) {
+        const fin = new THREE.Mesh(this.missileFinGeometry, this.missileMaterial);
+        fin.rotation.z = roll;
+        fin.position.z = along;
+        mesh.add(fin);
+      }
+    }
+    const flame = new THREE.Sprite(this.missileFlameMaterial);
+    flame.name = "flame";
+    flame.position.z = -MISSILE_LENGTH_M / 2 - 0.5;
+    flame.scale.setScalar(1.6);
+    mesh.add(flame);
+    this.scene.add(mesh);
+    this.missileMeshes[index] = mesh;
+    return mesh;
+  }
+
+  private drawMissiles(snapshot: ViewerSnapshot): void {
+    const missiles = snapshot.missiles ?? [];
+    const smoke = snapshot.time - this.lastSmokeTime >= SMOKE_EVERY_S || snapshot.time < this.lastSmokeTime;
+    if (smoke) this.lastSmokeTime = snapshot.time;
+    const forward = new THREE.Vector3(0, 0, 1);
+    missiles.forEach((missile, index) => {
+      const mesh = this.missileMesh(index);
+      mesh.visible = true;
+      mesh.position.fromArray(missile.position);
+      const velocity = new THREE.Vector3().fromArray(missile.velocity);
+      if (velocity.lengthSq() > 1) mesh.quaternion.setFromUnitVectors(forward, velocity.normalize());
+      const flame = mesh.getObjectByName("flame");
+      if (flame) {
+        flame.visible = missile.motor;
+        flame.scale.setScalar(1.3 + Math.random() * 0.7);
+      }
+      if (smoke && missile.motor) {
+        this.addEffect(this.missileSmokeMaterial, missile.position, snapshot.time, {
+          life: 5,
+          grow: 3.5,
+          size: 2.2,
+          peak: 0.5,
+        });
+      }
+    });
+    for (let index = missiles.length; index < this.missileMeshes.length; index += 1) {
+      this.missileMeshes[index]!.visible = false;
+    }
+  }
+
+  private drawFlares(snapshot: ViewerSnapshot): void {
+    const flares = snapshot.flares ?? [];
+    const smoke = snapshot.time - this.lastFlareSmokeTime >= FLARE_SMOKE_EVERY_S || snapshot.time < this.lastFlareSmokeTime;
+    if (smoke) this.lastFlareSmokeTime = snapshot.time;
+    flares.forEach((position, index) => {
+      let sprite = this.flareSprites[index];
+      if (!sprite) {
+        sprite = new THREE.Sprite(this.flareMaterial);
+        this.effectGroup.add(sprite);
+        this.flareSprites[index] = sprite;
+      }
+      sprite.visible = true;
+      sprite.position.fromArray(position);
+      sprite.scale.setScalar(5 + Math.random() * 3);
+      if (smoke) {
+        this.addEffect(this.smokeMaterial, position, snapshot.time, { life: 2.4, grow: 3, size: 2, peak: 0.28 });
+      }
+    });
+    for (let index = flares.length; index < this.flareSprites.length; index += 1) {
+      this.flareSprites[index]!.visible = false;
+    }
+  }
+
+  private drawBursts(snapshot: ViewerSnapshot): void {
+    for (const burst of snapshot.bursts ?? []) {
+      const key = `${burst.time.toFixed(3)}:${burst.position.map((value) => value.toFixed(0)).join(",")}`;
+      if (this.drawnBursts.has(key)) continue;
+      this.drawnBursts.add(key);
+      if (this.drawnBursts.size > 64) this.drawnBursts.delete(this.drawnBursts.values().next().value!);
+      const warhead = burst.kind === "warhead";
+      this.addEffect(this.sparkMaterial, burst.position, snapshot.time, {
+        life: warhead ? 0.8 : 0.5,
+        grow: warhead ? 6 : 3,
+        size: warhead ? 7 : 3,
+        peak: 1,
+      });
+      this.addEffect(this.smokeMaterial, burst.position, snapshot.time, {
+        life: warhead ? 5 : 3,
+        grow: warhead ? 4 : 2.5,
+        size: warhead ? 9 : 4,
+        peak: 0.55,
+      });
     }
   }
 
@@ -656,6 +832,9 @@ export class DogfightViewer {
       (effect.mesh.material as THREE.Material).dispose();
     }
     this.effects.length = 0;
+    this.missileBodyGeometry.dispose();
+    this.missileFinGeometry.dispose();
+    this.missileMaterial.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
