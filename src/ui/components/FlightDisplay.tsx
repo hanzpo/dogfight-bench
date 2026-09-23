@@ -91,8 +91,11 @@ export function FlightDisplay({
       set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
       set("ammo", String(own.ammo));
       const armed = own.stores.missileStations > 0;
-      groups.current["srm"]?.setAttribute("visibility", armed ? "visible" : "hidden");
-      groups.current["rwr"]?.setAttribute("visibility", armed ? "visible" : "hidden");
+      // Removed rather than hidden: a hidden SVG group still has a size, and the
+      // missile columns would push the stores readout into the throttle's space
+      // on a narrow window in a fight that has no missiles.
+      groups.current["srm"]?.setAttribute("display", armed ? "inline" : "none");
+      groups.current["rwr"]?.setAttribute("display", armed ? "inline" : "none");
       if (armed) {
         set("missiles", String(own.stores.missiles));
         set("seeker", own.stores.missiles > 0 ? SEEKER_LABEL[own.seeker.tone] : "");
@@ -293,7 +296,7 @@ export function FlightDisplay({
         <text ref={label("ammo")} className="stores-value" y="14" textAnchor="end">
           511
         </text>
-        <g ref={group("srm")} visibility="hidden">
+        <g ref={group("srm")} display="none">
           <text className="tape-caption" x="-64" y="-8" textAnchor="end">
             AIM-9M
           </text>
@@ -312,7 +315,7 @@ export function FlightDisplay({
         </g>
       </g>
 
-      <g ref={group("rwr")} className="rwr" visibility="hidden">
+      <g ref={group("rwr")} className="rwr" display="none">
         <circle className="rwr-scope" r={RWR_RADIUS} />
         <circle className="rwr-ring" r={RWR_RADIUS / 2} />
         <path className="rwr-ownship" d="M 0 -6 L 0 6 M -6 1 L 6 1 M -3 5 L 3 5" />
