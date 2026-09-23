@@ -14,14 +14,26 @@ export const NOZZLE = {
   exitRadiusM: 0.47,
 } as const;
 
+/**
+ * Where the F-16's centre of gravity is on its model, in body axes (right,
+ * up, nose): 35% of the mean aerodynamic chord, the reference NASA's F-16
+ * data is given about, measured off the model's wing as 1.37 m behind the
+ * model's origin. The simulation's position is this point; everything drawn
+ * or fired from the airframe is measured from here.
+ */
+export const F16_CG = [0, 0, -1.37] as const;
+
 export const MASS = {
   emptyKg: 9_200,
   internalFuelKg: 3_175,
   startFuelFraction: 0.6,
-  ixxKgM2: 9_496,
-  iyyKgM2: 55_814,
-  izzKgM2: 63_100,
-  ixzKgM2: 982,
+  // NASA TP-1538's F-16 inertia, which is in slug·ft² (9,496, 55,814, 63,100
+  // and 982), converted. The raw figures were used as kg·m² until 2026-09-23,
+  // which left the jet a quarter lighter to turn than it is.
+  ixxKgM2: 9_496 * 1.355_818,
+  iyyKgM2: 55_814 * 1.355_818,
+  izzKgM2: 63_100 * 1.355_818,
+  ixzKgM2: 982 * 1.355_818,
   fuelInertiaFraction: 0.22,
 } as const;
 

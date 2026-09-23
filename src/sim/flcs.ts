@@ -116,13 +116,25 @@ export function stepFlcs(state: FlcsState, input: FlcsInputs, dt: number, flight
     0.35,
     1,
   );
-  const pCommand = input.rollStick * flcs.maxRollRateRadS * fade * (departed ? 0.3 : 1);
+  // Less roll the harder the stick asks it to pull, as the F-16's own laws
+  // do: a full-rate roll at nine g couples pitch into yaw faster than any
+  // rudder can follow. Asked for rather than measured, because the g arrives
+  // after the roll has already started and would limit it too late.
+  const pulling = clamp((rawG - 1) / Math.max(flcs.maxLoadFactor - 1, 1), 0, 1);
+  const loadLimit = 1 - 0.55 * pulling;
+  const pCommand = input.rollStick * flcs.maxRollRateRadS * fade * loadLimit * (departed ? 0.3 : 1);
   const rollTrim =
     -(aero.clP * pCommand * halfSpan + aero.clBeta * input.betaRad + aero.clR * rHat) / aero.clRollCommand;
   const rollCommand = clamp(rollTrim + flcs.rollRateGain * schedule * (pCommand - input.p), -1, 1);
 
-  state.yawWashout += ((input.r - state.yawWashout) * dt) / 1.5;
-  const damped = input.r - state.yawWashout;
+  // Roll about the flight path, not the body: rolling at an angle of attack
+  // turns the jet's nose sideways unless it yaws at p·tan(α) as it goes. The
+  // damper holds yaw rate to that rather than to nothing -- damping to nothing
+  // fought the coordination and let sideslip build until the jet departed.
+  const coordinatedR = input.p * Math.tan(clamp(input.alphaRad, -0.6, 0.6));
+  const yawError = input.r - coordinatedR;
+  state.yawWashout += ((yawError - state.yawWashout) * dt) / 1.5;
+  const damped = yawError - state.yawWashout;
   const betaCommand = -input.yawPedal * flcs.maxCommandedSideslipRad;
 
   const yawTrim =
