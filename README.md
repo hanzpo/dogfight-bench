@@ -111,6 +111,40 @@ Two of those became permanent because they are right on their own terms: the
 briefing reports attitude and where the controls already are, and the stick
 moves at a finite rate. The stick interface itself is gone.
 
+## Fox 2
+
+Guns only is the default, and every benchmark was flown that way. The live
+page can also load each jet with two AIM-9Ms and thirty flares (**Weapons ·
+Guns + 2 × AIM-9M**). Launch with X or LB, dispense flares with C or B.
+
+It is an AIM-9M and not an AIM-9X on purpose: a seeker that can look far off
+the nose turns every merge into whoever gets tone first.
+
+- **Seeker.** Before launch the seeker is slaved to the nose and sees only 6°
+  around it, so you have to point at the bandit to get tone. You hear a growl
+  as heat comes into view and a steady tone once it locks. After that it
+  tracks on its own out to 40°. It sees a tailpipe much better than a nose,
+  and afterburner better than idle. At military power it locks from about
+  8 km dead astern and about 2.5 km head-on.
+- **Missile.** It flies proportional navigation and bleeds speed hard when it
+  turns. It loses the track past its gimbal limit or when the line of sight
+  moves faster than it can follow. It bursts on a 9 m proximity fuze. Against
+  a jet flying straight it reaches about 6 km from astern and about 4 km
+  head-on, and a beam crossing at a kilometre beats it.
+- **Flares.** One press dispenses a pair. Each flare gets one chance to pull
+  the seeker, weighted by its share of the heat. Against a shot from dead
+  astern, one pair defeats about half the missiles at idle, a third at
+  military power and a quarter in afterburner, so pull the power back while
+  you dispense.
+- **Warning.** The RWR scope shows the bandit's radar while you are inside
+  its scan, and inbound missiles by bearing. The HUD flashes the clock
+  position, range and time to go.
+
+Missile fights are not ranked; the ladder is a guns ladder. Replays record
+missiles and flares (format version 4), and version 3 replays still play.
+The model adapters are not told about missiles yet, so only the scripted
+pilots and people use them.
+
 ## Cameras
 
 Five, because a fight asks five different questions. **Free look** is the
