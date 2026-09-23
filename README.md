@@ -186,7 +186,13 @@ use a real one, put a `.glb` at `public/aircraft/<id>.glb` and set `model:
   (the cockpit camera) are in body axes, right-up-nose, so move them to
   match the model or model to match them.
 
-A file that fails to load falls back to the placeholder.
+A model exported facing the other way can be left as it is: set
+`modelYawDeg: 180` on the airframe and it is turned as it loads, so the
+`.blend` stays the source. The F/A-18 is done this way, and
+`test/asset.test.ts` checks its size, facing, rails and nozzles against the
+file, so a re-export that moves any of them fails a test rather than
+hanging missiles in mid-air. A file that fails to load falls back to the
+placeholder.
 
 ## Cameras
 

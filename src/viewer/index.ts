@@ -320,7 +320,15 @@ export class DogfightViewer {
     this.loading.add(frame.id);
     try {
       const gltf = await new GLTFLoader().loadAsync(frame.model);
-      this.models.set(frame.id, extractAirframe(gltf.scene));
+      const model = extractAirframe(gltf.scene);
+      if (frame.modelYawDeg) {
+        const turned = new THREE.Group();
+        model.rotation.y = (frame.modelYawDeg * Math.PI) / 180;
+        turned.add(model);
+        this.models.set(frame.id, turned);
+      } else {
+        this.models.set(frame.id, model);
+      }
     } catch {
       this.models.set(frame.id, buildPlaceholder(frame));
     } finally {

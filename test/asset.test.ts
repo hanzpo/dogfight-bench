@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { NOZZLE } from "../src/sim/config";
+import { AIRFRAMES } from "../src/sim/airframes";
 
 interface Primitive {
   name: string;
@@ -109,5 +110,65 @@ describe("the F-16 asset", () => {
     expect(centreX).toBeCloseTo(0, 2);
     expect(centreY).toBeCloseTo(NOZZLE.centreYM, 2);
     expect(radius).toBeCloseTo(NOZZLE.exitRadiusM, 1);
+  });
+});
+
+describe("the F/A-18 asset", () => {
+  const hornet = AIRFRAMES.fa18c;
+  const { primitives, vertices } = readGlb(`public${hornet.model}`);
+  const gltf = (() => {
+    const buffer = readFileSync(`public${hornet.model}`);
+    const length = buffer.readUInt32LE(12);
+    return JSON.parse(buffer.subarray(20, 20 + length).toString("utf8")) as {
+      nodes: Array<{ name?: string; translation?: [number, number, number] }>;
+    };
+  })();
+  const node = (name: string) => gltf.nodes.find((candidate) => candidate.name === name)?.translation;
+  // Model space has +x to the left; turning the file by 180° flips x and z
+  // again. So a point in the file is (-right × facing, up, nose × facing).
+  const facing = hornet.modelYawDeg === 180 ? -1 : 1;
+
+  const zs = vertices.map((vertex) => vertex[2]);
+  const xs = vertices.map((vertex) => vertex[0]);
+
+  it("is a Hornet-sized aircraft in metres", () => {
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(15.5);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeLessThan(18);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(10.5);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(12.8);
+  });
+
+  it("is turned so its nose ends up along +z", () => {
+    // Its radome is the only warm-grey part; wherever the file put it, the
+    // turn has to bring it forward.
+    const radome = primitives.find((primitive) => primitive.min[2] < -6 && primitive.max[2] < -6)
+      ?? primitives.find((primitive) => primitive.min[2] > 6 && primitive.max[2] > 6);
+    expect(radome).toBeDefined();
+    const noseInFile = (radome!.min[2] + radome!.max[2]) / 2;
+    expect(noseInFile * facing).toBeGreaterThan(6);
+  });
+
+  it("carries its missiles on the model's own wingtip mounts", () => {
+    for (const [rail, name] of [
+      [hornet.rails[0]!, "Mount_Wingtip_L"],
+      [hornet.rails[1]!, "Mount_Wingtip_R"],
+    ] as const) {
+      const mount = node(name);
+      expect(mount, `${name} should still be in the file`).toBeDefined();
+      expect(-rail[0] * facing).toBeCloseTo(mount![0], 1);
+      expect(rail[1]).toBeCloseTo(mount![1], 1);
+      expect(rail[2] * facing).toBeCloseTo(mount![2], 1);
+    }
+  });
+
+  it("has its nozzles where the afterburner plumes are drawn", () => {
+    for (const [right, up, nose] of hornet.nozzles) {
+      const x = -right * facing;
+      const z = nose * facing;
+      const near = vertices.filter(
+        (vertex) => Math.hypot(vertex[0] - x, vertex[1] - up) < hornet.nozzleRadiusM + 0.1 && Math.abs(vertex[2] - z) < 0.2,
+      );
+      expect(near.length, `a nozzle ring at (${x}, ${up}, ${z}) in the file`).toBeGreaterThan(8);
+    }
   });
 });

@@ -56,6 +56,8 @@ export interface Airframe extends FlightSpec {
   cockpitEye: BodyPoint;
   /** A real model at this path replaces the placeholder: nose along +z, up +y, metres, origin mid-length. */
   model?: string;
+  /** Turns a model that was exported facing another way, so its source file need not change. */
+  modelYawDeg?: number;
   placeholder: PlaceholderShape;
 }
 
@@ -324,10 +326,18 @@ const FA18C: Airframe = {
   gun: { ...GUNS.m61, ammunition: 578, muzzleOffsetM: [0, 0.6, 7.2] as const },
   missile: "aim9m",
   infrared: 1.4,
-  nozzles: [[-0.55, -0.1, -8.2], [0.55, -0.1, -8.2]],
-  nozzleRadiusM: 0.4,
-  rails: tips(11.43, -1.4),
-  cockpitEye: [0, 1.1, 4.3],
+  // Measured off the model: nozzle exits, the Mount_Wingtip nodes, and a seat
+  // under the canopy, which runs from 1.8 to 5.2 m forward with its top at 1.44 m.
+  nozzles: [[-0.56, 0.03, -7.99], [0.56, 0.03, -7.99]],
+  nozzleRadiusM: 0.51,
+  rails: [
+    [-5.77, -0.1, -2.87],
+    [5.77, -0.1, -2.87],
+  ],
+  cockpitEye: [0, 1.2, 4.0],
+  model: "/aircraft/fa18c.glb",
+  // Exported nose-aft, along -z.
+  modelYawDeg: 180,
   placeholder: {
     fuselageRadiusM: 0.68, wing: "trapezoid", wingRootAt: 0.43, wingRootChordM: 4.8, wingTipChordM: 1.7,
     wingSweepDeg: 26, tailplane: true, fins: 2, finCantDeg: 20, finHeightM: 2.3, canards: false,
