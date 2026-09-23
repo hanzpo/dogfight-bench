@@ -1,5 +1,8 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { MISSILE } from "../../sim/config";
+import { bodyAxes } from "../../sim/flight-model";
 import { bulletImpactPoint, hitThresholdM, solveGunsight, wouldConnect } from "../../sim/gunsight";
+import { missileLaunchZone } from "../../sim/rwr";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
 import { radians } from "../../math";
@@ -23,6 +26,9 @@ export function TacticalOverlay({
   const rangeLabel = useRef<SVGTextElement>(null);
   const arrow = useRef<SVGGElement>(null);
   const shootCue = useRef<SVGGElement>(null);
+  const seekerCircle = useRef<SVGCircleElement>(null);
+  const lockDiamond = useRef<SVGGElement>(null);
+  const lockLabel = useRef<SVGTextElement>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -43,7 +49,15 @@ export function TacticalOverlay({
       const show = (element: SVGElement | null) => element?.setAttribute("visibility", "visible");
 
       if (!own.alive || !bandit.alive) {
-        for (const element of [reticle.current, targetBox.current, arrow.current, leadLine.current, shootCue.current]) {
+        for (const element of [
+          reticle.current,
+          targetBox.current,
+          arrow.current,
+          leadLine.current,
+          shootCue.current,
+          seekerCircle.current,
+          lockDiamond.current,
+        ]) {
           hide(element);
         }
         return;
@@ -73,6 +87,56 @@ export function TacticalOverlay({
         const radius = clamp((spreadRadians / fieldOfView) * height, 6, 140);
         reticleRing.current?.setAttribute("r", radius.toFixed(1));
       }
+
+      /**
+       * The missile's seeker: a circle the size of its acquisition cone,
+       * slaved to the nose, until it has tone -- then a diamond on whatever it
+       * is tracking, which need not be where the nose is pointing.
+       */
+      const drawSeeker = () => {
+        const seeker = own.seeker;
+        if (own.stores.missiles <= 0 || seeker.tone === "off") {
+          hide(seekerCircle.current);
+          hide(lockDiamond.current);
+          return;
+        }
+        if (seeker.tone === "lock") {
+          hide(seekerCircle.current);
+          const locked = viewer.project(bandit.position);
+          if (locked.behind) {
+            hide(lockDiamond.current);
+            return;
+          }
+          show(lockDiamond.current);
+          lockDiamond.current?.setAttribute(
+            "transform",
+            `translate(${(locked.x * width).toFixed(1)} ${(locked.y * height).toFixed(1)})`,
+          );
+          const zone = missileLaunchZone(own, bandit);
+          const inRange = range >= zone.minM && range <= zone.maxM;
+          if (lockLabel.current) {
+            const label = inRange ? "SHOOT" : range > zone.maxM ? "LOCK · OUT OF RANGE" : "LOCK · TOO CLOSE";
+            if (lockLabel.current.textContent !== label) lockLabel.current.textContent = label;
+            lockLabel.current.setAttribute("class", inRange ? "lock-label in-range" : "lock-label");
+          }
+          return;
+        }
+        hide(lockDiamond.current);
+        const axes = bodyAxes(own.orientation);
+        const ahead = own.position.clone().addScaledVector(axes.nose, 1_000);
+        const centre = viewer.project(ahead);
+        const edge = viewer.project(ahead.clone().addScaledVector(axes.up, Math.tan(MISSILE.acquisitionConeRad) * 1_000));
+        if (centre.behind || edge.behind) {
+          hide(seekerCircle.current);
+          return;
+        }
+        show(seekerCircle.current);
+        const radius = Math.hypot((edge.x - centre.x) * width, (edge.y - centre.y) * height);
+        seekerCircle.current?.setAttribute("cx", (centre.x * width).toFixed(1));
+        seekerCircle.current?.setAttribute("cy", (centre.y * height).toFixed(1));
+        seekerCircle.current?.setAttribute("r", clamp(radius, 8, 400).toFixed(1));
+        seekerCircle.current?.setAttribute("class", `seeker-circle ${seeker.tone}`);
+      };
 
       const target = viewer.project(bandit.position);
       const onScreen = !target.behind && target.x > 0 && target.x < 1 && target.y > 0 && target.y < 1;
@@ -118,6 +182,8 @@ export function TacticalOverlay({
         arrow.current?.setAttribute("transform", `translate(${cx.toFixed(1)} ${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`);
       }
 
+      drawSeeker();
+
       const canHit = wouldConnect(solution) && own.ammo > 0;
       if (canHit) {
         show(shootCue.current);
@@ -158,6 +224,15 @@ export function TacticalOverlay({
 
       <g ref={arrow} className="bandit-arrow" visibility="hidden">
         <path d="M 0 0 L -22 -9 L -16 0 L -22 9 Z" />
+      </g>
+
+      <circle ref={seekerCircle} className="seeker-circle" r="40" visibility="hidden" />
+
+      <g ref={lockDiamond} className="lock-diamond" visibility="hidden">
+        <path d="M 0 -17 L 17 0 L 0 17 L -17 0 Z" />
+        <text ref={lockLabel} className="lock-label" y="-24" textAnchor="middle">
+          LOCK
+        </text>
       </g>
 
       <g ref={shootCue} className="shoot-cue" visibility="hidden">

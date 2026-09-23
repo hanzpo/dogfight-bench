@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import { Vector3 } from "three";
 import { atmosphere, equivalentAirspeed } from "../../sim/atmosphere";
 import { bodyAxes } from "../../sim/flight-model";
+import { rwrContacts, type RwrContact } from "../../sim/rwr";
 import type { MatchState } from "../../sim/types";
 import type { DogfightViewer } from "../../viewer";
 import { clamp, degrees, radians } from "../../math";
@@ -15,6 +16,8 @@ const LADDER_GAP = 0.34;
 const HUD_FIELD_DEG = { horizontal: 30, vertical: 24 };
 
 const CONTROL_BOX_HALF = 22;
+
+const RWR_RADIUS = 46;
 
 export function FlightDisplay({
   stateRef,
@@ -40,6 +43,8 @@ export function FlightDisplay({
   const rudderBar = useRef<SVGRectElement>(null);
   const aoaBracket = useRef<SVGGElement>(null);
   const hudField = useRef<SVGEllipseElement>(null);
+  const rwrContactsGroup = useRef<SVGGElement>(null);
+  const missileWarning = useRef<SVGGElement>(null);
   const groups = useRef<Record<string, SVGGElement | null>>({});
   const rendered = useRef<Record<string, string>>({});
   const details = useRef(detailsOpen);
@@ -85,6 +90,26 @@ export function FlightDisplay({
       set("aoa", `${degrees(own.aoaRad).toFixed(1)}° AOA`);
       set("fuel", `${Math.round(own.engine.fuelKg)} KG`);
       set("ammo", String(own.ammo));
+      const armed = own.stores.missileStations > 0;
+      groups.current["srm"]?.setAttribute("visibility", armed ? "visible" : "hidden");
+      groups.current["rwr"]?.setAttribute("visibility", armed ? "visible" : "hidden");
+      if (armed) {
+        set("missiles", String(own.stores.missiles));
+        set("seeker", own.stores.missiles > 0 ? SEEKER_LABEL[own.seeker.tone] : "");
+        set("flares", String(own.stores.flares));
+        const contacts = rwrContacts(state, own.id);
+        drawRwr(rwrContactsGroup.current, rendered.current, contacts);
+        const inbound = contacts
+          .filter((contact) => contact.kind === "missile")
+          .sort((a, b) => (a.timeToGoS ?? Infinity) - (b.timeToGoS ?? Infinity))[0];
+        missileWarning.current?.setAttribute("visibility", inbound ? "visible" : "hidden");
+        if (inbound) {
+          set("warning", `MISSILE ${clock(inbound.bearingDeg)} O'CLOCK`);
+          set("warningDetail", `${(inbound.rangeM / 1_000).toFixed(1)} KM · ${Math.max(0, inbound.timeToGoS ?? 0).toFixed(1)} S`);
+        }
+      } else {
+        missileWarning.current?.setAttribute("visibility", "hidden");
+      }
       set("throttleLabel", throttleLabel(own.engine.afterburner, own.controls.throttle));
       throttleFill.current?.setAttribute("width", (clamp(own.controls.throttle, 0, 1) * 84).toFixed(1));
       throttleFill.current?.setAttribute("fill", own.engine.afterburner ? "var(--ab)" : "currentColor");
@@ -268,12 +293,79 @@ export function FlightDisplay({
         <text ref={label("ammo")} className="stores-value" y="14" textAnchor="end">
           511
         </text>
+        <g ref={group("srm")} visibility="hidden">
+          <text className="tape-caption" x="-64" y="-8" textAnchor="end">
+            AIM-9M
+          </text>
+          <text ref={label("missiles")} className="stores-value" x="-64" y="14" textAnchor="end">
+            2
+          </text>
+          <text ref={label("seeker")} className="tape-sub seeker-state" x="-64" y="30" textAnchor="end">
+            SRCH
+          </text>
+          <text className="tape-caption" x="-136" y="-8" textAnchor="end">
+            FLARES
+          </text>
+          <text ref={label("flares")} className="stores-value" x="-136" y="14" textAnchor="end">
+            30
+          </text>
+        </g>
+      </g>
+
+      <g ref={group("rwr")} className="rwr" visibility="hidden">
+        <circle className="rwr-scope" r={RWR_RADIUS} />
+        <circle className="rwr-ring" r={RWR_RADIUS / 2} />
+        <path className="rwr-ownship" d="M 0 -6 L 0 6 M -6 1 L 6 1 M -3 5 L 3 5" />
+        <text className="tape-caption" y={-RWR_RADIUS - 8} textAnchor="middle">
+          RWR
+        </text>
+        <g ref={rwrContactsGroup} />
+      </g>
+
+      <g ref={group("warning")}>
+      <g ref={missileWarning} className="missile-warning" visibility="hidden">
+        <text ref={label("warning")} className="missile-warning-title" textAnchor="middle">
+          MISSILE
+        </text>
+        <text ref={label("warningDetail")} className="missile-warning-detail" y="18" textAnchor="middle">
+          0.0 KM
+        </text>
+      </g>
       </g>
     </svg>
   );
 }
 
 const UP = new Vector3(0, 1, 0);
+
+const SEEKER_LABEL = { off: "", search: "SRCH", growl: "GROWL", lock: "LOCK" } as const;
+
+function clock(bearingDeg: number): number {
+  const hour = Math.round((((bearingDeg % 360) + 360) % 360) / 30) % 12;
+  return hour === 0 ? 12 : hour;
+}
+
+/**
+ * The threat scope: our nose at the top, each emitter at its bearing. A radar
+ * sits on the outer ring and moves in when it goes from search to track; a
+ * missile sits inside, where the eye goes first.
+ */
+function drawRwr(group: SVGGElement | null, cache: Record<string, string>, contacts: RwrContact[]): void {
+  if (!group) return;
+  const marks = contacts.map((contact) => {
+    const radius =
+      contact.kind === "missile" ? RWR_RADIUS * 0.34 : contact.level === "track" ? RWR_RADIUS * 0.62 : RWR_RADIUS * 0.84;
+    const angle = (contact.bearingDeg * Math.PI) / 180;
+    const x = (Math.sin(angle) * radius).toFixed(1);
+    const y = (-Math.cos(angle) * radius).toFixed(1);
+    if (contact.kind === "missile") {
+      return `<g class="rwr-missile" transform="translate(${x} ${y})"><path d="M 0 -8 L 7 6 L -7 6 Z" /><text y="4" text-anchor="middle">M</text></g>`;
+    }
+    const box = contact.level === "track" ? `<path class="rwr-track" d="M 0 -10 L 10 0 L 0 10 L -10 0 Z" />` : "";
+    return `<g class="rwr-radar" transform="translate(${x} ${y})">${box}<text y="4" text-anchor="middle">16</text></g>`;
+  });
+  setMarkup(group, cache, "rwr", marks.join(""));
+}
 
 function throttleLabel(afterburner: boolean, throttle: number): string {
   if (afterburner) return "AB";
@@ -323,6 +415,12 @@ function layout(
   const bottom = (bar && bar > height * 0.4 ? bar : height - 132) - 42;
   place("engine", margin, bottom);
   place("stores", rightEdge, bottom);
+  // Above the throttle, clear of the airspeed readout that ends a little
+  // below the middle of the screen.
+  const rwrY = Math.max(height / 2 + 150 * scale, bottom - 100 * scale);
+  place("rwr", margin + (RWR_RADIUS + 4) * scale, rwrY);
+  // Below the heading tape and its track readout.
+  place("warning", width / 2, 196);
 }
 
 function sizeHudField(

@@ -276,6 +276,19 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .control-rudder { fill: var(--hud); opacity: .85; }
 .stores-value { font: 600 19px "Barlow Condensed"; letter-spacing: .05em; fill: #eafff1; }
 
+.seeker-state { font-weight: 600; }
+.rwr-scope { fill: #02150a99; stroke: var(--hud); stroke-width: 1.2; }
+.rwr-ring { fill: none; stroke: var(--hud); stroke-width: .8; stroke-dasharray: 2 4; opacity: .5; }
+.rwr-ownship { fill: none; stroke: var(--hud); stroke-width: 1.2; }
+.flight-display .rwr-radar text { font: 600 11px "Barlow Condensed"; fill: #eafff1; }
+.rwr-track { fill: none; stroke: #ffd98a; stroke-width: 1.2; }
+.rwr-missile path { fill: #ff5a4a; stroke: none; }
+.flight-display .rwr-missile text { font: 700 9px "Barlow Condensed"; fill: #1a0503; }
+.rwr-missile { animation: pulse .35s steps(2) infinite; }
+.flight-display .missile-warning-title { font: 700 22px "Barlow Condensed"; letter-spacing: .28em; fill: #ff5a4a; }
+.flight-display .missile-warning-detail { font-size: 11px; fill: #ffb0a6; }
+.missile-warning { animation: pulse .5s steps(2) infinite; }
+
 .conformal line { stroke: var(--hud); stroke-width: 1.6; }
 .conformal .horizon { stroke-width: 2.1; }
 .conformal .rung-label { font-size: 10px; }
@@ -313,6 +326,12 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
   50% { opacity: .35; }
 }
 .shoot-cue { animation: pulse .7s ease-in-out infinite; }
+
+.seeker-circle { fill: none; stroke: var(--hud); stroke-width: 1.3; stroke-dasharray: 4 5; opacity: .75; }
+.seeker-circle.growl { stroke-dasharray: none; opacity: 1; }
+.lock-diamond path { fill: none; stroke: var(--shoot); stroke-width: 1.8; filter: drop-shadow(0 0 3px #000a); }
+.lock-label { fill: var(--hud); font: 600 12px "Barlow Condensed"; letter-spacing: .22em; }
+.lock-label.in-range { fill: var(--shoot); animation: pulse .7s ease-in-out infinite; }
 
 .details {
   position: fixed; top: var(--details-top); right: 16px; z-index: 3; width: 286px;
