@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Quaternion, Vector3 } from "three";
 import { atmosphere } from "../../sim/atmosphere";
-import { MASS } from "../../sim/config";
+import { MASS, MISSILE } from "../../sim/config";
 import { createDamageState } from "../../sim/damage";
 import { createFlcsState } from "../../sim/flcs";
 import { heightAboveGround } from "../../sim/terrain";
-import type { ReplayFile, ReplayFrame } from "../../sim/replay";
-import type { AircraftState, MatchState } from "../../sim/types";
+import { SEEKER_TONES, type ReplayFile, type ReplayFrame } from "../../sim/replay";
+import type { AircraftState, FlareState, MatchState, MissileState } from "../../sim/types";
 import type { ViewerSnapshot } from "../../viewer";
 import { radians } from "../../math";
 
@@ -122,11 +122,34 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
     finished: false,
     events: replay.events.filter((event) => event.time <= time),
     projectiles: [],
+    missiles: (current.missiles ?? []).map(
+      ([x, y, z, vx, vy, vz, motor, team], index): MissileState => ({
+        id: index,
+        ownerId: team === 1 ? "red-1" : "blue-1",
+        position: new Vector3(x, y, z),
+        previousPosition: new Vector3(x, y, z),
+        velocity: new Vector3(vx, vy, vz),
+        age: 0,
+        motorRemainingS: motor === 1 ? MISSILE.burnS : 0,
+        massKg: MISSILE.launchMassKg,
+        flaresSeen: [],
+      }),
+    ),
+    flares: (current.flares ?? []).map(
+      ([x, y, z], index): FlareState => ({
+        id: index,
+        ownerId: "",
+        position: new Vector3(x, y, z),
+        velocity: new Vector3(),
+        age: 0,
+      }),
+    ),
     aircraft: current.aircraft.map((frame, index) => {
       const later = next.aircraft[index] ?? frame;
       const [aoaDeg, loadFactor, fuelKg, throttle, afterburner, limiter, departed] = frame.s ?? [
         0, 1, 0, 0, 0, 0, 0,
       ];
+      const [missiles, flares, tone] = frame.m ?? [0, 0, 0];
       const position = new Vector3(...lerp3(frame.p, later.p, blend));
       const velocity = new Vector3(...lerp3(frame.v, later.v, blend));
       const air = atmosphere(position.y);
@@ -160,6 +183,17 @@ function rebuildState(replay: ReplayFile, time: number): MatchState {
         gunAccumulator: 0,
         gunSpin: 0,
         roundsThisBurst: 0,
+        stores: {
+          missileStations: frame.m ? MISSILE.carried : 0,
+          missiles,
+          flares,
+          missileHeld: false,
+          flareHeld: false,
+          salvoRemaining: 0,
+          salvoTimerS: 0,
+          launchCooldownS: 0,
+        },
+        seeker: { tone: SEEKER_TONES[tone] ?? "off", signal: 0, flaresSeen: [] },
         damage: { ...createDamageState(), integrity: frame.health },
         health: frame.health,
         alive: frame.alive,

@@ -1,12 +1,12 @@
 import { Euler, Quaternion, Vector3 } from "three";
-import { GUN, MASS } from "./config";
+import { FLARE, GUN, MASS, MISSILE } from "./config";
 import { createDamageState } from "./damage";
 import { thrustAtPower } from "./engine";
 import { createFlcsState } from "./flcs";
 import { atmosphere } from "./atmosphere";
 import { Random } from "./random";
 import { trimLevelFlight, trimPower } from "./trim";
-import type { AircraftState, MatchState, ScenarioConfig, Team } from "./types";
+import type { AircraftState, MatchState, ScenarioConfig, StoresState, Team } from "./types";
 import { radians } from "../math";
 
 export const neutralMerge: ScenarioConfig = {
@@ -56,6 +56,20 @@ function placements(config: ScenarioConfig): [Placement, Placement] {
   ];
 }
 
+export function createStores(config: ScenarioConfig): StoresState {
+  const armed = config.weapons === "fox2";
+  return {
+    missileStations: armed ? MISSILE.carried : 0,
+    missiles: armed ? MISSILE.carried : 0,
+    flares: armed ? FLARE.carried : 0,
+    missileHeld: false,
+    flareHeld: false,
+    salvoRemaining: 0,
+    salvoTimerS: 0,
+    launchCooldownS: 0,
+  };
+}
+
 function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftState {
   const fuelKg = MASS.internalFuelKg * MASS.startFuelFraction;
   const massKg = MASS.emptyKg + fuelKg;
@@ -97,6 +111,8 @@ function makeAircraft(placement: Placement, config: ScenarioConfig): AircraftSta
     gunAccumulator: 0,
     gunSpin: 0,
     roundsThisBurst: 0,
+    stores: createStores(config),
+    seeker: { tone: config.weapons === "fox2" ? "search" : "off", signal: 0, flaresSeen: [] },
     damage: createDamageState(),
     health: 1,
     alive: true,
@@ -110,10 +126,19 @@ export function createNeutralMerge(config: ScenarioConfig = neutralMerge): Match
     tick: 0,
     aircraft: [makeAircraft(blue, config), makeAircraft(red, config)],
     projectiles: [],
+    missiles: [],
+    flares: [],
     events: [],
     finished: false,
   };
 }
+
+/** The same merge with two AIM-9Ms and a dispenser full of flares on each jet. */
+export const fox2Merge: ScenarioConfig = {
+  ...neutralMerge,
+  id: "neutral-merge-v2-fox2",
+  weapons: "fox2",
+};
 
 export function scenarioVariant(seed: number, base: ScenarioConfig = neutralMerge): ScenarioConfig {
   const rng = new Random(seed);

@@ -5,7 +5,8 @@ import { contextFromState, resolveTactical } from "../agents/autopilot";
 import { isDestroyed } from "./damage";
 import { stepAircraft } from "./flight-model";
 import { fireGun, stepProjectiles } from "./gun";
-import { Random } from "./random";
+import { dispenseFlares, launchMissile, stepFlares, stepMissiles, updateSeeker } from "./missile";
+import { Random, mixSeed } from "./random";
 import { createNeutralMerge } from "./scenario";
 import { terrainHeight } from "./terrain";
 import { observationFor } from "./telemetry";
@@ -74,6 +75,7 @@ export interface MatchSummary {
     hitsTaken: number;
     hitsScored: number;
     roundsFired: number;
+    missilesFired?: number;
     ammoRemaining: number;
     fuelRemainingKg: number;
     timeOnTargetS: number;
@@ -99,11 +101,20 @@ export interface AgentStats {
 export class DogfightSimulation {
   readonly state: MatchState;
   private readonly rng: Random;
+  /**
+   * Its own stream, so that a fight with missiles in it draws nothing from the
+   * gun's dispersion and a guns-only fight replays exactly as it always did.
+   */
+  private readonly missileRng: Random;
   private projectileId = 1;
+  private storeId = 1;
   private readonly slots = new Map<string, AgentSlot>();
   private readonly standingOrders = new Map<string, TacticalAction>();
   private readonly bookkeeping = new Map<string, AircraftBookkeeping>();
-  private readonly scoring = new Map<string, { roundsFired: number; hitsScored: number; timeOnTargetS: number; timeInControlZoneS: number }>();
+  private readonly scoring = new Map<
+    string,
+    { roundsFired: number; hitsScored: number; missilesFired: number; timeOnTargetS: number; timeInControlZoneS: number }
+  >();
 
   readonly decisionIntervalS: number;
   readonly decisionTimeoutMs: number;
@@ -123,6 +134,7 @@ export class DogfightSimulation {
     this.recordDecisions = settings.recordDecisions ?? true;
     this.state = createNeutralMerge(config);
     this.rng = new Random(config.seed);
+    this.missileRng = new Random(mixSeed(config.seed ^ 0x5a17_f0c5));
     for (const aircraft of this.state.aircraft) {
       this.bookkeeping.set(aircraft.id, {
         outsideArenaFor: 0,
@@ -130,7 +142,13 @@ export class DogfightSimulation {
         bingoCalled: false,
         wasDeparted: false,
       });
-      this.scoring.set(aircraft.id, { roundsFired: 0, hitsScored: 0, timeOnTargetS: 0, timeInControlZoneS: 0 });
+      this.scoring.set(aircraft.id, {
+        roundsFired: 0,
+        hitsScored: 0,
+        missilesFired: 0,
+        timeOnTargetS: 0,
+        timeInControlZoneS: 0,
+      });
     }
   }
 
@@ -263,10 +281,17 @@ export class DogfightSimulation {
       stepAircraft(aircraft, dt);
       fireGun(this.state, aircraft, dt, this.rng, () => this.projectileId++);
       this.scoring.get(aircraft.id)!.roundsFired += ammoBefore - aircraft.ammo;
+      updateSeeker(this.state, aircraft, this.missileRng);
+      if (launchMissile(this.state, aircraft, dt, () => this.storeId++)) {
+        this.scoring.get(aircraft.id)!.missilesFired += 1;
+      }
+      dispenseFlares(this.state, aircraft, dt, () => this.storeId++);
       this.trackAircraft(aircraft, dt);
     }
 
     stepProjectiles(this.state, dt, this.rng);
+    stepFlares(this.state, dt);
+    stepMissiles(this.state, dt, this.missileRng);
     for (const event of this.state.events.slice(eventCount)) {
       if (event.type === "hit" && event.actorId) this.scoring.get(event.actorId)!.hitsScored += 1;
     }
@@ -454,6 +479,7 @@ export class DogfightSimulation {
           hitsTaken: aircraft.damage.hitsTaken,
           hitsScored: score.hitsScored,
           roundsFired: score.roundsFired,
+          ...(aircraft.stores.missileStations ? { missilesFired: score.missilesFired } : {}),
           ammoRemaining: aircraft.ammo,
           fuelRemainingKg: aircraft.engine.fuelKg,
           timeOnTargetS: score.timeOnTargetS,

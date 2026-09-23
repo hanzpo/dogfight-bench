@@ -19,3 +19,17 @@ export class Random {
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * this.next());
   }
 }
+
+/**
+ * Spreads a seed across all 32 bits.
+ *
+ * Xorshift's first few draws barely move between neighbouring seeds, so
+ * seeds 1, 2 and 3 used to roll the same first number -- which a flare that
+ * gets one chance to decoy a missile turns into the same outcome every match.
+ */
+export function mixSeed(seed: number): number {
+  let h = seed >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85eb_ca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2_ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}

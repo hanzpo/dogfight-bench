@@ -4,8 +4,9 @@ import { EARTH_RADIUS_M, FLCS, GEOMETRY, GUN, MIN_LETHAL_ENERGY_J } from "./conf
 import { hitThresholdM, solveGunsight, wouldConnect } from "./gunsight";
 import { bodyAxes } from "./flight-model";
 import { LIMITER_CL, availableLoadFactor, sustainedLoadFactor } from "./performance";
+import { missileLaunchZone, rwrContacts, type RwrContact } from "./rwr";
 import { terrainAwareness, type TerrainAwareness } from "./terrain-awareness";
-import type { AircraftState, MatchState, ScenarioConfig, SimEvent, Subsystem } from "./types";
+import type { AircraftState, MatchState, ScenarioConfig, SeekerTone, SimEvent, Subsystem } from "./types";
 import { degrees, radians } from "../math";
 import { clamp } from "../math";
 
@@ -65,6 +66,9 @@ export interface AircraftTelemetry {
   ammoRemaining: number;
   roundsThisBurst: number;
   gunSpin: number;
+  missilesRemaining: number;
+  flaresRemaining: number;
+  seekerTone: SeekerTone;
 
   health: number;
   hitsTaken: number;
@@ -86,6 +90,14 @@ export interface GunSolution {
   trackingSolution: boolean;
 }
 
+export interface MissileSolution {
+  /** The seeker has the bandit and would launch on it. */
+  locked: boolean;
+  minRangeM: number;
+  maxRangeM: number;
+  inRange: boolean;
+}
+
 export interface RelativeTelemetry {
   opponentId: string;
   rangeM: number;
@@ -98,6 +110,8 @@ export interface RelativeTelemetry {
   energyAdvantageM: number;
   altitudeAdvantageM: number;
   gunSolution: GunSolution;
+  /** Absent in a guns-only fight. */
+  missileSolution?: MissileSolution;
   threatened: boolean;
 }
 
@@ -112,6 +126,8 @@ export interface AgentObservation {
   aircraft: AircraftTelemetry[];
   relative: RelativeTelemetry;
   recentEvents: SimEvent[];
+  /** Radar and missile-approach warnings, as the pilot's scope shows them. */
+  threats: RwrContact[];
   arena: {
     hardDeckAglM: number;
     radiusM: number;
@@ -194,6 +210,9 @@ export function toTelemetry(aircraft: AircraftState, config: ScenarioConfig): Ai
     ammoRemaining: aircraft.ammo,
     roundsThisBurst: aircraft.roundsThisBurst,
     gunSpin: aircraft.gunSpin,
+    missilesRemaining: aircraft.stores.missiles,
+    flaresRemaining: aircraft.stores.flares,
+    seekerTone: aircraft.seeker.tone,
 
     health: aircraft.damage.integrity,
     hitsTaken: aircraft.damage.hitsTaken,
@@ -256,6 +275,7 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
 
   const gunSolution = gunSolutionFor(own, opponent);
   const threat = gunSolutionFor(opponent, own);
+  const zone = own.stores.missileStations ? missileLaunchZone(own, opponent) : undefined;
 
   return {
     opponentId: opponent.id,
@@ -269,6 +289,16 @@ function relativeFor(own: AircraftState, opponent: AircraftState): RelativeTelem
     energyAdvantageM: ownEnergy - opponentEnergy,
     altitudeAdvantageM: own.position.y - opponent.position.y,
     gunSolution,
+    ...(zone
+      ? {
+          missileSolution: {
+            locked: own.seeker.tone === "lock" && own.seeker.targetId === opponent.id,
+            minRangeM: zone.minM,
+            maxRangeM: zone.maxM,
+            inRange: range >= zone.minM && range <= zone.maxM,
+          },
+        }
+      : {}),
     threatened: threat.inLethalRange && threat.predictedMissM < hitThresholdM(threat.leadRangeM) * 3,
   };
 }
@@ -294,6 +324,7 @@ export function observationFor(
     aircraft: state.aircraft.map((aircraft) => toTelemetry(aircraft, config)),
     relative: relativeFor(own, opponent),
     recentEvents: state.events.slice(options.sinceEventIndex ?? state.events.length),
+    threats: rwrContacts(state, ownshipId),
     arena: {
       hardDeckAglM: config.hardDeckAglM,
       radiusM: config.arenaRadiusM,

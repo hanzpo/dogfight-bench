@@ -126,3 +126,40 @@ export function isDestroyed(damage: DamageState): boolean {
     (damage.subsystems["left-wing"] <= 0 && damage.subsystems["right-wing"] <= 0)
   );
 }
+
+/**
+ * A blast-fragmentation warhead going off near the aeroplane.
+ *
+ * Each part of the airframe is hurt by how close the burst was to it, falling
+ * away to nothing at the lethal radius and squared so that a near miss is much
+ * worse than a far one. A burst inside a few metres takes the jet apart; one
+ * at the edge of the fuze's reach cripples it.
+ */
+export function applyBlast(
+  damage: DamageState,
+  burst: Vector3,
+  position: Vector3,
+  right: Vector3,
+  up: Vector3,
+  nose: Vector3,
+  lethalRadiusM: number,
+  roll: number,
+): number {
+  const before = damage.integrity;
+  let struck = false;
+  for (const volume of HIT_VOLUMES) {
+    const centre = volumeCenter(volume, position, right, up, nose);
+    const distance = Math.max(0, centre.distanceTo(burst) - volume.radiusM);
+    const exposure = clamp(1 - distance / lethalRadiusM, 0, 1) ** 2;
+    if (exposure <= 0) continue;
+    struck = true;
+    damage.integrity = Math.max(0, damage.integrity - 0.9 * exposure);
+    damage.subsystems[volume.subsystem] = Math.max(0, damage.subsystems[volume.subsystem] - 1.5 * exposure);
+    damage.fuelLeakKgS += volume.fuelLeakKgS * 3 * exposure;
+    if (volume.pilotKillChance > 0 && roll < volume.pilotKillChance * 1.5 * exposure) {
+      damage.pilotIncapacitated = true;
+    }
+  }
+  if (struck) damage.hitsTaken += 1;
+  return before - damage.integrity;
+}

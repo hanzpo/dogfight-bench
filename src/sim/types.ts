@@ -10,6 +10,41 @@ export interface ControlInput {
   yaw: number;
   throttle: number;
   fire: boolean;
+  /** Missile pickle. It launches on the press, not while held. */
+  missile?: boolean;
+  /** Countermeasure release. One press dispenses one salvo. */
+  flare?: boolean;
+}
+
+export type Loadout = "guns" | "fox2";
+
+/**
+ * What the missile's seeker is telling the pilot, as the tone in the headset.
+ *
+ * `search` is the seeker looking at nothing; `growl` is heat in the field of
+ * view but not enough to hold; `lock` is a track the missile will launch on.
+ */
+export type SeekerTone = "off" | "search" | "growl" | "lock";
+
+export interface SeekerState {
+  tone: SeekerTone;
+  targetId?: string;
+  /** Signal over lock threshold, so 1 is just enough to hold a track. */
+  signal: number;
+  /** Flares already judged, so each one gets one chance to pull the track. */
+  flaresSeen: number[];
+}
+
+export interface StoresState {
+  /** How many rails were loaded at the start; zero in a guns-only fight. */
+  missileStations: number;
+  missiles: number;
+  flares: number;
+  missileHeld: boolean;
+  flareHeld: boolean;
+  salvoRemaining: number;
+  salvoTimerS: number;
+  launchCooldownS: number;
 }
 
 export type Subsystem = "cockpit" | "forward-fuselage" | "left-wing" | "right-wing" | "engine" | "tail";
@@ -55,6 +90,8 @@ export interface AircraftState {
   gunAccumulator: number;
   gunSpin: number;
   roundsThisBurst: number;
+  stores: StoresState;
+  seeker: SeekerState;
   damage: DamageState;
   health: number;
   alive: boolean;
@@ -71,6 +108,29 @@ export interface ProjectileState {
   age: number;
 }
 
+export type MissileTrack = { kind: "aircraft"; id: string } | { kind: "flare"; id: number };
+
+export interface MissileState {
+  id: number;
+  ownerId: string;
+  position: Vector3;
+  previousPosition: Vector3;
+  velocity: Vector3;
+  age: number;
+  motorRemainingS: number;
+  massKg: number;
+  track?: MissileTrack;
+  flaresSeen: number[];
+}
+
+export interface FlareState {
+  id: number;
+  ownerId: string;
+  position: Vector3;
+  velocity: Vector3;
+  age: number;
+}
+
 export type SimEventType =
   | "gun-fired"
   | "hit"
@@ -80,7 +140,13 @@ export type SimEventType =
   | "departure"
   | "recovery"
   | "bingo-fuel"
-  | "winchester";
+  | "winchester"
+  | "missile-launch"
+  | "missile-decoyed"
+  | "missile-lost"
+  | "missile-detonation"
+  | "missile-expired"
+  | "flares";
 
 export interface SimEvent {
   time: number;
@@ -89,6 +155,8 @@ export interface SimEvent {
   targetId?: string;
   subsystem?: Subsystem;
   detail?: string;
+  /** Where it happened, for events that are a place rather than an aircraft. */
+  position?: [number, number, number];
 }
 
 export interface MatchState {
@@ -96,6 +164,8 @@ export interface MatchState {
   tick: number;
   aircraft: AircraftState[];
   projectiles: ProjectileState[];
+  missiles: MissileState[];
+  flares: FlareState[];
   events: SimEvent[];
   finished: boolean;
   winnerId?: string;
@@ -117,4 +187,6 @@ export interface ScenarioConfig {
   startHeadingCrossingDeg: number;
   hardDeckAglM: number;
   arenaRadiusM: number;
+  /** Guns only unless said otherwise, which is what every benchmark was flown with. */
+  weapons?: Loadout;
 }

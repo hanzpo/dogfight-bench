@@ -116,6 +116,74 @@ export const GUN = {
   burstLimit: 100,
 } as const;
 
+/**
+ * An AIM-9M, near enough.
+ *
+ * Deliberately not an AIM-9X: a seeker that can look ninety degrees off the
+ * nose turns every merge into whoever gets tone first. This one has to be
+ * pointed at the target to acquire, sees a hot tailpipe far better than a cold
+ * nose, and bleeds speed hard when it turns, so it can be out-flown.
+ */
+export const MISSILE = {
+  name: "AIM-9M",
+  carried: 2,
+  launchMassKg: 86,
+  propellantKg: 27,
+  thrustN: 8_700,
+  burnS: 5.0,
+  referenceAreaM2: Math.PI * 0.0635 * 0.0635,
+  /** Normal-force coefficient at the fins' limit; turn capability is this times dynamic pressure. */
+  normalForceMax: 18,
+  inducedDragK: 0.012,
+  structuralLimitG: 35,
+  navigationGain: 4,
+  gimbalLimitRad: radians(40),
+  trackRateLimitRadS: radians(35),
+  /** Before launch the seeker is slaved to the nose and only sees this far off it. */
+  acquisitionConeRad: radians(6),
+  /** After losing a track the seeker looks this far around where it last was. */
+  reacquireConeRad: radians(5),
+  /** Instantaneous field of view: a flare inside it competes with the target. */
+  instantaneousFovRad: radians(2.5),
+  /** A tailpipe at military power, dead astern, is held out to this range. */
+  lockRangeReferenceM: 8_000,
+  /** Fraction of the lock signal the track survives down to once held. */
+  trackHoldFraction: 0.6,
+  armingS: 0.6,
+  fuzeRadiusM: 9,
+  lethalRadiusM: 12,
+  maxFlightS: 40,
+  minGuidedSpeedMps: 180,
+  launchIntervalS: 1.0,
+  /** Wingtip rails, left then right, in body axes (right, up, nose). */
+  rails: [
+    [-4.95, -0.05, -1.4],
+    [4.95, -0.05, -1.4],
+  ] as const,
+} as const;
+
+export const FLARE = {
+  carried: 30,
+  salvo: 2,
+  salvoIntervalS: 0.25,
+  burnS: 3.5,
+  /** Against a tailpipe at military power dead astern, which is 1. */
+  intensity: 3,
+  ejectMps: 25,
+  /** Deceleration is this times speed squared: a flare stops almost where it was dropped. */
+  dragPerMetre: 0.004,
+  /** How much of a flare's share of the signal actually pulls the seeker off; the rest is counter-countermeasures. */
+  seduction: 0.35,
+} as const;
+
+/** Radar and missile-approach warning. */
+export const RWR = {
+  radarScanHalfAngleRad: radians(60),
+  radarRangeM: 40_000,
+  radarTrackRangeM: 15_000,
+  missileWarningRangeM: 10_000,
+} as const;
+
 export const MIN_LETHAL_ENERGY_J = 3_000;
 
 export const EARTH_RADIUS_M = 6_371_000;

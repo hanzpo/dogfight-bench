@@ -5,6 +5,7 @@ import { thrustAtPower } from "../../src/sim/engine";
 import { createFlcsState } from "../../src/sim/flcs";
 import { atmosphere } from "../../src/sim/atmosphere";
 import { stepAircraft } from "../../src/sim/flight-model";
+import { createStores, neutralMerge } from "../../src/sim/scenario";
 import { trimLevelFlight, trimPower } from "../../src/sim/trim";
 import type { AircraftState, ControlInput } from "../../src/sim/types";
 import { degrees } from "../../src/math";
@@ -57,6 +58,8 @@ export function makeTestAircraft(options: TestAircraftOptions): AircraftState {
     gunAccumulator: 0,
     gunSpin: 0,
     roundsThisBurst: 0,
+    stores: createStores(neutralMerge),
+    seeker: { tone: "off", signal: 0, flaresSeen: [] },
     damage: createDamageState(),
     health: 1,
     alive: true,

@@ -2,12 +2,16 @@ import type { AgentAction } from "../agents/action";
 import type { AgentAdapter, AgentDecision, AgentInfo } from "../agents/agent";
 import type { AgentObservation } from "./telemetry";
 import type { DecisionRecord, MatchSummary } from "./simulation";
-import type { MatchState, ScenarioConfig, SimEvent } from "./types";
+import type { MatchState, ScenarioConfig, SeekerTone, SimEvent } from "./types";
 import { TRACER_TRAIL_SECONDS } from "./tracer";
 import { degrees } from "../math";
 
 export const REPLAY_FORMAT = "dogfight-replay";
-export const REPLAY_VERSION = 3;
+export const REPLAY_VERSION = 4;
+/** Version 3 is version 4 without missiles, so it still plays. */
+const READABLE_VERSIONS: readonly number[] = [3, 4];
+
+export const SEEKER_TONES: readonly SeekerTone[] = ["off", "search", "growl", "lock"];
 
 export interface ReplayAircraftFrame {
   id: string;
@@ -18,6 +22,8 @@ export interface ReplayAircraftFrame {
   health: number;
   alive: boolean;
   s: [number, number, number, number, number, number, number];
+  /** Missiles left, flares left, seeker tone as an index into `SEEKER_TONES`. */
+  m?: [number, number, number];
 }
 
 export interface ReplayFrame {
@@ -25,11 +31,14 @@ export interface ReplayFrame {
   t: number;
   aircraft: ReplayAircraftFrame[];
   projectiles?: Array<[number, number, number, number, number, number]>;
+  /** Position, velocity, whether the motor is burning, and who fired it (0 blue, 1 red). */
+  missiles?: Array<[number, number, number, number, number, number, number, number]>;
+  flares?: Array<[number, number, number]>;
 }
 
 export interface ReplayFile {
   format: typeof REPLAY_FORMAT;
-  version: typeof REPLAY_VERSION;
+  version: 3 | typeof REPLAY_VERSION;
   recordedAt: string;
   scenario: ScenarioConfig;
   agents: Record<string, AgentInfo>;
@@ -70,7 +79,8 @@ export class ReplayRecorder {
       this.replay.events.push(...state.events.slice(this.capturedEvents));
       this.capturedEvents = state.events.length;
     }
-    const interval = state.projectiles.length ? this.everyTicks : this.everyTicks * 2;
+    const busy = state.projectiles.length || state.missiles.length || state.flares.length;
+    const interval = busy ? this.everyTicks : this.everyTicks * 2;
     if (state.tick % interval !== 0 && !state.finished) return;
 
     const frame: ReplayFrame = {
@@ -93,8 +103,31 @@ export class ReplayRecorder {
           aircraft.flcs.limiterActive ? 1 : 0,
           aircraft.flcs.departed ? 1 : 0,
         ],
+        ...(aircraft.stores.missileStations
+          ? {
+              m: [
+                aircraft.stores.missiles,
+                aircraft.stores.flares,
+                SEEKER_TONES.indexOf(aircraft.seeker.tone),
+              ] as [number, number, number],
+            }
+          : {}),
       })),
     };
+    if (state.missiles.length) {
+      frame.missiles = state.missiles.map((missile) => {
+        const shooter = state.aircraft.find((aircraft) => aircraft.id === missile.ownerId);
+        return [
+          ...round(missile.position.toArray() as [number, number, number], 1),
+          ...round(missile.velocity.toArray() as [number, number, number], 1),
+          missile.motorRemainingS > 0 ? 1 : 0,
+          shooter?.team === "red" ? 1 : 0,
+        ] as [number, number, number, number, number, number, number, number];
+      });
+    }
+    if (state.flares.length) {
+      frame.flares = state.flares.map((flare) => round(flare.position.toArray() as [number, number, number], 1));
+    }
     if (this.includeProjectiles && state.projectiles.length) {
       frame.projectiles = state.projectiles.map((shot) => {
         const speed = shot.velocity.length();
@@ -185,7 +218,7 @@ export function parseReplay(text: string): ReplayFile {
   if (!replay || typeof replay !== "object" || replay.format !== REPLAY_FORMAT) {
     throw new Error("That file is not a dogfight replay.");
   }
-  if (replay.version !== REPLAY_VERSION) {
+  if (!READABLE_VERSIONS.includes(replay.version as number)) {
     throw new Error(`This replay is version ${String(replay.version)}; this build reads version ${REPLAY_VERSION}.`);
   }
   if (!Array.isArray(replay.frames) || replay.frames.length === 0) {

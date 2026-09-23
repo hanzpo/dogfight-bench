@@ -21,6 +21,8 @@ export function sanitizeControls(input: ControlInput): ControlInput {
     yaw: clamp(finite(input.yaw, 0), -1, 1),
     throttle: clamp(finite(input.throttle, 0), 0, 1),
     fire: input.fire === true,
+    missile: input.missile === true,
+    flare: input.flare === true,
   };
 }
 
@@ -84,6 +86,8 @@ export function trackCommandedControls(aircraft: AircraftState, dt: number): voi
     throttle: towards(aircraft.controls.throttle, wanted.throttle, THROTTLE_PER_SECOND * dt),
     // The trigger is a switch, not a lever.
     fire: wanted.fire,
+    missile: wanted.missile,
+    flare: wanted.flare,
   };
 }
 
