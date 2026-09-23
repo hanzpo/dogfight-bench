@@ -4,6 +4,7 @@ import { List } from "@phosphor-icons/react";
 import { ChoiceGroup } from "../components/ChoiceGroup";
 import { Dialog } from "../components/Dialog";
 import { FlightDisplay } from "../components/FlightDisplay";
+import { InstantReplay } from "../components/InstantReplay";
 import { IntroModal } from "../components/IntroModal";
 import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
@@ -13,6 +14,7 @@ import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type 
 import type { ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 import type { MatchState } from "../../sim/types";
+import type { ReplayFile } from "../../sim/replay";
 
 const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
   { value: "chase", label: "Chase" },
@@ -23,6 +25,14 @@ const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
 ];
 
 const PLAYER = "blue-1";
+/** How far back an instant replay starts: enough to see the kill set up. */
+const REPLAY_WINDOW_S = 15;
+
+interface Watching {
+  file: ReplayFile;
+  startAt: number;
+  from: "menu" | "results";
+}
 const ZOOM_PER_WHEEL_PIXEL = 0.0012;
 
 /** Keys the page answers itself, so they are not read while typing into a dialog. */
@@ -93,8 +103,9 @@ export function GamePage() {
   const [view, setView] = useState<ViewMode>("chase");
   const [introOpen, setIntroOpen] = useState(() => !introSeen());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [watching, setWatching] = useState<Watching>();
   const finished = match.state?.finished === true;
-  const holding = introOpen || menuOpen;
+  const holding = introOpen || menuOpen || watching !== undefined;
 
   useCockpitAudio(match.liveStateRef, PLAYER, !holding && !finished);
 
@@ -131,7 +142,7 @@ export function GamePage() {
   // is the dialog's own, which closes it.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.repeat || typingInto(event.target) || document.querySelector("dialog[open]")) return;
+      if (event.repeat || watching || typingInto(event.target) || document.querySelector("dialog[open]")) return;
       if (event.code === "Escape" || event.code === "KeyP") {
         // Otherwise the browser reads this same Escape as a request to close
         // the dialog it has just opened, and the menu flashes shut.
@@ -143,7 +154,7 @@ export function GamePage() {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [finished]);
+  }, [finished, watching]);
 
   // The browser takes Escape for itself to release a captured mouse, so the
   // page never hears it; losing the capture mid-flight is the same request.
@@ -151,12 +162,12 @@ export function GamePage() {
     let wasLocked = false;
     const changed = () => {
       const locked = document.pointerLockElement !== null;
-      if (wasLocked && !locked && !finished && !document.querySelector("dialog[open]")) setMenuOpen(true);
+      if (wasLocked && !locked && !finished && !watching && !document.querySelector("dialog[open]")) setMenuOpen(true);
       wasLocked = locked;
     };
     document.addEventListener("pointerlockchange", changed);
     return () => document.removeEventListener("pointerlockchange", changed);
-  }, [finished]);
+  }, [finished, watching]);
 
   useEffect(() => {
     if (finished) match.inputRef.current.releasePointerLock();
@@ -177,8 +188,41 @@ export function GamePage() {
     return () => cancelAnimationFrame(frame);
   }, [match.inputRef]);
 
+  const watch = (from: Watching["from"]) => {
+    const file = match.replaySoFar();
+    if (!file) return;
+    const end = file.frames.at(-1)?.t ?? 0;
+    match.inputRef.current.releasePointerLock();
+    // The live view is taken down while the replay has the screen; a new one
+    // announces itself through onReady when play resumes.
+    viewer.current = undefined;
+    setMenuOpen(false);
+    setWatching({ file, startAt: Math.max(0, end - REPLAY_WINDOW_S), from });
+  };
+
+  const stopWatching = () => {
+    const from = watching?.from;
+    setWatching(undefined);
+    if (from === "menu") setMenuOpen(true);
+  };
+
   const outcome = finished && match.state ? outcomeOf(match.state) : undefined;
   const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";
+
+  if (watching) {
+    return (
+      <div className="game">
+        <InstantReplay
+          replay={watching.file}
+          startAt={watching.startAt}
+          views={VIEWS}
+          initialView={view}
+          onExit={stopWatching}
+          exitLabel={watching.from === "menu" ? "Back to menu" : "Done"}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="game">
@@ -243,6 +287,9 @@ export function GamePage() {
         />
 
         <div className="menu-secondary">
+          <button className="quiet" onClick={() => watch("menu")} disabled={(match.state?.time ?? 0) < 1}>
+            Instant replay
+          </button>
           <button className="quiet" onClick={() => { setMenuOpen(false); setIntroOpen(true); }}>
             How to play
           </button>
@@ -272,7 +319,10 @@ export function GamePage() {
           <button className="primary large" onClick={match.restart} autoFocus>
             Fly again
           </button>
-          <button className="large" onClick={() => navigate("/")}>
+          <button className="large" onClick={() => watch("results")}>
+            Watch replay
+          </button>
+          <button className="quiet" onClick={() => navigate("/")}>
             Menu
           </button>
         </div>

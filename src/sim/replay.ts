@@ -75,13 +75,28 @@ export class ReplayRecorder {
   }
 
   capture(state: MatchState): void {
+    this.takeEvents(state);
+    const busy = state.projectiles.length || state.missiles.length || state.flares.length;
+    const interval = busy ? this.everyTicks : this.everyTicks * 2;
+    if (state.tick % interval !== 0 && !state.finished) return;
+    this.pushFrame(state);
+  }
+
+  /** A frame of this exact moment, whatever the interval, unless it is already the last one. */
+  captureNow(state: MatchState): void {
+    this.takeEvents(state);
+    if (this.replay.frames.at(-1)?.tick === state.tick) return;
+    this.pushFrame(state);
+  }
+
+  private takeEvents(state: MatchState): void {
     if (state.events.length > this.capturedEvents) {
       this.replay.events.push(...state.events.slice(this.capturedEvents));
       this.capturedEvents = state.events.length;
     }
-    const busy = state.projectiles.length || state.missiles.length || state.flares.length;
-    const interval = busy ? this.everyTicks : this.everyTicks * 2;
-    if (state.tick % interval !== 0 && !state.finished) return;
+  }
+
+  private pushFrame(state: MatchState): void {
 
     const frame: ReplayFrame = {
       tick: state.tick,

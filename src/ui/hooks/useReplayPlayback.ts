@@ -12,7 +12,8 @@ import { radians } from "../../math";
 
 const UI_REFRESH_MS = 100;
 
-export function useReplayPlayback(replay: ReplayFile | undefined) {
+/** `startAt` is where playback begins each time a replay is loaded, in seconds from its start. */
+export function useReplayPlayback(replay: ReplayFile | undefined, startAt = 0) {
   const [time, setTime] = useState(0);
   const [state, setState] = useState<MatchState>();
   const [playing, setPlaying] = useState(true);
@@ -26,11 +27,12 @@ export function useReplayPlayback(replay: ReplayFile | undefined) {
   const duration = useMemo(() => replay?.frames.at(-1)?.t ?? 0, [replay]);
 
   useEffect(() => {
-    clock.current = 0;
-    setTime(0);
+    const start = Math.max(0, Math.min(startAt, replay?.frames.at(-1)?.t ?? 0));
+    clock.current = start;
+    setTime(start);
     setState(undefined);
     setPlaying(true);
-  }, [replay]);
+  }, [replay, startAt]);
 
   const seek = (value: number) => {
     clock.current = value;

@@ -692,3 +692,30 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after, *::backdrop { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------- instant replay */
+
+.replay-badge {
+  position: fixed; z-index: 4; top: 16px; left: 16px;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+  background: #0b0d10a6; border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  backdrop-filter: blur(10px);
+}
+.replay-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: pulse 1.2s ease-in-out infinite; }
+
+.replay-bar {
+  position: fixed; z-index: 4; left: 50%; bottom: 20px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+  width: min(820px, calc(100vw - 32px)); padding: 10px 12px;
+  background: #0b0d10cc; border: 1px solid var(--line); border-radius: var(--radius-lg);
+  backdrop-filter: blur(14px);
+}
+.replay-bar .scrubber { flex: 1 1 200px; width: auto; }
+.replay-play { width: 40px; min-height: 40px; padding: 0; border-radius: 50%; font-size: 16px; }
+.replay-time { font: 12px "JetBrains Mono", monospace; color: var(--text-muted); min-width: 84px; text-align: center; }
+.replay-speed { display: inline-flex; padding: 3px; gap: 2px; background: #ffffff0a; border-radius: var(--radius-sm); }
+.replay-speed button { min-height: 30px; padding: 0 10px; background: transparent; border: none; font-size: 12px; color: var(--text-muted); }
+.replay-speed button[aria-pressed="true"] { background: #f6f3ec; color: #0b0d10; font-weight: 600; }
+.replay-follow { min-height: 36px; font-size: 13px; }
+.replay-exit { min-height: 40px; padding: 0 18px; }

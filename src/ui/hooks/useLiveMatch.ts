@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { SCRIPTED_INFO, type AgentAdapter, type AgentInfo } from "../../agents/agent";
 import { BasicPursuitAgent, EnergyFighterAgent } from "../../agents/baselines";
 import { HttpAgent } from "../../agents/http-agent";
-import { ReplayRecorder } from "../../sim/replay";
+import { ReplayRecorder, type ReplayFile } from "../../sim/replay";
 import { fox2Merge, neutralMerge } from "../../sim/scenario";
 import { DogfightSimulation, type DecisionRecord } from "../../sim/simulation";
 import type { Loadout, MatchState } from "../../sim/types";
@@ -59,6 +59,8 @@ export interface LiveMatch {
   setWeapons: (weapons: Loadout) => void;
   restart: () => void;
   downloadReplay: () => void;
+  /** The match so far as a replay, frozen at this moment, or nothing before the first frame. */
+  replaySoFar: () => ReplayFile | undefined;
 }
 
 function infoFor(pilot: PilotChoice): AgentInfo {
@@ -311,6 +313,23 @@ export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
     setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, []);
 
+  const replaySoFar = useCallback((): ReplayFile | undefined => {
+    const sim = simulation.current;
+    const recording = recorder.current;
+    if (!sim || !recording) return undefined;
+    // The recorder keeps only every few ticks; the present moment goes in too,
+    // so the replay runs right up to where the pause or the kill happened.
+    recording.captureNow(sim.state);
+    const replay = recording.replay;
+    return {
+      ...replay,
+      frames: [...replay.frames],
+      events: [...replay.events],
+      decisions: [...sim.decisions],
+      summary: sim.state.finished ? sim.summary() : undefined,
+    };
+  }, []);
+
   return {
     snapshotRef,
     simTimeRef,
@@ -339,5 +358,6 @@ export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
     setWeapons,
     restart,
     downloadReplay,
+    replaySoFar,
   };
 }
