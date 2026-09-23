@@ -88,7 +88,13 @@ function buildAgent(
   });
 }
 
-export function useLiveMatch(): LiveMatch {
+export interface MatchSetup {
+  opponent?: PilotChoice;
+  weapons?: Loadout;
+  scheme?: ControlScheme;
+}
+
+export function useLiveMatch(setup: MatchSetup = {}): LiveMatch {
   const account = useAccount();
   const simulation = useRef<DogfightSimulation>(undefined);
   const recorder = useRef<ReplayRecorder>(undefined);
@@ -108,9 +114,13 @@ export function useLiveMatch(): LiveMatch {
   const [timeScale, setTimeScale] = useState(1);
   const [followRed, setFollowRed] = useState(false);
   const [bluePilot, setBluePilot] = useState<PilotChoice>(HUMAN);
-  const [redPilot, setRedPilot] = useState<PilotChoice>("basic");
-  const [weapons, setWeapons] = useState<Loadout>("guns");
-  const [scheme, setSchemeState] = useState<ControlScheme>("keyboard");
+  const [redPilot, setRedPilot] = useState<PilotChoice>(setup.opponent ?? "basic");
+  const [weapons, setWeapons] = useState<Loadout>(setup.weapons ?? "guns");
+  const [scheme, setSchemeState] = useState<ControlScheme>(() => {
+    const initial = setup.scheme ?? "keyboard";
+    input.current.scheme = initial;
+    return initial;
+  });
   const [inputSettings, setInputSettingsState] = useState<PilotInputSettings>(() => loadSettings());
   const [canCapturePointer, setCanCapturePointer] = useState(false);
   const [mouseMode, setMouseMode] = useState<MouseMode>("absolute");

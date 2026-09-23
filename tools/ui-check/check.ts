@@ -204,7 +204,7 @@ page.on("response", (response) => {
 });
 
 console.log("live page, untouched default state");
-await page.goto(BASE, { waitUntil: "networkidle" });
+await page.goto(`${BASE}/lab`, { waitUntil: "networkidle" });
 await page.waitForFunction(() => document.querySelector("#app")?.getAttribute("data-subject-screen-x") !== null, {
   timeout: 20_000,
 });
@@ -281,14 +281,14 @@ if (engine.scale === 1 && process.env["UI_CHECK_SKIP_ACCOUNT"] !== "1") {
     check(settled, `the finished match reports a result (${outcome ?? "never settled"})`);
     check(Boolean(outcome?.includes("Recorded")), `the result was recorded (${outcome ?? "none"})`);
 
-    await page.getByRole("link", { name: "Matches" }).click();
+    await page.getByRole("link", { name: "Replays", exact: true }).click();
     await page.waitForTimeout(1_000);
     await page.getByRole("button", { name: "Mine" }).click();
     await page.waitForFunction(() => !document.querySelector("table.data"), { timeout: 10_000 }).catch(() => {});
     const mine = await countRows(page);
     check(mine > 0, `the match appears under the player's own history (${mine})`);
 
-    await page.getByRole("link", { name: "Fly" }).click();
+    await page.getByRole("link", { name: "Lab", exact: true }).click();
     await page.waitForTimeout(2_000);
   }
 }
@@ -621,13 +621,13 @@ check(
 await page.screenshot({ path: `${OUT}/overlay-${engine.name}.png` });
 
 console.log("leaderboard");
-await page.getByRole("link", { name: "Leaderboard" }).click();
+await page.getByRole("link", { name: "Leaderboard", exact: true }).click();
 const leaderboardRows = await countRows(page);
 check(leaderboardRows > 0, `leaderboard shows ${leaderboardRows} agents`);
 await page.screenshot({ path: `${OUT}/leaderboard-${engine.name}.png` });
 
 console.log("match history and replay");
-await page.getByRole("link", { name: "Matches" }).click();
+await page.getByRole("link", { name: "Replays", exact: true }).click();
 const matchRows = await countRows(page);
 check(matchRows > 0, `match history shows ${matchRows} matches`);
 await page.screenshot({ path: `${OUT}/matches-${engine.name}.png` });

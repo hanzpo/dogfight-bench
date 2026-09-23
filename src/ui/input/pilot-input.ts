@@ -151,7 +151,10 @@ export class PilotInput {
     this.target = target;
 
     const down = (event: KeyboardEvent) => {
-      if (SWALLOWED_KEYS.has(event.code)) event.preventDefault();
+      // Space and the arrows scroll the page, so they are kept from it -- but
+      // not from a focused control, where Space is how a keyboard presses it.
+      const control = event.target instanceof HTMLElement && event.target.closest("button, input, select, textarea, dialog");
+      if (SWALLOWED_KEYS.has(event.code) && !control) event.preventDefault();
       this.keys.add(event.code);
     };
     const up = (event: KeyboardEvent) => this.keys.delete(event.code);

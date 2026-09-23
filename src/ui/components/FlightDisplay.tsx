@@ -415,7 +415,8 @@ function layout(
   // on a narrow window, and a fixed offset put the throttle and the ammunition
   // count underneath it.
   const bar = document.querySelector(".controls")?.getBoundingClientRect().top;
-  const bottom = (bar && bar > height * 0.4 ? bar : height - 132) - 42;
+  // With no bar -- the game screen has none -- the instruments sit at the bottom edge.
+  const bottom = (bar === undefined ? height - 24 : bar > height * 0.4 ? bar : height - 132) - 42;
   place("engine", margin, bottom);
   place("stores", rightEdge, bottom);
   // Above the throttle, clear of the airspeed readout that ends a little
