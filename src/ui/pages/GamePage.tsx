@@ -15,6 +15,7 @@ import type { ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
 import type { MatchState } from "../../sim/types";
 import type { ReplayFile } from "../../sim/replay";
+import { airframe } from "../../sim/airframes";
 
 const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
   { value: "chase", label: "Chase" },
@@ -207,6 +208,10 @@ export function GamePage() {
   };
 
   const outcome = finished && match.state ? outcomeOf(match.state) : undefined;
+  const jets = match.state?.aircraft.map((aircraft) => airframe(aircraft.airframe).name) ?? [];
+  const matchup = jets.length === 2 ? `${jets[0]} vs ${jets[1]}` : "";
+  // The matchup, said once as the fight begins and then out of the way.
+  const announcing = !holding && !finished && (match.state?.time ?? 0) < 4;
   const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";
 
   if (watching) {
@@ -237,6 +242,14 @@ export function GamePage() {
       />
       <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} detailsOpen={false} />
       <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={PLAYER} />
+
+      {announcing && matchup ? (
+        <div className="matchup" role="status">
+          <span>{jets[0]}</span>
+          <span className="matchup-vs">vs</span>
+          <span className="matchup-enemy">{jets[1]}</span>
+        </div>
+      ) : null}
 
       <button className="hud-button game-menu-button" onClick={() => setMenuOpen(true)} aria-label="Pause menu">
         <List weight="bold" aria-hidden />
@@ -307,6 +320,7 @@ export function GamePage() {
         className={`results results-${outcome?.verdict ?? "draw"}`}
         dismissible={false}
       >
+        <p className="results-matchup">{matchup}</p>
         <dl className="results-stats">
           {outcome?.stats.map((stat) => (
             <div key={stat.label}>
