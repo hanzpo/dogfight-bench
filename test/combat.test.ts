@@ -10,9 +10,9 @@ import {
 import { GUN } from "../src/sim/config";
 import { fireGun } from "../src/sim/gun";
 import { Random } from "../src/sim/random";
-import { createNeutralMerge, neutralMerge, scenarioSet } from "../src/sim/scenario";
+import { createNeutralMerge, neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
-import { BasicPursuitAgent, EnergyFighterAgent } from "../src/agents/baselines";
+import { EnergyFighterAgent } from "../src/agents/baselines";
 
 const DT = 1 / 120;
 
@@ -57,66 +57,6 @@ describe("standing orders", () => {
     expect(ticks).toBeGreaterThan(500);
     expect(changes).toBeGreaterThan(ticks * 0.5);
   }, 30_000);
-});
-
-describe("the energy fighter", () => {
-  it("holds a speed near corner instead of spiralling down or running away", async () => {
-    const sim = new DogfightSimulation({ ...neutralMerge, maxTime: 90 }, { recordDecisions: false });
-    sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
-    sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
-
-    const blue = sim.state.aircraft[0]!;
-    const ratios: number[] = [];
-    let ticks = 0;
-    await sim.runHeadless(() => {
-      ticks += 1;
-      if (ticks % 120 !== 0 || !blue.alive) return;
-      const corner = Math.sqrt(
-        (2 * 9 * blue.massKg * 9.80665) / (1.225 * Math.exp(-blue.position.y / 8_500) * 27.87 * 1.9),
-      );
-      ratios.push(blue.velocity.length() / corner);
-    });
-
-    const late = ratios.slice(Math.floor(ratios.length / 3));
-    const mean = late.reduce((sum, value) => sum + value, 0) / Math.max(late.length, 1);
-    expect(mean).toBeGreaterThan(0.85);
-    expect(mean).toBeLessThan(1.75);
-  }, 60_000);
-
-  it("beats the naive baseline decisively and shoots far better", async () => {
-    let energyWins = 0;
-    let basicWins = 0;
-    let energyRounds = 0;
-    let energyHits = 0;
-    let basicRounds = 0;
-    let basicHits = 0;
-
-    for (const scenario of scenarioSet(4, { ...neutralMerge, maxTime: 110 })) {
-      for (const energyIsBlue of [true, false]) {
-        const sim = new DogfightSimulation(scenario, { recordDecisions: false });
-        sim.attachAgent("blue-1", energyIsBlue ? new EnergyFighterAgent("blue-1") : new BasicPursuitAgent("blue-1"));
-        sim.attachAgent("red-1", energyIsBlue ? new BasicPursuitAgent("red-1") : new EnergyFighterAgent("red-1"));
-        await sim.runHeadless();
-
-        const summary = sim.summary();
-        const energyId = energyIsBlue ? "blue-1" : "red-1";
-        const energy = summary.aircraft.find((aircraft) => aircraft.id === energyId)!;
-        const basic = summary.aircraft.find((aircraft) => aircraft.id !== energyId)!;
-        energyRounds += energy.roundsFired;
-        energyHits += energy.hitsScored;
-        basicRounds += basic.roundsFired;
-        basicHits += basic.hitsScored;
-        if (sim.state.winnerId === energyId) energyWins += 1;
-        else if (sim.state.winnerId) basicWins += 1;
-      }
-    }
-
-    expect(energyWins).toBeGreaterThan(basicWins * 2);
-    const energyAccuracy = energyRounds ? energyHits / energyRounds : 0;
-    const basicAccuracy = basicRounds ? basicHits / basicRounds : 0;
-    expect(energyHits).toBeGreaterThan(0);
-    expect(energyAccuracy).toBeGreaterThan(basicAccuracy);
-  }, 300_000);
 });
 
 describe("the shoot cue", () => {

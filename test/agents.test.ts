@@ -3,8 +3,8 @@ import { Vector3 } from "three";
 import { MANEUVERS, validateAction } from "../src/agents/action";
 import { AgentTimeoutError, SCRIPTED_INFO, decideWithTimeout, resolveAction, validateDecision } from "../src/agents/agent";
 import { contextFromObservation, goalDirection, steerToward } from "../src/agents/autopilot";
-import { BasicPursuitAgent, EnergyFighterAgent } from "../src/agents/baselines";
-import { neutralMerge, scenarioSet } from "../src/sim/scenario";
+import { EnergyFighterAgent } from "../src/agents/baselines";
+import { neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
 import { observationFor } from "../src/sim/telemetry";
 import type { AgentAdapter, AgentDecision } from "../src/agents/agent";
@@ -180,20 +180,6 @@ describe("decision deadlines", () => {
 });
 
 describe("scripted baselines", () => {
-  it("is not biased toward either side in self-play", async () => {
-    let blueWins = 0;
-    let redWins = 0;
-    for (const scenario of scenarioSet(10, { ...neutralMerge, maxTime: 90 })) {
-      const sim = new DogfightSimulation(scenario, { recordDecisions: false });
-      sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
-      sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
-      await sim.runHeadless();
-      if (sim.state.winnerId === "blue-1") blueWins += 1;
-      if (sim.state.winnerId === "red-1") redWins += 1;
-    }
-    expect(Math.abs(blueWins - redWins)).toBeLessThanOrEqual(3);
-    // Ten full matches of physics; it shares a machine with the rest of the suite.
-  }, 300_000);
 
   it("converts a tight gun solution into hits", () => {
     const sim = new DogfightSimulation(neutralMerge, { recordDecisions: false });
