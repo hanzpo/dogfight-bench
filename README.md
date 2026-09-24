@@ -301,6 +301,20 @@ Supabase → Authentication → Providers, and add the deployed origin to URL
 Configuration. The callback is `https://<project>.supabase.co/auth/v1/callback`.
 Anonymous sign-in is already on.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the tests, then type-checks and builds, on
+every pull request and push. A push to `main` that passes is deployed to
+Cloudflare, shipping the build that was tested. It needs two secrets on the
+repository's `production` environment:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`, a token with the "Edit Cloudflare Workers" template
+
+The Worker's own secrets (`SUPABASE_SERVICE_ROLE_KEY`, `TYPESAFE_API_KEY`) live
+on the Worker and are untouched by a deploy. The browser check below needs a
+running API with matches in it, so it stays a local check for now.
+
 ## Checks
 
 ```bash
