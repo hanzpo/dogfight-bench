@@ -238,10 +238,13 @@ describe("flares", () => {
     expect(sim.state.flares).toHaveLength(0);
   });
 
-  it("decoy some missiles, and more of them when the jet is at idle than in afterburner", () => {
-    const survivals = (throttle: number) => {
+  it("decoy some missiles, and more of them when the jet is at idle than in afterburner", async () => {
+    const survivals = async (throttle: number) => {
       let survived = 0;
       for (let seed = 1; seed <= 24; seed += 1) {
+        // A turn for the event loop between shots: a minute of unbroken
+        // simulation starves the test worker, and the runner loses track of it.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         const { sim, blue, red } = engagement(4_000, 0, { throttle, seed });
         let dispensed = false;
         shoot(sim, blue, () => {
@@ -254,8 +257,8 @@ describe("flares", () => {
       }
       return survived;
     };
-    const idle = survivals(0.2);
-    const burner = survivals(1);
+    const idle = await survivals(0.2);
+    const burner = await survivals(1);
     expect(idle).toBeGreaterThan(burner);
     expect(burner).toBeGreaterThan(0);
     expect(idle).toBeLessThan(24);
