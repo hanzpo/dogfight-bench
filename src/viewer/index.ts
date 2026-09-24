@@ -90,6 +90,8 @@ function aboutCentreOfGravity(frame: Airframe, model: THREE.Object3D): THREE.Gro
   return group;
 }
 
+const PYLON_MATERIAL = new THREE.MeshStandardMaterial({ color: 0x8a8f94, roughness: 0.7, metalness: 0.2, flatShading: true });
+
 /** A point in body axes (right, up, nose) as a point in model space, where +x is left. */
 function modelPoint([right, up, nose]: readonly [number, number, number]): THREE.Vector3 {
   return new THREE.Vector3(-right, up, nose);
@@ -537,6 +539,15 @@ export class DogfightViewer {
       const mesh = template.clone(true);
       mesh.userData["airframe"] = frame.id;
       mesh.name = aircraft.id;
+      // The models come clean of stores, so a rail under the wing gets its pylon here.
+      if (frame.pylonHeightM) {
+        const height = frame.pylonHeightM + 0.04;
+        for (const mount of frame.rails) {
+          const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.08, height, 1.6), PYLON_MATERIAL);
+          pylon.position.copy(modelPoint(fromModel(frame, mount))).add(new THREE.Vector3(0, 0.05 + height / 2, 0.1));
+          mesh.add(pylon);
+        }
+      }
       const tint = aircraft.team === "red" ? new THREE.Color(1.3, 0.62, 0.58) : new THREE.Color(0.66, 0.84, 1.28);
       const glow = aircraft.team === "red" ? 0x2a0806 : 0x04162c;
       mesh.traverse((object) => {

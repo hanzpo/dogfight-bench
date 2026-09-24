@@ -55,6 +55,8 @@ export interface Airframe extends FlightSpec {
   nozzleRadiusM: number;
   /** Launch rails in the order they are fired. */
   rails: readonly BodyPoint[];
+  /** A pylon this tall rises from each missile's back to the wing, for rails that hang under it. */
+  pylonHeightM?: number;
   cockpitEye: BodyPoint;
   /**
    * Centre of gravity on the model. Nozzles, rails, the cockpit eye, the gun
@@ -337,7 +339,7 @@ const F16C: Airframe = {
 };
 
 /** The F-16's rival: more thrust, a harder first turn, higher angle of attack; fewer, heavier rounds and a thirsty pair of engines. */
-const MIG29A: Airframe = drawnAbout({
+const MIG29A: Airframe = {
   id: "mig29a",
   name: "MiG-29A",
   role: "Brawler",
@@ -350,18 +352,37 @@ const MIG29A: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(9, 28, 250),
-  gun: GUNS.gsh301,
+  // The GSh-30-1 is in the root of the left wing-root extension.
+  gun: { ...GUNS.gsh301, muzzleOffsetM: [-1.1, 0.12, 2.0] as const },
   missile: "r60m",
   infrared: 1.5,
-  nozzles: [[-0.95, -0.35, -8.3], [0.95, -0.35, -8.3]],
-  nozzleRadiusM: 0.45,
-  rails: pylons(3.9, -1.2, -0.55),
-  cockpitEye: [0, 1.15, 4.6],
+  // Measured off the model: nozzle exits and their openings, the canopy,
+  // which runs from 1.8 to 4.9 m forward with its top at 1.72 m, and the
+  // wing's underside, 0.19 m below the datum 4.3 m out.
+  nozzles: [[-0.88, -0.57, -7.44], [0.88, -0.57, -7.44]],
+  nozzleRadiusM: 0.42,
+  // Under the outer wing, on a short pylon, nose well ahead of the leading edge.
+  rails: pylons(4.3, -3.2, -0.37),
+  pylonHeightM: 0.12,
+  cockpitEye: [0, 1.45, 3.2],
+  // A quarter of the way along the mean aerodynamic chord of the wing that
+  // has the MiG's published 38 m² with the model's tip and trailing edge:
+  // 3.79 m long, its leading edge 0.69 m behind the origin.
+  cg: [0, 0, -1.64],
+  hitVolumes: onModel({
+    cockpit: [[0, 1.3, 3.2], 1.2],
+    "forward-fuselage": [[0, 0.3, 0.8], 1.7],
+    "left-wing": [[-3.6, -0.1, -3.4], 1.95],
+    "right-wing": [[3.6, -0.1, -3.4], 1.95],
+    engine: [[0, -0.3, -4.9], 1.55],
+    tail: [[0, 1.4, -6.3], 1.5],
+  }),
+  model: "/aircraft/mig29a.glb",
   placeholder: {
     fuselageRadiusM: 0.7, wing: "trapezoid", wingRootAt: 0.42, wingRootChordM: 5.6, wingTipChordM: 1.2,
     wingSweepDeg: 42, tailplane: true, fins: 2, finCantDeg: 8, finHeightM: 2.2, canards: false,
   },
-});
+};
 
 /** Points its nose at angles nothing else can; wins slow and loses fast, because it cannot get its energy back. */
 const FA18C: Airframe = {
@@ -417,7 +438,7 @@ const FA18C: Airframe = {
 };
 
 /** The energy fighter: the most thrust and the biggest wing, wins going up; a big, hot target that is slow to roll. */
-const F15C: Airframe = drawnAbout({
+const F15C: Airframe = {
   id: "f15c",
   name: "F-15C",
   role: "Energy fighter",
@@ -430,18 +451,37 @@ const F15C: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(9, 27, 205),
-  gun: { ...GUNS.m61, ammunition: 940, muzzleOffsetM: [3.2, 0.2, 2.1] as const },
+  // The M61 is in the root of the right wing, above the intake.
+  gun: { ...GUNS.m61, ammunition: 940, muzzleOffsetM: [1.75, 0.1, 0.9] as const },
   missile: "aim9m",
   infrared: 2,
-  nozzles: [[-0.65, 0.05, -9.2], [0.65, 0.05, -9.2]],
+  // Measured off the model: nozzle exits and their openings, the canopy,
+  // which runs from 2.4 to 6.4 m forward with its top at 1.05 m, and the
+  // wing's underside, 0.1 m below the datum 3.8 m out.
+  nozzles: [[-0.7, -0.58, -8.515], [0.7, -0.58, -8.515]],
   nozzleRadiusM: 0.5,
-  rails: pylons(3.2, 0.2, -0.75),
-  cockpitEye: [0, 1.3, 5.5],
+  // Under the wing on its pylon, nose ahead of the leading edge.
+  rails: pylons(3.8, -2.0, -0.28),
+  pylonHeightM: 0.12,
+  cockpitEye: [0, 0.75, 4.7],
+  // A quarter of the way along the mean aerodynamic chord of the wing that
+  // has the Eagle's published 56.5 m² with the model's tip and trailing
+  // edge: 4.79 m long, its leading edge 1.0 m behind the origin.
+  cg: [0, 0, -2.2],
+  hitVolumes: onModel({
+    cockpit: [[0, 0.55, 4.6], 1.35],
+    "forward-fuselage": [[0, 0, 1.5], 1.95],
+    "left-wing": [[-4.2, -0.1, -3.2], 2.2],
+    "right-wing": [[4.2, -0.1, -3.2], 2.2],
+    engine: [[0, -0.4, -5.8], 1.75],
+    tail: [[0, 1.6, -7.8], 1.7],
+  }),
+  model: "/aircraft/f15c.glb",
   placeholder: {
     fuselageRadiusM: 0.8, wing: "trapezoid", wingRootAt: 0.44, wingRootChordM: 7.0, wingTipChordM: 1.8,
     wingSweepDeg: 45, tailplane: true, fins: 2, finCantDeg: 0, finHeightM: 3.0, canards: false,
   },
-});
+};
 
 /** Endurance: agile for its size and full of fuel; the biggest, hottest thing in the sky and slow to roll. */
 const SU27S: Airframe = drawnAbout({
