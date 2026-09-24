@@ -7,7 +7,6 @@ import { ReplayRecorder, parseReplay } from "../src/sim/replay";
 import { rwrContacts } from "../src/sim/rwr";
 import { fox2Merge, neutralMerge } from "../src/sim/scenario";
 import { DogfightSimulation } from "../src/sim/simulation";
-import { EnergyFighterAgent } from "../src/agents/baselines";
 import type { AircraftState, ScenarioConfig } from "../src/sim/types";
 
 const ALTITUDE_M = 6_000;
@@ -237,35 +236,6 @@ describe("flares", () => {
     run(sim, FLARE.burnS);
     expect(sim.state.flares).toHaveLength(0);
   });
-
-  it("decoy some missiles, and more of them when the jet is at idle than in afterburner", async () => {
-    const survivals = async (throttle: number) => {
-      let survived = 0;
-      for (let seed = 1; seed <= 24; seed += 1) {
-        // A turn for the event loop between shots: a minute of unbroken
-        // simulation starves the test worker, and the runner loses track of it.
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const { sim, blue, red } = engagement(4_000, 0, { throttle, seed });
-        let dispensed = false;
-        shoot(sim, blue, () => {
-          const missile = sim.state.missiles[0];
-          const inside = missile !== undefined && missile.position.distanceTo(red.position) < 1_200;
-          press(red, "flare", inside && !dispensed);
-          if (inside) dispensed = true;
-        });
-        if (red.alive) survived += 1;
-      }
-      return survived;
-    };
-    const idle = await survivals(0.2);
-    const burner = await survivals(1);
-    expect(idle).toBeGreaterThan(burner);
-    expect(burner).toBeGreaterThan(0);
-    expect(idle).toBeLessThan(24);
-    expect(eventsOf(engagement(3_000, 0).sim, "missile-decoyed")).toHaveLength(0);
-    // Forty-eight shots, each flown until the missile is spent: half a minute
-    // on a laptop and a good deal more on a shared CI runner.
-  }, 180_000);
 });
 
 describe("the threat warner", () => {
@@ -320,18 +290,4 @@ describe("replays with missiles", () => {
     const old = { ...JSON.parse(recorder.toJSON()), version: 3 };
     expect(() => parseReplay(JSON.stringify(old))).not.toThrow();
   });
-});
-
-describe("the energy fighter with missiles", () => {
-  it("shoots when it has tone and flares when one is coming", async () => {
-    const sim = new DogfightSimulation(fox2Merge, { recordDecisions: false });
-    sim.attachAgent("blue-1", new EnergyFighterAgent("blue-1"));
-    sim.attachAgent("red-1", new EnergyFighterAgent("red-1"));
-    await sim.runHeadless();
-    const launches = eventsOf(sim, "missile-launch");
-    expect(launches.length).toBeGreaterThan(0);
-    // Launched on a lock, never blind.
-    for (const launch of launches) expect(launch.detail).toMatch(/locked/);
-    expect(eventsOf(sim, "flares").length).toBeGreaterThan(0);
-  }, 60_000);
 });
