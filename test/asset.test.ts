@@ -229,7 +229,7 @@ function modelVertices(frame: Airframe): [number, number, number][] {
   return out;
 }
 
-describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c])("the $name model, calibrated", (frame) => {
+describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c, AIRFRAMES.f15c, AIRFRAMES.mig29a])("the $name model, calibrated", (frame) => {
   const vertices = modelVertices(frame);
 
   it("has its centre of gravity inside the wing's root chord", () => {
@@ -276,5 +276,37 @@ describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c])("the $name model, calibrated", 
     );
     expect(above.length, "canopy above the eye").toBeGreaterThan(0);
     expect(below.length, "fuselage below the eye").toBeGreaterThan(0);
+  });
+});
+
+describe.each([AIRFRAMES.f15c, AIRFRAMES.mig29a])("the $name model's stores and nozzles", (frame) => {
+  const vertices = modelVertices(frame);
+
+  it("has its nozzles where the afterburner plumes are drawn, the size of the opening", () => {
+    for (const [right, up, nose] of frame.nozzles) {
+      const near = vertices.filter(
+        (vertex) => Math.hypot(vertex[0] - right, vertex[1] - up) < frame.nozzleRadiusM + 0.1 && Math.abs(vertex[2] - nose) < 0.2,
+      );
+      expect(near.length, `a nozzle ring at (${right}, ${up}, ${nose})`).toBeGreaterThan(8);
+      const opening = Math.min(...near.map((vertex) => Math.hypot(vertex[0] - right, vertex[1] - up)));
+      expect(frame.nozzleRadiusM).toBeCloseTo(opening, 1);
+    }
+  });
+
+  it("hangs its missiles clear of the wing, on a pylon that reaches it", () => {
+    const radius = 0.0635;
+    for (const [right, up, nose] of frame.rails) {
+      const inside = vertices.filter(
+        (vertex) => Math.abs(vertex[2] - nose) < 1.425 && Math.hypot(vertex[0] - right, vertex[1] - up) < radius,
+      );
+      expect(inside, "airframe inside the missile").toHaveLength(0);
+      // The wing is above the missile, within the pylon's height of its back.
+      const above = vertices.filter(
+        (vertex) => Math.abs(vertex[0] - right) < 0.6 && Math.abs(vertex[2] - nose) < 0.8 && vertex[1] > up,
+      );
+      const underside = Math.min(...above.map((vertex) => vertex[1]));
+      expect(underside - (up + radius)).toBeGreaterThan(0);
+      expect(underside - (up + radius)).toBeLessThanOrEqual(frame.pylonHeightM! + 0.02);
+    }
   });
 });
