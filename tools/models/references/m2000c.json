@@ -1,0 +1,58 @@
+{
+  "source": "https://commons.wikimedia.org/wiki/File:Dassault_Mirage_2000C_3-view_line_drawing.gif (retraced by Henrickson, CC BY-SA 3.0)",
+  "length_m": 14.36,
+  "top": {
+    "crop": [
+      0.02,
+      0.245,
+      0.64,
+      0.8
+    ],
+    "transform": "flipx",
+    "ignore": [
+      [
+        0.0,
+        0.0,
+        0.26,
+        0.15
+      ],
+      [
+        0.0,
+        0.73,
+        0.484,
+        1.0
+      ]
+    ]
+  },
+  "side": {
+    "crop": [
+      0.335,
+      0.575,
+      0.97,
+      0.83
+    ],
+    "ignore": [
+      [
+        0.0,
+        0.0,
+        0.2,
+        0.34
+      ],
+      [
+        0.28,
+        0.28,
+        0.37,
+        0.62
+      ]
+    ]
+  },
+  "front": {
+    "crop": [
+      0.47,
+      0.08,
+      0.88,
+      0.335
+    ]
+  },
+  "close": 5
+}

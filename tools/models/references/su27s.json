@@ -1,0 +1,7 @@
+{
+  "source": "https://commons.wikimedia.org/wiki/File:Sukhoi_Su-27_3-view_line_drawing.svg (Malyszkz, public domain)",
+  "length_m": 21.935,
+  "top": { "crop": [0.0, 0.0, 0.378, 1.0], "transform": "rot90" },
+  "side": { "crop": [0.43, 0.68, 1.0, 0.95] },
+  "front": { "crop": [0.46, 0.115, 0.866, 0.415] }
+}
