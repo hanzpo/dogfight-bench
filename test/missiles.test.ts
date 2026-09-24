@@ -164,7 +164,15 @@ describe("the missile", () => {
     expect(Number(/([\d.]+) m/.exec(burst?.detail ?? "")?.[1])).toBeLessThanOrEqual(MISSILE.fuzeRadiusM);
     expect(red.alive).toBe(false);
     expect(red.destroyedBy).toBe("blue-1");
+    expect(red.destroyedWeapon).toMatchObject({ kind: "missile", name: "AIM-9M", by: "blue-1" });
     expect(sim.summary().aircraft[0]?.missilesFired).toBe(1);
+  });
+
+  it("credits a kill to the missile that made it, whichever that is", () => {
+    const { sim, blue, red } = engagement(3_000, 0, { config: { ...fox2Merge, airframes: { "blue-1": "su27s" } } });
+    shoot(sim, blue);
+    expect(red.alive).toBe(false);
+    expect(red.destroyedWeapon).toMatchObject({ kind: "missile", name: "R-73", by: "blue-1" });
   });
 
   it("cannot catch a jet running away from twelve kilometres", () => {

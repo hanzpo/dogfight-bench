@@ -374,7 +374,11 @@ export class DogfightSimulation {
 
   private finishIfNeeded(): void {
     for (const aircraft of this.state.aircraft) {
-      if (aircraft.alive && isDestroyed(aircraft.damage)) this.destroy(aircraft, "airframe destroyed");
+      if (!aircraft.alive || !isDestroyed(aircraft.damage)) continue;
+      // Damage that kills a moment after the hit -- a fire, a fuel leak -- is still that weapon's kill.
+      this.destroy(aircraft, aircraft.damage.pilotIncapacitated ? "pilot incapacitated" : "airframe destroyed");
+      aircraft.destroyedWeapon = aircraft.lastHit;
+      aircraft.destroyedBy = aircraft.lastHit?.by;
     }
 
     const spent = this.overBudget();

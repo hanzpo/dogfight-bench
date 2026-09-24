@@ -128,6 +128,7 @@ export function stepProjectiles(state: MatchState, dt: number, rng: Random): voi
       const muzzleEnergy = kineticEnergyJ(gun.muzzleVelocityMps, gun);
       applyHit(target.damage, best, impactEnergy / muzzleEnergy, rng.next(), gun.damageScale);
       target.health = target.damage.integrity;
+      target.lastHit = { kind: "gun", name: gun.name, by: shot.ownerId, time: state.time };
       state.events.push({
         time: state.time,
         type: "hit",
@@ -141,6 +142,7 @@ export function stepProjectiles(state: MatchState, dt: number, rng: Random): voi
         target.alive = false;
         target.destroyedBy = shot.ownerId;
         target.destroyedReason = target.damage.pilotIncapacitated ? "pilot incapacitated" : "airframe destroyed";
+        target.destroyedWeapon = target.lastHit;
         state.events.push({
           time: state.time,
           type: "kill",

@@ -195,6 +195,9 @@ describe("hit resolution", () => {
     expect(state.events.filter((event) => event.type === "hit").length).toBeGreaterThan(5);
     expect(target!.damage.hitsTaken).toBeGreaterThan(5);
     expect(shooter!.damage.hitsTaken).toBe(0);
+    // Whatever kills it now or later, the gun has the credit.
+    expect(target!.lastHit).toMatchObject({ kind: "gun", by: shooter!.id });
+    if (!target!.alive) expect(target!.destroyedWeapon).toMatchObject({ kind: "gun", by: shooter!.id });
   });
 
   it("does not let rounds tunnel through a fast crossing target", () => {

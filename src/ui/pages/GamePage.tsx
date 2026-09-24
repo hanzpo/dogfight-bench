@@ -13,7 +13,7 @@ import { useLiveMatch } from "../hooks/useLiveMatch";
 import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type Choice } from "../setup";
 import type { ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
-import type { MatchState } from "../../sim/types";
+import type { AircraftState, MatchState } from "../../sim/types";
 import type { ReplayFile } from "../../sim/replay";
 import { airframe } from "../../sim/airframes";
 
@@ -48,20 +48,32 @@ interface Outcome {
   stats: Array<{ label: string; value: string }>;
 }
 
+/** "an R-73", "an AIM-9M", "a Magic II": the article goes by how the name is said. */
+function withArticle(name: string): string {
+  return `${/^(A|E|I|O|R-)/.test(name) ? "an" : "a"} ${name}`;
+}
+
 /** Why an aircraft went down, from the player's side. */
-function howItEnded(reason: string | undefined, you: boolean): string {
-  switch (reason) {
+function howItEnded(aircraft: AircraftState | undefined, you: boolean): string {
+  switch (aircraft?.destroyedReason) {
     case "terrain impact":
       return you ? "You crashed." : "The enemy crashed.";
     case "hard deck violation":
       return you ? "You stayed too low." : "The enemy stayed too low.";
     case "left the arena":
       return you ? "You left the arena." : "The enemy left the arena.";
-    case "AIM-9M":
-      return you ? "Killed by a missile." : "Missile kill.";
-    default:
-      return you ? "Killed by guns." : "Guns kill.";
   }
+  const weapon = aircraft?.destroyedWeapon;
+  const pilot = aircraft?.destroyedReason === "pilot incapacitated";
+  if (weapon?.kind === "missile") {
+    if (you) return pilot ? `Your pilot was hit by ${withArticle(weapon.name)}.` : `Shot down by ${withArticle(weapon.name)}.`;
+    return pilot ? `${weapon.name} kill. The pilot was hit.` : `${weapon.name} kill.`;
+  }
+  if (weapon?.kind === "gun") {
+    if (you) return pilot ? "Your pilot was hit by gunfire." : "Shot down by guns.";
+    return pilot ? "Guns kill. The pilot was hit." : "Guns kill.";
+  }
+  return you ? "You were shot down." : "The enemy went down.";
 }
 
 function outcomeOf(state: MatchState): Outcome {
@@ -78,8 +90,8 @@ function outcomeOf(state: MatchState): Outcome {
   let reason: string;
   if (state.finishReason === "mutual destruction") reason = "Both jets went down.";
   else if (state.finishReason?.startsWith("time limit")) reason = "Time ran out. Decided on points.";
-  else if (verdict === "lost") reason = howItEnded(you?.destroyedReason, true);
-  else if (verdict === "won") reason = howItEnded(bandit?.destroyedReason, false);
+  else if (verdict === "lost") reason = howItEnded(you, true);
+  else if (verdict === "won") reason = howItEnded(bandit, false);
   else reason = state.finishReason ?? "";
 
   return {

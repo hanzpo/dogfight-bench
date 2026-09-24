@@ -99,6 +99,19 @@ export interface AircraftState {
   alive: boolean;
   destroyedBy?: string;
   destroyedReason?: string;
+  /** The last weapon to do it damage: what gets the credit if the damage kills it later. */
+  lastHit?: WeaponHit;
+  /** The weapon that brought it down, when one did. */
+  destroyedWeapon?: WeaponHit;
+}
+
+export interface WeaponHit {
+  kind: "gun" | "missile";
+  /** The gun's or the missile's name, such as "R-73". */
+  name: string;
+  /** Who fired it. */
+  by: string;
+  time: number;
 }
 
 export interface ProjectileState {

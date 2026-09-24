@@ -465,6 +465,7 @@ function detonate(state: MatchState, missile: MissileState, target: AircraftStat
     position: where,
   });
   if (loss > 0) {
+    target.lastHit = { kind: "missile", name: spec.name, by: missile.ownerId, time: state.time };
     state.events.push({
       time: state.time,
       type: "hit",
@@ -478,6 +479,7 @@ function detonate(state: MatchState, missile: MissileState, target: AircraftStat
     target.alive = false;
     target.destroyedBy = missile.ownerId;
     target.destroyedReason = target.damage.pilotIncapacitated ? "pilot incapacitated" : `${spec.name}`;
+    target.destroyedWeapon = { kind: "missile", name: spec.name, by: missile.ownerId, time: state.time };
     state.events.push({
       time: state.time,
       type: "kill",
