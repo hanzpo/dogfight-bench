@@ -245,18 +245,19 @@ function modelVertices(frame: Airframe): Point[] {
 }
 
 /**
- * Where the surface crosses the plane `right = at`: a low-poly wing may have
- * no vertex between its root and its tip, but its edges cross every station.
+ * Where the surface crosses the plane where body axis `axis` equals `at`: a
+ * low-poly wing may have no vertex between its root and its tip, but its
+ * edges cross every station.
  */
-function slice(mesh: ReturnType<typeof modelMesh>, at: number): Point[] {
+function slice(mesh: ReturnType<typeof modelMesh>, at: number, axis: 0 | 1 | 2 = 0): Point[] {
   const out: Point[] = [];
   for (const triangle of mesh.triangles) {
     for (let k = 0; k < 3; k += 1) {
       const a = mesh.vertices[triangle[k]!]!;
       const b = mesh.vertices[triangle[(k + 1) % 3]!]!;
-      if ((a[0] - at) * (b[0] - at) >= 0) continue;
-      const f = (at - a[0]) / (b[0] - a[0]);
-      out.push([at, a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])]);
+      if ((a[axis] - at) * (b[axis] - at) >= 0) continue;
+      const f = (at - a[axis]) / (b[axis] - a[axis]);
+      out.push([a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])]);
     }
   }
   return out;
@@ -300,6 +301,16 @@ describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c, AIRFRAMES.f15c, AIRFRAMES.mig29a
     expect(nearest).toBeLessThan(0.8);
     // And ahead of the centre of gravity, where a gun is.
     expect(fromModel(frame, muzzle)[2]).toBeGreaterThan(0);
+  });
+
+  it("keeps its nozzle mouths clear, so nothing shows inside them", () => {
+    // Just inside each exit, the only surface near the axis is the nozzle's own wall.
+    for (const [right, up, nose] of frame.nozzles) {
+      const inside = slice(mesh, nose + 0.15, 2).filter(
+        (point) => Math.hypot(point[0] - right, point[1] - up) < frame.nozzleRadiusM * 0.85,
+      );
+      expect(inside, `surface inside the nozzle at (${right}, ${up}, ${nose})`).toHaveLength(0);
+    }
   });
 
   it("puts the pilot's eye inside the canopy", () => {
