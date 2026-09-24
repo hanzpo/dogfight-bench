@@ -260,7 +260,9 @@ describe("flares", () => {
     expect(burner).toBeGreaterThan(0);
     expect(idle).toBeLessThan(24);
     expect(eventsOf(engagement(3_000, 0).sim, "missile-decoyed")).toHaveLength(0);
-  }, 60_000);
+    // Forty-eight shots, each flown until the missile is spent: half a minute
+    // on a laptop and a good deal more on a shared CI runner.
+  }, 180_000);
 });
 
 describe("the threat warner", () => {
