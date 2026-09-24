@@ -18,7 +18,7 @@ import { TRACER_TRAIL_SECONDS } from "../sim/tracer";
 import { CameraDirector } from "./cameras";
 import type { ViewMode } from "./cameras";
 import type { ViewerAircraft, ViewerBurst, ViewerSnapshot } from "./types";
-import type { MatchState } from "../sim/types";
+import type { MatchState, SimEvent } from "../sim/types";
 
 export type { ViewMode } from "./cameras";
 export type { ViewerAircraft, ViewerBurst, ViewerMissile, ViewerSnapshot, ViewerTracer } from "./types";
@@ -31,10 +31,20 @@ export function extractAirframe(scene: THREE.Object3D): THREE.Object3D {
   return airframe;
 }
 
-export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.events.length): ViewerSnapshot {
+/**
+ * What the viewer draws of a match. Effects come from `events` since
+ * `sinceEventIndex`: the match's own, or, online, only the ones the room has
+ * confirmed, since a prediction's events can be taken back.
+ */
+export function snapshotFromMatch(
+  state: MatchState,
+  sinceEventIndex = state.events.length,
+  events: readonly SimEvent[] = state.events,
+): ViewerSnapshot {
   const byId = new Map(state.aircraft.map((aircraft) => [aircraft.id, aircraft]));
   const impacts: Array<[number, number, number]> = [];
-  for (const event of state.events.slice(sinceEventIndex)) {
+  const fresh = events.slice(sinceEventIndex);
+  for (const event of fresh) {
     if (event.type !== "hit" && event.type !== "kill" && event.type !== "ground-impact") continue;
     const target = byId.get(event.targetId ?? event.actorId ?? "");
     if (target) impacts.push(target.position.toArray() as [number, number, number]);
@@ -69,7 +79,7 @@ export function snapshotFromMatch(state: MatchState, sinceEventIndex = state.eve
       motor: missile.motorRemainingS > 0,
     })),
     flares: state.flares.map((flare) => flare.position.toArray() as [number, number, number]),
-    bursts: burstsFrom(state.events.slice(sinceEventIndex)),
+    bursts: burstsFrom(fresh),
   };
 }
 

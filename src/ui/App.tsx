@@ -5,12 +5,13 @@ import { HomePage } from "./pages/HomePage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import { LivePage } from "./pages/LivePage";
 import { MatchesPage } from "./pages/MatchesPage";
+import { OnlineRoomPage, OnlineStartPage } from "./pages/OnlinePage";
 import { ReplayPage } from "./pages/ReplayPage";
 
 export function App() {
   const location = useLocation();
   // In flight the screen belongs to the HUD; the pause menu is the way out.
-  const inFlight = location.pathname === "/fly";
+  const inFlight = location.pathname === "/fly" || location.pathname.startsWith("/online");
 
   return (
     <>
@@ -43,6 +44,8 @@ export function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/fly" element={<GamePage />} />
+          <Route path="/online" element={<OnlineStartPage />} />
+          <Route path="/online/:code" element={<OnlineRoomPage />} />
           <Route path="/lab" element={<LivePage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/matches" element={<MatchesPage />} />

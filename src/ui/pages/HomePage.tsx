@@ -103,6 +103,20 @@ export function HomePage() {
           ) : null}
         </form>
 
+        <section className="home-online" aria-labelledby="home-online-title">
+          <h2 id="home-online-title" className="home-online-title">
+            Against a person
+          </h2>
+          <div className="home-online-actions">
+            <button type="button" className="large" onClick={() => navigate("/online?quick=1")}>
+              Quick match
+            </button>
+            <button type="button" className="large" onClick={() => navigate("/online")}>
+              Invite a friend
+            </button>
+          </div>
+        </section>
+
         <nav className="home-links" aria-label="More">
           <Link to="/leaderboard">Leaderboard</Link>
           <Link to="/matches">Replays</Link>

@@ -13,9 +13,9 @@ import { useLiveMatch } from "../hooks/useLiveMatch";
 import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type Choice } from "../setup";
 import type { ControlScheme } from "../input/pilot-input";
 import type { DogfightViewer, ViewMode } from "../../viewer";
-import type { AircraftState, MatchState } from "../../sim/types";
 import type { ReplayFile } from "../../sim/replay";
 import { airframe } from "../../sim/airframes";
+import { outcomeOf } from "../outcome";
 
 const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
   { value: "chase", label: "Chase" },
@@ -39,71 +39,6 @@ const ZOOM_PER_WHEEL_PIXEL = 0.0012;
 /** Keys the page answers itself, so they are not read while typing into a dialog. */
 function typingInto(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName));
-}
-
-interface Outcome {
-  verdict: "won" | "lost" | "draw";
-  headline: string;
-  reason: string;
-  stats: Array<{ label: string; value: string }>;
-}
-
-/** "an R-73", "an AIM-9M", "a Magic II": the article goes by how the name is said. */
-function withArticle(name: string): string {
-  return `${/^(A|E|I|O|R-)/.test(name) ? "an" : "a"} ${name}`;
-}
-
-/** Why an aircraft went down, from the player's side. */
-function howItEnded(aircraft: AircraftState | undefined, you: boolean): string {
-  switch (aircraft?.destroyedReason) {
-    case "terrain impact":
-      return you ? "You crashed." : "The enemy crashed.";
-    case "hard deck violation":
-      return you ? "You stayed too low." : "The enemy stayed too low.";
-    case "left the arena":
-      return you ? "You left the arena." : "The enemy left the arena.";
-  }
-  const weapon = aircraft?.destroyedWeapon;
-  const pilot = aircraft?.destroyedReason === "pilot incapacitated";
-  if (weapon?.kind === "missile") {
-    if (you) return pilot ? `Your pilot was hit by ${withArticle(weapon.name)}.` : `Shot down by ${withArticle(weapon.name)}.`;
-    return pilot ? `${weapon.name} kill. The pilot was hit.` : `${weapon.name} kill.`;
-  }
-  if (weapon?.kind === "gun") {
-    if (you) return pilot ? "Your pilot was hit by gunfire." : "Shot down by guns.";
-    return pilot ? "Guns kill. The pilot was hit." : "Guns kill.";
-  }
-  return you ? "You were shot down." : "The enemy went down.";
-}
-
-function outcomeOf(state: MatchState): Outcome {
-  const you = state.aircraft.find((aircraft) => aircraft.id === PLAYER);
-  const bandit = state.aircraft.find((aircraft) => aircraft.id !== PLAYER);
-  const won = state.winnerId === PLAYER;
-  const verdict = state.winnerId === undefined ? "draw" : won ? "won" : "lost";
-  const count = (type: string, actor: string) =>
-    state.events.filter((event) => event.type === type && event.actorId === actor).length;
-  const minutes = Math.floor(state.time / 60);
-  const seconds = Math.floor(state.time % 60);
-
-  const headline = verdict === "won" ? "You won" : verdict === "lost" ? "You lost" : "Draw";
-  let reason: string;
-  if (state.finishReason === "mutual destruction") reason = "Both jets went down.";
-  else if (state.finishReason?.startsWith("time limit")) reason = "Time ran out. Decided on points.";
-  else if (verdict === "lost") reason = howItEnded(you, true);
-  else if (verdict === "won") reason = howItEnded(bandit, false);
-  else reason = state.finishReason ?? "";
-
-  return {
-    verdict,
-    headline,
-    reason,
-    stats: [
-      { label: "Time", value: `${minutes}:${String(seconds).padStart(2, "0")}` },
-      { label: "Hits", value: String(count("hit", PLAYER)) },
-      { label: "Hits taken", value: String(bandit ? count("hit", bandit.id) : 0) },
-    ],
-  };
 }
 
 export function GamePage() {
@@ -236,7 +171,7 @@ export function GamePage() {
     if (from === "menu") setMenuOpen(true);
   };
 
-  const outcome = finished && match.state ? outcomeOf(match.state) : undefined;
+  const outcome = finished && match.state ? outcomeOf(match.state, PLAYER) : undefined;
   const jets = match.state?.aircraft.map((aircraft) => airframe(aircraft.airframe).name) ?? [];
   const matchup = jets.length === 2 ? `${jets[0]} vs ${jets[1]}` : "";
   const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";

@@ -772,3 +772,73 @@ kbd {
 .replay-speed button[aria-pressed="true"] { background: #f6f3ec; color: #0b0d10; font-weight: 600; }
 .replay-follow { min-height: 36px; font-size: 13px; }
 .replay-exit { min-height: 40px; padding: 0 18px; }
+
+/* ---------------------------------------------------------------- online */
+
+.home-online { display: grid; gap: 8px; }
+.home-online-title {
+  margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint);
+}
+.home-online-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.home-online-actions button { min-height: 44px; }
+
+.online-page {
+  position: relative; z-index: 1; min-height: 100dvh; display: grid; place-items: center;
+  padding: 32px 16px;
+}
+.online-panel {
+  width: min(560px, 100%); display: grid; gap: 16px; padding: 24px;
+  background: #0b0d10d9; border: 1px solid var(--line); border-radius: 18px; backdrop-filter: blur(14px);
+}
+.online-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.online-title { margin: 0; font-size: 26px; font-weight: 750; letter-spacing: -.01em; }
+.online-note { margin: 0; color: var(--text-muted); font-size: 14px; }
+.online-ping { font: 600 12px "B612 Mono", monospace; color: var(--text-faint); }
+.online-ping.in-flight {
+  position: fixed; z-index: 4; top: 18px; right: 16px; color: #9cff8f; opacity: .75;
+  text-shadow: 0 0 1px #000, 0 0 4px #000a;
+}
+
+.online-invite { display: grid; gap: 6px; }
+.online-invite-label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+.online-invite-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.online-invite-link {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 9px 12px; border-radius: var(--radius-sm); background: #ffffff0a; border: 1px solid var(--line);
+  font: 500 13px "B612 Mono", monospace; color: var(--text);
+}
+
+.online-seats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.online-seat {
+  display: grid; grid-template-columns: 40px 1fr auto; grid-template-areas: "jet name state" "jet aircraft state";
+  align-items: center; column-gap: 12px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #ffffff05;
+}
+.online-seat.empty { display: block; padding: 18px 12px; color: var(--text-faint); font-size: 14px; }
+.online-seat-jet { grid-area: jet; width: 40px; height: 40px; fill: currentColor; color: var(--text-muted); }
+.online-seat-jet .silhouette-canopy { fill: var(--bg); opacity: .55; }
+.online-seat-name { grid-area: name; font-weight: 650; font-size: 15px; }
+.online-seat-tag { font-weight: 500; color: var(--text-faint); }
+.online-seat-aircraft { grid-area: aircraft; font-size: 12.5px; color: var(--text-muted); }
+.online-seat-state { grid-area: state; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.online-seat.ready { border-color: #9cff8f55; }
+.online-seat.ready .online-seat-state { color: var(--good); }
+
+.online-name { display: grid; gap: 6px; }
+.online-name span { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+.online-name input { min-height: 40px; font-size: 15px; padding: 0 12px; }
+
+.online-countdown {
+  margin: 0; min-height: 52px; display: grid; place-items: center;
+  font-size: 18px; font-weight: 700; color: var(--accent); border: 1px solid #f4b54566; border-radius: var(--radius);
+}
+.online-leave { justify-self: center; color: var(--text-muted); font-size: 14px; }
+.online-lost {
+  position: fixed; z-index: 5; top: 30%; left: 50%; transform: translateX(-50%); margin: 0;
+  padding: 10px 18px; border-radius: 999px; background: #0b0d10d9; color: var(--danger); font-weight: 650;
+}
+
+@media (max-width: 720px) {
+  .online-panel { padding: 18px 16px; }
+  .home-online-actions { grid-template-columns: 1fr; }
+}

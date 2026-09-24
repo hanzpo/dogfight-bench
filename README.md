@@ -260,6 +260,47 @@ returns it. So `verified` records how far it was actually checked, the replay is
 kept, and matches the server ran itself are reproducible from their decision log
 and marked accordingly.
 
+## Online play
+
+Two people can fight each other from the home page: a quick match pairs you
+with whoever else is waiting, and "Invite a friend" makes a room with a link
+to send.
+
+Each room is a Cloudflare Durable Object, so everyone in it reaches the same
+instance. That instance runs the same `DogfightSimulation` the game runs
+offline, at the same 120 Hz, and it alone decides what happens: hits, damage
+and kills. Your browser keeps its own copy running a little ahead of the room,
+so your jet answers the stick at once. The other jet flies on with the last
+controls the room reported. About twenty times a second the room sends where
+the fight really stands. Your copy goes back to that point, flies your inputs
+again on top, and eases any difference into view rather than jumping to it.
+
+- `src/net/room.ts` is the room: the lobby, the countdown, and the fight
+  stepped in real time. It knows nothing of Cloudflare; `worker/rooms.ts`
+  wraps it in the Durable Object.
+- `src/net/client.ts` is a player's side: the prediction, the replay of your
+  inputs on top of each snapshot, and a clock that keeps inputs arriving just
+  before the room needs them.
+- A round is sent once, when it is fired, since it flies the same everywhere
+  from then on. A snapshot comes to about 4 KB, twenty times a second.
+- A tab that reconnects gets its seat back, even mid-fight. Leaving
+  mid-fight concedes, and a player the room hasn't heard from in 15 seconds
+  is let go.
+
+`test/online.test.ts` runs whole matches in memory over a simulated network
+with latency and jitter. It checks that your own jet is predicted to within
+5 cm of the room, that inputs arrive in time, and that a fight ends the same
+way for both players.
+
+To play online locally, run the Worker beside the dev server. Vite sends
+`/api/online` to it:
+
+```sh
+npm run dev:online   # the Worker with its Durable Objects, on :8788
+npm run dev          # the site, on :5173
+npm run check:online # two scripted players against the local Worker
+```
+
 ## Deploying
 
 Cloudflare Workers, with Supabase for results and replays:
