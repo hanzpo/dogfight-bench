@@ -14,6 +14,15 @@ export class Random {
     return this.state / 0x1_0000_0000;
   }
 
+  /** Where the stream has got to, so it can be carried to another machine and picked up there. */
+  save(): number {
+    return this.state;
+  }
+
+  load(state: number): void {
+    this.state = state >>> 0 || 1;
+  }
+
   normal(): number {
     const u = Math.max(this.next(), Number.EPSILON);
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * this.next());

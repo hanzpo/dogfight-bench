@@ -10,7 +10,16 @@ import { Random, mixSeed } from "./random";
 import { createNeutralMerge } from "./scenario";
 import { terrainHeight } from "./terrain";
 import { observationFor } from "./telemetry";
-import type { AircraftState, MatchState, ScenarioConfig } from "./types";
+import {
+  packRounds,
+  reviveAircraft,
+  reviveFlares,
+  reviveMissiles,
+  toPlain,
+  unpackRounds,
+  type SimSnapshot,
+} from "./snapshot";
+import type { AircraftState, MatchState, ProjectileState, ScenarioConfig, SimEvent } from "./types";
 
 const BOUNDARY_GRACE_S = 5;
 const BINGO_FUEL_KG = 450;
@@ -59,6 +68,14 @@ interface AircraftBookkeeping {
   belowDeckFor: number;
   bingoCalled: boolean;
   wasDeparted: boolean;
+}
+
+interface Scoring {
+  roundsFired: number;
+  hitsScored: number;
+  missilesFired: number;
+  timeOnTargetS: number;
+  timeInControlZoneS: number;
 }
 
 export interface MatchSummary {
@@ -111,10 +128,7 @@ export class DogfightSimulation {
   private readonly slots = new Map<string, AgentSlot>();
   private readonly standingOrders = new Map<string, TacticalAction>();
   private readonly bookkeeping = new Map<string, AircraftBookkeeping>();
-  private readonly scoring = new Map<
-    string,
-    { roundsFired: number; hitsScored: number; missilesFired: number; timeOnTargetS: number; timeInControlZoneS: number }
-  >();
+  private readonly scoring = new Map<string, Scoring>();
 
   readonly decisionIntervalS: number;
   readonly decisionTimeoutMs: number;
@@ -421,6 +435,65 @@ export class DogfightSimulation {
     const opponent = this.state.aircraft.find((candidate) => candidate.id !== aircraft.id);
     const damageDealt = opponent ? 1 - opponent.damage.integrity : 0;
     return damageDealt * 100 + score.timeOnTargetS * 10 + score.timeInControlZoneS;
+  }
+
+  /**
+   * The whole simulation at this tick, for another copy to carry on from.
+   * Events travel separately; `rounds` narrows which rounds are packed, for a
+   * sender that has already sent the rest.
+   */
+  snapshot(rounds: readonly ProjectileState[] = this.state.projectiles): SimSnapshot {
+    const state = this.state;
+    return {
+      tick: state.tick,
+      time: state.time,
+      finished: state.finished,
+      ...(state.winnerId !== undefined ? { winnerId: state.winnerId } : {}),
+      ...(state.finishReason !== undefined ? { finishReason: state.finishReason } : {}),
+      aircraft: state.aircraft.map(toPlain),
+      missiles: state.missiles.map(toPlain),
+      flares: state.flares.map(toPlain),
+      rounds: packRounds(rounds, state.aircraft),
+      rng: this.rng.save(),
+      missileRng: this.missileRng.save(),
+      projectileId: this.projectileId,
+      storeId: this.storeId,
+      bookkeeping: [...this.bookkeeping].map(([id, book]) => [id, { ...book }]),
+      scoring: [...this.scoring].map(([id, score]) => [id, { ...score }]),
+      eventCount: state.events.length,
+    };
+  }
+
+  /**
+   * Puts the simulation back to a snapshot. `events` is everything that had
+   * happened by then, which the snapshot leaves out because it only grows;
+   * `rounds`, when given, are the rounds in the air in place of the packed ones.
+   */
+  restore(snapshot: SimSnapshot, events: readonly SimEvent[], rounds?: readonly ProjectileState[]): void {
+    const state = this.state;
+    state.tick = snapshot.tick;
+    state.time = snapshot.time;
+    state.finished = snapshot.finished;
+    state.winnerId = snapshot.winnerId;
+    state.finishReason = snapshot.finishReason;
+    state.aircraft = reviveAircraft(snapshot.aircraft);
+    state.missiles = reviveMissiles(snapshot.missiles);
+    state.flares = reviveFlares(snapshot.flares);
+    state.projectiles = rounds
+      ? rounds.map((round) => ({
+          ...round,
+          position: round.position.clone(),
+          previousPosition: round.previousPosition.clone(),
+          velocity: round.velocity.clone(),
+        }))
+      : unpackRounds(snapshot.rounds, state.aircraft);
+    state.events = events.slice(0, snapshot.eventCount);
+    this.rng.load(snapshot.rng);
+    this.missileRng.load(snapshot.missileRng);
+    this.projectileId = snapshot.projectileId;
+    this.storeId = snapshot.storeId;
+    for (const [id, book] of snapshot.bookkeeping) this.bookkeeping.set(id, { ...(book as AircraftBookkeeping) });
+    for (const [id, score] of snapshot.scoring) this.scoring.set(id, { ...(score as Scoring) });
   }
 
   setHumanControls(aircraftId: string, controls: AircraftState["controls"]): void {
