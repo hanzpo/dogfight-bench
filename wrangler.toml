@@ -43,3 +43,18 @@ DOGFIGHT_PUBLIC_DAILY_DECISIONS = "40000"
 
 # Secrets, set with `wrangler secret put NAME` and never written here:
 #   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, TYPESAFE_API_KEY
+
+# Online play. Each match is a Durable Object, which every player in the room
+# reaches and which runs the fight's clock; the matchmaker pairs quick-match
+# players. SQLite-backed, which is what the free plan offers.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "MatchRoomObject"
+
+[[durable_objects.bindings]]
+name = "MATCHMAKER"
+class_name = "MatchmakerObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchRoomObject", "MatchmakerObject"]

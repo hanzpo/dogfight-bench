@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch --env-file-if-exists=.env server/node.ts",
+    "dev:online": "mkdir -p dist && npx wrangler@4 dev --port 8788",
+    "check:online": "tsx tools/online/smoke.ts",
     "server": "tsx --env-file-if-exists=.env server/node.ts",
     "bench": "tsx --env-file-if-exists=.env server/cli.ts",
     "build": "tsc --noEmit && vite build",

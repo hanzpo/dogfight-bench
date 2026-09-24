@@ -24,6 +24,7 @@
   "include": [
     "src",
     "server",
+    "worker",
     "test",
     "vite.config.ts"
   ]
