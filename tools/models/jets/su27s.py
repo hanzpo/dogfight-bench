@@ -112,8 +112,9 @@ def parts():
         ],
         count=16,
     )
-    # The flat centre section between nacelles and booms, behind the wing.
-    platform = surface("platform", [(0.3, 0.05, -3.4, 5.9), (2.0, 0.05, -3.7, 5.2)], thickness=0.04)
+    # The flat centre section between nacelles and booms, behind the wing. It
+    # stops short of the nozzle shells, or it would show inside their mouths.
+    platform = surface("platform", [(0.3, 0.05, -3.4, 4.9), (2.0, 0.05, -3.7, 4.6)], thickness=0.04)
     fin = surface("fin", [(BOOM, 0.25, -4.3, 3.6), (BOOM, 4.0, -7.03, 0.65)], thickness=0.045)
     stabilator = surface("stabilator", [(2.04, -0.05, -5.85, 3.35), (4.58, -0.12, -8.55, 0.62)], thickness=0.04)
     ventral = surface("ventral", [(BOOM, -0.2, -5.3, 1.6), (BOOM, -1.22, -5.9, 0.9)], thickness=0.05)

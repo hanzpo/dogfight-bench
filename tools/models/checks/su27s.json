@@ -1,6 +1,6 @@
 {
-  "triangles": 5026,
-  "vertices": 2507,
+  "triangles": 4938,
+  "vertices": 2463,
   "components": 1,
   "nonmanifold_edges": 0,
   "boundary_edges": 0,
@@ -8,7 +8,7 @@
   "edges_under_0_1mm": 0,
   "coincident_vertices": 0,
   "inward_faces": 0,
-  "signed_volume_m3": 64.738,
+  "signed_volume_m3": 64.488,
   "degenerate_at": [],
   "inward_at": [],
   "span_m": 14.8,
