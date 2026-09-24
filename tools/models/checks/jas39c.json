@@ -1,0 +1,23 @@
+{
+  "triangles": 3154,
+  "vertices": 1579,
+  "components": 1,
+  "nonmanifold_edges": 0,
+  "boundary_edges": 0,
+  "degenerate_faces": 0,
+  "edges_under_0_1mm": 0,
+  "coincident_vertices": 0,
+  "inward_faces": 0,
+  "signed_volume_m3": 22.344,
+  "degenerate_at": [],
+  "inward_at": [],
+  "span_m": 8.11,
+  "length_m": 14.48,
+  "height_m": 3.33,
+  "published": {
+    "length_m": 14.1,
+    "span_m": 8.4,
+    "height_m": 4.5,
+    "wing_area_m2": 25.54
+  }
+}

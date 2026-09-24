@@ -261,13 +261,6 @@ function flcs(maxLoadFactor: number, alphaLimitDeg: number, rollRateDegS: number
   };
 }
 
-function tips(spanM: number, along: number, up = -0.08): readonly BodyPoint[] {
-  return [
-    [-(spanM / 2 + 0.05), up, along],
-    [spanM / 2 + 0.05, up, along],
-  ];
-}
-
 function pylons(outM: number, along: number, up: number): readonly BodyPoint[] {
   return [
     [-outM, up, along],
@@ -484,7 +477,7 @@ const F15C: Airframe = {
 };
 
 /** Endurance: agile for its size and full of fuel; the biggest, hottest thing in the sky and slow to roll. */
-const SU27S: Airframe = drawnAbout({
+const SU27S: Airframe = {
   id: "su27s",
   name: "Su-27S",
   role: "Long-haul brawler",
@@ -497,21 +490,41 @@ const SU27S: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(9, 26, 180),
-  gun: { ...GUNS.gsh301, muzzleOffsetM: [1.1, 0.4, 4.4] as const },
+  // The GSh-30-1 is in the root of the right wing-root extension.
+  gun: { ...GUNS.gsh301, muzzleOffsetM: [0.8, 0.5, 4.6] as const },
   missile: "r73",
   infrared: 1.8,
-  nozzles: [[-1.25, -0.3, -10.5], [1.25, -0.3, -10.5]],
-  nozzleRadiusM: 0.55,
-  rails: tips(14.7, -2.0),
-  cockpitEye: [0, 1.25, 6.4],
+  // Measured off the model, which `tools/models/jets/su27s.py` builds from the
+  // three-view: nozzle exits and their openings, a seat under the canopy,
+  // and a missile beside each wingtip launcher.
+  nozzles: [[-1.1, -0.1, -9.3], [1.1, -0.1, -9.3]],
+  nozzleRadiusM: 0.45,
+  rails: [
+    [-7.47, -0.02, -4.3],
+    [7.47, -0.02, -4.3],
+  ],
+  cockpitEye: [0, 1.7, 5.6],
+  // A quarter of the way along the mean aerodynamic chord of the wing with
+  // the published 62 m² and the model's tip and trailing edge: 4.60 m long,
+  // its leading edge 0.56 m behind the origin.
+  cg: [0, 0, -1.71],
+  hitVolumes: onModel({
+    cockpit: [[0, 1.4, 5.6], 1.54],
+    "forward-fuselage": [[0, 0.4, 2.5], 2.2],
+    "left-wing": [[-4.6, 0.15, -3.2], 2.49],
+    "right-wing": [[4.6, 0.15, -3.2], 2.49],
+    engine: [[0, -0.4, -6.5], 1.98],
+    tail: [[0, 1.6, -6.8], 1.91],
+  }),
+  model: "/aircraft/su27s.glb",
   placeholder: {
     fuselageRadiusM: 0.85, wing: "trapezoid", wingRootAt: 0.42, wingRootChordM: 6.8, wingTipChordM: 1.6,
     wingSweepDeg: 42, tailplane: true, fins: 2, finCantDeg: 0, finHeightM: 3.2, canards: false,
   },
-});
+};
 
 /** A delta: the hardest first turn in the sky, and the fastest to bleed the speed it turned with. */
-const M2000C: Airframe = drawnAbout({
+const M2000C: Airframe = {
   id: "m2000c",
   name: "Mirage 2000C",
   role: "First-turn delta",
@@ -525,21 +538,39 @@ const M2000C: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(9, 29, 270),
-  gun: GUNS.defa554,
+  // Two DEFA 554s under the intakes; the left one stands for both.
+  gun: { ...GUNS.defa554, muzzleOffsetM: [-0.45, -0.18, 1.2] as const },
   missile: "magic2",
   infrared: 1.1,
-  nozzles: [[0, 0, -7.2]],
-  nozzleRadiusM: 0.5,
-  rails: pylons(3.3, -0.6, -0.45),
-  cockpitEye: [0, 1.0, 3.4],
+  // Measured off the model, which `tools/models/jets/m2000c.py` builds from
+  // the three-view: the nozzle's exit and opening, a seat under the canopy,
+  // and a Magic under each outer wing on a short pylon.
+  nozzles: [[0, 0.56, -7.18]],
+  nozzleRadiusM: 0.42,
+  rails: pylons(3.3, -3.1, -0.2),
+  pylonHeightM: 0.12,
+  cockpitEye: [0, 1.02, 3.0],
+  // A quarter of the way along the mean aerodynamic chord of the wing with
+  // the published 41 m² and the model's tip and trailing edge: 5.53 m long,
+  // its leading edge 0.46 m ahead of the origin.
+  cg: [0, 0, -0.92],
+  hitVolumes: onModel({
+    cockpit: [[0, 0.9, 3.0], 0.98],
+    "forward-fuselage": [[0, 0.3, 1.0], 1.4],
+    "left-wing": [[-2.6, 0.1, -2.9], 1.59],
+    "right-wing": [[2.6, 0.1, -2.9], 1.59],
+    engine: [[0, 0.45, -4.6], 1.26],
+    tail: [[0, 2.0, -5.5], 1.22],
+  }),
+  model: "/aircraft/m2000c.glb",
   placeholder: {
     fuselageRadiusM: 0.62, wing: "delta", wingRootAt: 0.38, wingRootChordM: 8.0, wingTipChordM: 0.3,
     wingSweepDeg: 58, tailplane: false, fins: 1, finCantDeg: 0, finHeightM: 2.6, canards: false,
   },
-});
+};
 
 /** Small and cool: hard to see, hard to lock and hard to hit, and outclassed on paper by everything here. */
-const F5E: Airframe = drawnAbout({
+const F5E: Airframe = {
   id: "f5e",
   name: "F-5E",
   role: "Underdog",
@@ -553,21 +584,41 @@ const F5E: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(7.3, 26, 240),
-  gun: GUNS.m39,
+  // Two M39s in the top of the nose; the left one stands for both.
+  gun: { ...GUNS.m39, muzzleOffsetM: [-0.25, 0.33, 4.6] as const },
   missile: "aim9p",
   infrared: 0.4,
-  nozzles: [[-0.35, 0, -7.2], [0.35, 0, -7.2]],
-  nozzleRadiusM: 0.3,
-  rails: tips(8.13, -0.6),
-  cockpitEye: [0, 0.95, 3.2],
+  // Measured off the model, which `tools/models/jets/f5e.py` builds from the
+  // three-view: nozzle exits and their openings, a seat under the canopy's
+  // highest point, and a missile beside each tip rail, nose ahead of the tip.
+  nozzles: [[-0.265, 0.47, -7.2], [0.265, 0.47, -7.2]],
+  nozzleRadiusM: 0.2,
+  rails: [
+    [-4.115, 0.06, -2.0],
+    [4.115, 0.06, -2.0],
+  ],
+  cockpitEye: [0, 1.05, 1.9],
+  // A quarter of the way along the mean aerodynamic chord of the wing with
+  // the published 17.28 m² and the model's tip and trailing edge: 2.43 m
+  // long, its leading edge 0.87 m behind the origin.
+  cg: [0, 0, -1.48],
+  hitVolumes: onModel({
+    cockpit: [[0, 0.9, 2.2], 0.93],
+    "forward-fuselage": [[0, 0.3, 0.3], 1.33],
+    "left-wing": [[-2.2, 0.06, -1.9], 1.51],
+    "right-wing": [[2.2, 0.06, -1.9], 1.51],
+    engine: [[0, 0.35, -4.2], 1.2],
+    tail: [[0, 1.6, -5.2], 1.16],
+  }),
+  model: "/aircraft/f5e.glb",
   placeholder: {
     fuselageRadiusM: 0.55, wing: "trapezoid", wingRootAt: 0.47, wingRootChordM: 3.6, wingTipChordM: 0.7,
     wingSweepDeg: 32, tailplane: true, fins: 1, finCantDeg: 0, finHeightM: 2.0, canards: false,
   },
-});
+};
 
 /** Small and quick, the newest jet here; kept honest with a modest engine and a short magazine. */
-const JAS39C: Airframe = drawnAbout({
+const JAS39C: Airframe = {
   id: "jas39c",
   name: "Gripen C",
   role: "Precision dogfighter",
@@ -581,18 +632,38 @@ const JAS39C: Airframe = drawnAbout({
   }),
   surfaces: SURFACES,
   flcs: flcs(9, 26, 260),
-  gun: GUNS.bk27,
+  // The BK 27 is under the left intake housing.
+  gun: { ...GUNS.bk27, muzzleOffsetM: [-0.72, -0.17, 1.2] as const },
   missile: "aim9m",
   infrared: 0.85,
-  nozzles: [[0, 0, -7.0]],
-  nozzleRadiusM: 0.42,
-  rails: tips(8.4, -1.1),
-  cockpitEye: [0, 1.0, 3.6],
+  // Measured off the model, which `tools/models/jets/jas39c.py` builds from
+  // the three-view: the nozzle's exit and opening, a seat under the canopy,
+  // and a missile beside each tip rail, nose ahead of the tip.
+  nozzles: [[0, 0.53, -7.24]],
+  nozzleRadiusM: 0.33,
+  rails: [
+    [-4.13, 0.42, -3.575],
+    [4.13, 0.42, -3.575],
+  ],
+  cockpitEye: [0, 1.12, 3.0],
+  // A quarter of the way along the mean aerodynamic chord of the wing with
+  // the published 25.54 m² and the model's tip and trailing edge: 3.62 m
+  // long, its leading edge 1.39 m behind the origin.
+  cg: [0, 0, -2.3],
+  hitVolumes: onModel({
+    cockpit: [[0, 1.0, 3.0], 0.93],
+    "forward-fuselage": [[0, 0.35, 1.2], 1.34],
+    "left-wing": [[-2.4, 0.42, -2.6], 1.51],
+    "right-wing": [[2.4, 0.42, -2.6], 1.51],
+    engine: [[0, 0.5, -4.6], 1.2],
+    tail: [[0, 2.0, -5.3], 1.16],
+  }),
+  model: "/aircraft/jas39c.glb",
   placeholder: {
     fuselageRadiusM: 0.6, wing: "delta", wingRootAt: 0.45, wingRootChordM: 6.4, wingTipChordM: 0.6,
     wingSweepDeg: 50, tailplane: false, fins: 1, finCantDeg: 0, finHeightM: 2.3, canards: true,
   },
-});
+};
 
 export const AIRFRAMES: Record<AirframeId, Airframe> = {
   f16c: F16C,
@@ -604,29 +675,6 @@ export const AIRFRAMES: Record<AirframeId, Airframe> = {
   f5e: F5E,
   jas39c: JAS39C,
 };
-
-/**
- * The centre of gravity a placeholder is drawn about: 30% of the mean
- * aerodynamic chord of the wing it is drawn with, found the same way as the
- * real models' -- the root and tip chords, the sweep and the span give the
- * chord's length and where its leading edge is.
- */
-export function placeholderCg(frame: Pick<Airframe, "geometry" | "placeholder">): BodyPoint {
-  const shape = frame.placeholder;
-  const length = frame.geometry.lengthM;
-  const semiSpan = frame.geometry.wingSpanM / 2 - shape.fuselageRadiusM * 0.8;
-  const taper = shape.wingTipChordM / shape.wingRootChordM;
-  const mac = ((2 / 3) * shape.wingRootChordM * (1 + taper + taper * taper)) / (1 + taper);
-  const macStation = ((semiSpan / 3) * (1 + 2 * taper)) / (1 + taper);
-  const rootLeading = length / 2 - shape.wingRootAt * length;
-  const macLeading = rootLeading - Math.tan(radians(shape.wingSweepDeg)) * macStation;
-  return [0, 0, macLeading - 0.3 * mac];
-}
-
-/** A placeholder airframe, with its centre of gravity where its drawn wing puts it. */
-function drawnAbout(frame: Omit<Airframe, "cg">): Airframe {
-  return { ...frame, cg: placeholderCg(frame) };
-}
 
 /** A point measured on the model, as a position from the centre of gravity. */
 export function fromModel(frame: Pick<Airframe, "cg">, point: BodyPoint): BodyPoint {

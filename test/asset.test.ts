@@ -189,28 +189,32 @@ describe("the F/A-18 asset", () => {
   });
 });
 
+type Point = [number, number, number];
+
 /**
- * Every vertex of a model in body axes -- right, up, nose -- as the airframe
- * says to read it: the file turned by its yaw.
+ * Every vertex and triangle of a model in body axes -- right, up, nose -- as
+ * the airframe says to read it: the file turned by its yaw.
  */
-function modelVertices(frame: Airframe): [number, number, number][] {
+function modelMesh(frame: Airframe): { vertices: Point[]; triangles: [number, number, number][] } {
   const facing = frame.modelYawDeg === 180 ? -1 : 1;
   const buffer = readFileSync(`public${frame.model}`);
   const jsonLength = buffer.readUInt32LE(12);
   const gltf = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString("utf8")) as {
     scenes: Array<{ nodes: number[] }>;
     nodes: Array<{ mesh?: number; translation?: [number, number, number]; children?: number[] }>;
-    meshes: Array<{ primitives: Array<{ attributes: { POSITION: number } }> }>;
-    accessors: Array<{ bufferView: number; byteOffset?: number; count: number }>;
+    meshes: Array<{ primitives: Array<{ attributes: { POSITION: number }; indices?: number }> }>;
+    accessors: Array<{ bufferView: number; byteOffset?: number; count: number; componentType: number }>;
     bufferViews: Array<{ byteOffset?: number; byteStride?: number }>;
   };
   const start = 20 + jsonLength + 8;
-  const out: [number, number, number][] = [];
-  const visit = (index: number, at: [number, number, number]) => {
+  const vertices: Point[] = [];
+  const triangles: [number, number, number][] = [];
+  const visit = (index: number, at: Point) => {
     const node = gltf.nodes[index]!;
     const t = node.translation ?? [0, 0, 0];
-    const here: [number, number, number] = [at[0] + t[0], at[1] + t[1], at[2] + t[2]];
+    const here: Point = [at[0] + t[0], at[1] + t[1], at[2] + t[2]];
     for (const primitive of node.mesh === undefined ? [] : gltf.meshes[node.mesh]!.primitives) {
+      const first = vertices.length;
       const accessor = gltf.accessors[primitive.attributes.POSITION]!;
       const view = gltf.bufferViews[accessor.bufferView]!;
       const offset = start + (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
@@ -220,21 +224,53 @@ function modelVertices(frame: Airframe): [number, number, number][] {
         const y = buffer.readFloatLE(offset + i * stride + 4) + here[1];
         const z = buffer.readFloatLE(offset + i * stride + 8) + here[2];
         // Model +x is left, so right is -x; the yaw flips x and z together.
-        out.push([-x * facing, y, z * facing]);
+        vertices.push([-x * facing, y, z * facing]);
       }
+      if (primitive.indices === undefined) continue;
+      const indices = gltf.accessors[primitive.indices]!;
+      const indexView = gltf.bufferViews[indices.bufferView]!;
+      const indexOffset = start + (indexView.byteOffset ?? 0) + (indices.byteOffset ?? 0);
+      const wide = indices.componentType === 5125;
+      const read = (i: number) => (wide ? buffer.readUInt32LE(indexOffset + i * 4) : buffer.readUInt16LE(indexOffset + i * 2));
+      for (let i = 0; i + 2 < indices.count; i += 3) triangles.push([first + read(i), first + read(i + 1), first + read(i + 2)]);
     }
     for (const child of node.children ?? []) visit(child, here);
   };
   for (const root of gltf.scenes[0]!.nodes) visit(root, [0, 0, 0]);
+  return { vertices, triangles };
+}
+
+function modelVertices(frame: Airframe): Point[] {
+  return modelMesh(frame).vertices;
+}
+
+/**
+ * Where the surface crosses the plane `right = at`: a low-poly wing may have
+ * no vertex between its root and its tip, but its edges cross every station.
+ */
+function slice(mesh: ReturnType<typeof modelMesh>, at: number): Point[] {
+  const out: Point[] = [];
+  for (const triangle of mesh.triangles) {
+    for (let k = 0; k < 3; k += 1) {
+      const a = mesh.vertices[triangle[k]!]!;
+      const b = mesh.vertices[triangle[(k + 1) % 3]!]!;
+      if ((a[0] - at) * (b[0] - at) >= 0) continue;
+      const f = (at - a[0]) / (b[0] - a[0]);
+      out.push([at, a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])]);
+    }
+  }
   return out;
 }
 
-describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c, AIRFRAMES.f15c, AIRFRAMES.mig29a])("the $name model, calibrated", (frame) => {
-  const vertices = modelVertices(frame);
+describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c, AIRFRAMES.f15c, AIRFRAMES.mig29a, AIRFRAMES.f5e, AIRFRAMES.su27s, AIRFRAMES.m2000c, AIRFRAMES.jas39c])("the $name model, calibrated", (frame) => {
+  const mesh = modelMesh(frame);
+  const vertices = mesh.vertices;
 
   it("has its centre of gravity inside the wing's root chord", () => {
-    // The inner wing panel, clear of the fuselage and its strakes, near the wing's plane.
-    const root = vertices.filter(
+    // The inner wing panel, clear of the fuselage and its strakes, near the
+    // wing's plane: its vertices, and where its surface crosses stations there.
+    const stations = [1.5, 2, 2.5, 3, 3.5].flatMap((at) => [...slice(mesh, at), ...slice(mesh, -at)]);
+    const root = [...vertices, ...stations].filter(
       (vertex) => Math.abs(vertex[0]) > 1.45 && Math.abs(vertex[0]) < 3.8 && Math.abs(vertex[1]) < 0.5,
     );
     const leading = Math.max(...root.map((vertex) => vertex[2]));
@@ -279,7 +315,7 @@ describe.each([AIRFRAMES.f16c, AIRFRAMES.fa18c, AIRFRAMES.f15c, AIRFRAMES.mig29a
   });
 });
 
-describe.each([AIRFRAMES.f15c, AIRFRAMES.mig29a])("the $name model's stores and nozzles", (frame) => {
+describe.each([AIRFRAMES.f15c, AIRFRAMES.mig29a, AIRFRAMES.f5e, AIRFRAMES.su27s, AIRFRAMES.m2000c, AIRFRAMES.jas39c])("the $name model's stores and nozzles", (frame) => {
   const vertices = modelVertices(frame);
 
   it("has its nozzles where the afterburner plumes are drawn, the size of the opening", () => {
@@ -293,13 +329,14 @@ describe.each([AIRFRAMES.f15c, AIRFRAMES.mig29a])("the $name model's stores and 
     }
   });
 
-  it("hangs its missiles clear of the wing, on a pylon that reaches it", () => {
+  it("carries its missiles clear of the airframe, and a pylon reaches any under the wing", () => {
     const radius = 0.0635;
     for (const [right, up, nose] of frame.rails) {
       const inside = vertices.filter(
         (vertex) => Math.abs(vertex[2] - nose) < 1.425 && Math.hypot(vertex[0] - right, vertex[1] - up) < radius,
       );
       expect(inside, "airframe inside the missile").toHaveLength(0);
+      if (frame.pylonHeightM === undefined) continue;
       // The wing is above the missile, within the pylon's height of its back.
       const above = vertices.filter(
         (vertex) => Math.abs(vertex[0] - right) < 0.6 && Math.abs(vertex[2] - nose) < 0.8 && vertex[1] > up,

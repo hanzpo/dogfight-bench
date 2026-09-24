@@ -173,9 +173,12 @@ gets a helmet-sight merge.
 
 ### Models
 
-Jets without a model are drawn as placeholders built from their numbers. To
-use a real one, put a `.glb` at `public/aircraft/<id>.glb` and set `model:
-"/aircraft/<id>.glb"` on the airframe. The file needs to be:
+Every jet has a model. The Mirage, Gripen, Su-27 and F-5 are built from
+reference three-views by the scripts in
+[`tools/models`](tools/models/README.md). If a model fails to load, the jet
+is drawn as a placeholder built from its numbers. To use another model, put
+a `.glb` at `public/aircraft/<id>.glb` and set `model: "/aircraft/<id>.glb"`
+on the airframe. The file needs to be:
 
 - **Oriented** nose along +z, up +y, left wing along +x, as the F-16's is.
 - **Real size, in metres**, with the origin halfway along the fuselage.
@@ -190,12 +193,11 @@ use a real one, put a `.glb` at `public/aircraft/<id>.glb` and set `model:
 
 A model exported facing the other way can be left as it is: set
 `modelYawDeg: 180` on the airframe and it is turned as it loads, so the
-`.blend` stays the source. The F/A-18 is done this way. The F-16,
-F/A-18, F-15 and MiG-29 have models, and `test/asset.test.ts` checks each
-one's centre of gravity, hit volumes, gun, cockpit, rails and nozzles against
-the file, so a re-export that moves any of them fails a test rather than
-hanging missiles in mid-air. A file that fails to load falls back to the
-placeholder.
+`.blend` stays the source. The F/A-18 is done this way. `test/asset.test.ts`
+checks every model's centre of gravity, hit volumes, gun, cockpit, rails and
+nozzles against the file, so a re-export that moves any of them fails a test
+rather than hanging missiles in mid-air. A file that fails to load falls
+back to the placeholder.
 
 ## Cameras
 
