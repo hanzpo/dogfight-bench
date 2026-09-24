@@ -1,0 +1,102 @@
+name: CI
+
+# Every pull request and every push is checked; a push to main that passes is
+# deployed. The deploy ships the build that was checked, not a second one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a pull request makes the older run moot; on main every
+  # run finishes, so what is deployed is always something that was checked.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The version the project is developed on. The server tests use node:sqlite.
+  NODE_VERSION: 26
+
+jobs:
+  check:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Type-check and build
+        run: npm run build
+        env:
+          # Compiled into the page and public by design: the same values are in
+          # wrangler.toml. Without them the deployed site has no sign-in.
+          VITE_SUPABASE_URL: https://gwvlpiadxhmghrnjbrll.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_SjQ3x3Ph9SOlAxtzb1XF-A_Lb4ZLolU
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://dogfight.hanzpo.com
+    concurrency:
+      # One deploy at a time, in order; never cancel one halfway.
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Check the Cloudflare credentials are set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Set the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets on the production environment to deploy."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # The Worker is bundled from source at deploy time, so it needs the
+      # dependencies; the page is the build the check job tested.
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy
