@@ -44,7 +44,14 @@ export function OnlineStartPage() {
     let cancelled = false;
     fetch(quick ? "/api/online/quick" : "/api/online/rooms", { method: "POST" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`The server said ${response.status}.`);
+        if (!response.ok) {
+          // In development the online server is a second process; a proxy with nothing behind it answers 500.
+          throw new Error(
+            import.meta.env.DEV && response.status >= 500
+              ? "Online play isn't running. Start it with npm run dev:online."
+              : `The server said ${response.status}.`,
+          );
+        }
         return (await response.json()) as { code: string };
       })
       .then(({ code }) => {
