@@ -91,10 +91,6 @@ export function ReplayPage() {
           <div className="page-head">
             <div>
               <h1>Replay</h1>
-              <p className="page-intro">
-                A replay carries the decision log, so a published result can be checked without the model, the
-                credentials or the server that produced it.
-              </p>
             </div>
             <button onClick={() => fileInput.current?.click()}>
               <FolderOpen />
@@ -116,7 +112,7 @@ export function ReplayPage() {
             <p className="notice">Loading replay…</p>
           ) : (
             <p className="notice">
-              Pick a match from <Link to="/matches">Matches</Link>, or open a replay file saved from one.
+              Pick one from <Link to="/matches">Replays</Link>, or open a file.
             </p>
           )}
         </main>

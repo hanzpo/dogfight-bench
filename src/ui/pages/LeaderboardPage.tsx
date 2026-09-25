@@ -47,12 +47,7 @@ export function LeaderboardPage() {
     </div>
   );
 
-  const intro =
-    board === "humans"
-      ? "People who have flown a ranked match. Guests are rated but not listed until they attach an account."
-      : board === "everyone"
-        ? "Everything that holds a rating, on one scale."
-        : "Models and scripted baselines. A model's identity includes its prompt version, so changing the prompt starts a new entrant rather than inheriting an old rating.";
+  const intro = board === "humans" ? "Guests are rated, but only listed once they attach an account." : undefined;
 
   const body = error ? (
     <p className="notice">{error}</p>
@@ -61,7 +56,7 @@ export function LeaderboardPage() {
   ) : !rows.length ? (
     <p className="notice">
       {board === "humans"
-        ? "Nobody has flown a ranked match yet. Sign in, pick a model as your opponent, and fly one."
+        ? "No ranked matches yet."
         : "No matches recorded yet. Run one with "}
       {board === "humans" ? null : <code>npm run bench -- --blue anthropic --red energy-fighter</code>}
     </p>
@@ -74,7 +69,7 @@ export function LeaderboardPage() {
       <div className="page-head">
         <div>
           <h1>Leaderboard</h1>
-          <p className="page-intro">{intro}</p>
+          {intro ? <p className="page-intro">{intro}</p> : null}
         </div>
         {picker}
       </div>
@@ -84,6 +79,8 @@ export function LeaderboardPage() {
 }
 
 function Table({ rows }: { rows: LeaderboardEntry[] }) {
+  // Cost only earns a column when some entrant has spent anything.
+  const paid = rows.some((row) => row.costPerMatchUsd > 0);
   const totals = rows.reduce(
     (sum, row) => ({
       matches: sum.matches + row.matches,
@@ -101,7 +98,7 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
         <Stat label="Matches" value={String(Math.round(totals.matches / 2))} />
         <Stat label="Rounds fired" value={totals.rounds.toLocaleString()} />
         <Stat label="Hits" value={String(totals.hits)} />
-        <Stat label="Inference" value={totals.cost > 0 ? `$${totals.cost.toFixed(2)}` : "—"} />
+        {totals.cost > 0 ? <Stat label="Inference" value={`$${totals.cost.toFixed(2)}`} /> : null}
       </div>
       <table className="data">
         <thead>
@@ -109,16 +106,24 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
             <th>#</th>
             <th>Entrant</th>
             <th>Model</th>
-            <th>Flies</th>
-            <th className="num">Rating</th>
+            <th title="Manoeuvres: the model names a manoeuvre and an autopilot flies it. Stick: it sets the controls itself.">
+              Flies
+            </th>
+            <th className="num" title="Elo: beating a stronger opponent counts for more">
+              Rating
+            </th>
             <th className="num">W-L-D</th>
             <th className="num">Win rate</th>
-            <th className="num">Accuracy</th>
+            <th className="num" title="Hits per round fired">
+              Accuracy
+            </th>
             <th className="num">On target</th>
             <th className="num">Survived</th>
-            <th className="num">Failures</th>
+            <th className="num" title="Decisions that errored or missed their deadline">
+              Failures
+            </th>
             <th className="num">Latency</th>
-            <th className="num">$ / match</th>
+            {paid ? <th className="num">$ / match</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -152,18 +157,12 @@ function Table({ rows }: { rows: LeaderboardEntry[] }) {
               <td className="num">{(row.survivalRate * 100).toFixed(0)}%</td>
               <td className={`num${row.failureRate > 0.05 ? " warn" : ""}`}>{(row.failureRate * 100).toFixed(1)}%</td>
               <td className="num">{row.avgLatencyMs > 0 ? `${row.avgLatencyMs.toFixed(0)} ms` : "—"}</td>
-              <td className="num">{row.costPerMatchUsd > 0 ? `$${row.costPerMatchUsd.toFixed(4)}` : "—"}</td>
+              {paid ? <td className="num">{row.costPerMatchUsd > 0 ? `$${row.costPerMatchUsd.toFixed(4)}` : "—"}</td> : null}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="footnote">
-        Rating is Elo, so beating a strong opponent counts for more than beating a weak one, and a model that several
-        people beat loses rating once for each of them. Accuracy is hits per round fired. Failures count decisions that
-        errored or missed their deadline. <strong>Flies</strong> is the interface: <em>manoeuvres</em> names a
-        manoeuvre and an autopilot chases it at simulation rate, while <em>stick</em> sets the control positions
-        directly and they are held until the next answer. The same model at both is two entrants, ranked apart.
-      </p>
+
     </>
   );
 }

@@ -190,13 +190,6 @@ export function HomePage() {
             {setup.mode === "quick" ? "Find a match" : setup.mode === "friend" ? "Make a room" : `Fly the ${jet}`}
             <ArrowRight weight="bold" aria-hidden />
           </button>
-          <p className="home-foot">
-            {setup.mode === "quick"
-              ? `Guns only, in your ${jet}. ${someoneWaiting ? "Someone is waiting now." : "You'll be matched with the next pilot who looks."}`
-              : setup.mode === "friend"
-                ? "You'll get a link to send. The first to join flies against you."
-                : "The AI flies whichever of the eight jets you pick for it."}
-          </p>
           {touchOnly ? (
             <p className="home-note" role="note">
               Needs a keyboard, mouse or gamepad.

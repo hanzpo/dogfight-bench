@@ -408,16 +408,16 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
   position: fixed; inset: 56px 0 0 0; z-index: 4; overflow: auto;
   padding: 32px 32px 72px; background: var(--bg);
   /* A centred content column that children align to the left of. Auto margins
-     centred every child instead, so a narrow block -- the footnote, at ninety
-     characters -- floated to the middle of the window while the table beside it
-     started at the column's edge. */
+     centred every child instead, so a narrow block floated to the middle of the
+     window while the table beside it started at the column's edge. */
   display: grid; grid-template-columns: minmax(0, 1280px); justify-content: center;
   align-content: start;
 }
 .page.overlay-page { background: #0c0d0fe8; backdrop-filter: blur(8px); }
-.page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 6px; }
-.page-intro { margin: 0 0 26px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.page h1 { font-size: 30px; font-weight: 800; font-stretch: 112%; letter-spacing: -.02em; margin: 0 0 6px; color: #f6f3ec; }
+.page a:not(.button) { color: var(--accent); text-decoration-color: #f4b54566; text-underline-offset: 3px; }
+.page-intro { margin: 0 0 6px; max-width: 70ch; font-size: 13px; line-height: 1.6; color: var(--text-muted); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
 
 .page-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -456,7 +456,6 @@ button.recording:hover { border-color: var(--line-strong); color: var(--text); b
 .meter-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
 .notice { color: var(--text-muted); font-size: 13px; line-height: 1.65; max-width: 70ch; }
-.footnote { margin-top: 22px; color: var(--text-faint); font-size: 12px; line-height: 1.7; max-width: 90ch; }
 
 table.data { width: 100%; border-collapse: collapse; font: 12px/1.5 "JetBrains Mono"; }
 table.data th {
@@ -815,7 +814,6 @@ kbd {
 .home-callsign { display: grid; gap: 8px; min-width: 200px; }
 .home-callsign span { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
 .home-callsign input { min-height: 40px; font-size: 14px; padding: 0 12px; border-radius: var(--radius); background: #ffffff08; border-color: var(--line); }
-.home-foot { margin: -8px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-faint); text-align: center; }
 
 .home-join {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -910,7 +908,6 @@ kbd {
 .pilot-change { margin-top: 6px; min-height: 30px; font-size: 12.5px; }
 .pilot-card.empty { align-content: center; min-height: 190px; }
 .pilot-waiting { margin: 8px 0 0; display: grid; gap: 4px; font-weight: 600; color: var(--text-muted); }
-.pilot-waiting-hint { font-weight: 500; font-size: 12.5px; color: var(--text-faint); }
 
 .countdown { display: grid; justify-items: center; gap: 2px; }
 .countdown-number {

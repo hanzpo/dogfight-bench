@@ -33,16 +33,13 @@ export function MatchesPage() {
     if (scope === "mine" && !account.loading && !account.user) setScope("all");
   }, [scope, account.loading, account.user]);
 
+  const anyCost = rows?.some((row) => row.participants.some((participant) => participant.costUsd > 0)) ?? false;
+
   return (
     <main className="page">
       <div className="page-head">
         <div>
-          <h1>Matches</h1>
-          <p className="page-intro">
-            Every recorded match, and the replay it was recorded from. Watching one puts you back in the cockpit with
-            the instruments the pilot had. Replays are stored compressed and only for matches that were actually
-            reported, so an abandoned session leaves nothing behind.
-          </p>
+          <h1>Replays</h1>
         </div>
         <div className="page-actions">
           {account.user ? (
@@ -77,12 +74,13 @@ export function MatchesPage() {
       {!error && rows && !rows.length ? (
         <p className="notice">
           {scope === "mine"
-            ? "You have not flown a recorded match yet. Fly one against a model and it will appear here."
-            : "No matches recorded yet."}
+            ? "Nothing of yours yet. Matches against a model are recorded."
+            : "Nothing recorded yet."}
         </p>
       ) : null}
 
       {rows && rows.length ? (
+        // Cost is only a column when something here cost anything.
         <table className="data">
           <thead>
             <tr>
@@ -90,7 +88,7 @@ export function MatchesPage() {
               <th>Entrants</th>
               <th>Result</th>
               <th className="num">Duration</th>
-              <th className="num">Cost</th>
+              {anyCost ? <th className="num">Cost</th> : null}
               <th>Origin</th>
               <th />
             </tr>
@@ -108,7 +106,7 @@ export function MatchesPage() {
                     <span className="muted"> · {row.reason}</span>
                   </td>
                   <td className="num">{row.durationS.toFixed(0)}s</td>
-                  <td className="num">{cost > 0 ? `$${cost.toFixed(4)}` : "—"}</td>
+                  {anyCost ? <td className="num">{cost > 0 ? `$${cost.toFixed(4)}` : "—"}</td> : null}
                   <td className="muted">
                     {row.origin === "live" ? (row.verified ? "flown · served here" : "flown") : "benchmark"}
                   </td>

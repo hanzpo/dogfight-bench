@@ -183,7 +183,7 @@ function OnlineRoom({ code, quick, weapons }: { code: string; quick: boolean; we
   if (match.status === "closed" && phase !== "finished") {
     return (
       <Notice title="Lost the connection">
-        <p className="online-note">The room keeps your seat for a few seconds; trying again takes it back if it's still there.</p>
+        <p className="online-note">Your seat is held for a few seconds.</p>
         <button type="button" className="primary" onClick={() => location.reload()}>
           Try again
         </button>
@@ -261,9 +261,6 @@ function Searching({
             <Elapsed since={since} />
             {name ? ` · ${name}` : ""} · {AIRFRAMES[aircraft].name} · Guns only
             {ping !== undefined ? ` · ${ping} ms` : ""}
-          </p>
-          <p className="online-note">
-            You'll be paired with the next pilot who looks. Keep this page open; the fight starts on its own.
           </p>
           <button type="button" onClick={onCancel ?? (() => navigate("/"))}>
             Cancel
@@ -357,12 +354,7 @@ function PrivateRoom({
             player={other}
             host={other !== undefined && lobby?.host === other.seat}
             seat={otherSeat}
-            placeholder={
-              <>
-                Waiting for your friend
-                <span className="pilot-waiting-hint">Send them the link or the code</span>
-              </>
-            }
+            placeholder="Waiting for your friend"
           />
         }
         middle={counting ? <Countdown ms={lobby?.countdownMs} /> : undefined}
