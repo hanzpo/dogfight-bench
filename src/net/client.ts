@@ -24,6 +24,10 @@ const SNAP_DISTANCE_M = 60;
 /** How quickly a correction fades into the picture. */
 const SMOOTHING_S = 0.12;
 const PING_EVERY_MS = 1_000;
+const IDENTITY = new Quaternion();
+/** A correction smaller than this is invisible, and done with. */
+const SETTLED_M = 0.01;
+const SETTLED_RAD = 1e-4;
 /** Rounds flown where nothing can be hit draw nothing from this. */
 const NO_HITS = new Random(1);
 
@@ -149,11 +153,7 @@ export class OnlineClient {
    * Call it every frame, in the lobby too: that is when the round trip gets measured.
    */
   frame(nowMs: number, controls: ControlInput): void {
-    if (nowMs - this.lastPingAt >= PING_EVERY_MS) {
-      this.lastPingAt = nowMs;
-      this.pings.set(++this.pingId, nowMs);
-      this.send({ type: "ping", id: this.pingId });
-    }
+    this.heartbeat(nowMs);
     const wallDt = this.lastFrameAt === undefined ? 0 : (nowMs - this.lastFrameAt) / 1000;
     this.lastFrameAt = nowMs;
     this.decayCorrections(wallDt);
@@ -240,15 +240,37 @@ export class OnlineClient {
         continue;
       }
       const orientation = shown.orientation.clone().multiply(aircraft.orientation.clone().invert());
-      this.corrections.set(aircraft.id, { position, orientation });
+      if (position.lengthSq() < SETTLED_M ** 2 && orientation.angleTo(IDENTITY) < SETTLED_RAD) {
+        this.corrections.delete(aircraft.id);
+      } else {
+        this.corrections.set(aircraft.id, { position, orientation });
+      }
     }
+  }
+
+  /**
+   * Pings the room once a second: how the round trip is measured, and how the
+   * room knows the player is still there. `frame` calls it, and so should a
+   * timer, since a hidden tab stops drawing frames but must not go silent.
+   */
+  heartbeat(nowMs: number): void {
+    if (nowMs - this.lastPingAt < PING_EVERY_MS) return;
+    this.lastPingAt = nowMs;
+    this.pings.set(++this.pingId, nowMs);
+    // Answers that never came are forgotten rather than kept for good.
+    if (this.pings.size > 10) this.pings.delete(this.pings.keys().next().value!);
+    this.send({ type: "ping", id: this.pingId });
   }
 
   private decayCorrections(dt: number): void {
     const keep = Math.exp(-dt / SMOOTHING_S);
-    for (const correction of this.corrections.values()) {
+    for (const [id, correction] of this.corrections) {
       correction.position.multiplyScalar(keep);
-      correction.orientation.slerp(new Quaternion(), 1 - keep);
+      correction.orientation.slerp(IDENTITY, 1 - keep);
+      // Faded out: drop it, so the prediction is drawn as it is, with nothing rebuilt per frame.
+      if (correction.position.lengthSq() < SETTLED_M ** 2 && correction.orientation.angleTo(IDENTITY) < SETTLED_RAD) {
+        this.corrections.delete(id);
+      }
     }
   }
 

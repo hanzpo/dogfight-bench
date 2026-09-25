@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AIRFRAME_IDS, type AirframeId } from "../sim/airframes";
 import type { SimSnapshot } from "../sim/snapshot";
-import type { ControlInput, Loadout, ScenarioConfig, SimEvent } from "../sim/types";
+import type { Loadout, ScenarioConfig, SimEvent } from "../sim/types";
 
 /** The two seats, in the order the simulation lists its aircraft. */
 export const SEATS = ["blue-1", "red-1"] as const;
@@ -70,23 +70,11 @@ export const clientMessage = z.discriminatedUnion("type", [
   /** Fly these controls from this tick on. */
   z.object({ type: z.literal("input"), tick: z.number().int().nonnegative(), controls }),
   z.object({ type: z.literal("ping"), id: z.number() }),
+  /** Giving up the seat on purpose; a dropped connection only holds it for a while. */
+  z.object({ type: z.literal("leave") }),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessage>;
-
-/** The stick and throttle held to what they can be, whatever arrived. */
-export function clampControls(input: ControlInput): ControlInput {
-  const unit = (value: number) => Math.max(-1, Math.min(1, value));
-  return {
-    pitch: unit(input.pitch),
-    roll: unit(input.roll),
-    yaw: unit(input.yaw),
-    throttle: Math.max(0, Math.min(1, input.throttle)),
-    fire: input.fire,
-    missile: input.missile ?? false,
-    flare: input.flare ?? false,
-  };
-}
 
 export function cleanName(name: string, fallback: string): string {
   const trimmed = name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, NAME_MAX);

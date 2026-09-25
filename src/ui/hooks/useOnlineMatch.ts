@@ -9,7 +9,13 @@ import { tabSession } from "../session";
 
 const UI_REFRESH_MS = 100;
 
-export type ConnectionStatus = "connecting" | "open" | "closed";
+export type ConnectionStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+/** Close codes the room uses for "not you": a full or started room, and a newer connection from the same tab. */
+const ROOM_UNAVAILABLE = 4000;
+const REPLACED = 4001;
+/** Tries to get back after a drop, spread over about the twenty seconds the room holds a seat. */
+const MAX_RECONNECTS = 6;
 
 export interface OnlineMatch {
   snapshotRef: RefObject<ViewerSnapshot | undefined>;
@@ -29,7 +35,6 @@ export interface OnlineMatch {
   setReady: (ready: boolean) => void;
   setWeapons: (weapons: Loadout) => void;
   chooseAircraft: (airframe: AirframeId) => void;
-  rename: (name: string, airframe: AirframeId) => void;
 }
 
 export interface OnlineSetup {
@@ -80,29 +85,59 @@ export function useOnlineMatch(setup: OnlineSetup): OnlineMatch {
   const opening = useRef(setup);
   opening.current = setup;
   useEffect(() => {
-    const ws = new WebSocket(socketUrl(opening.current));
-    socket.current = ws;
+    let ws: WebSocket | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    let done = false;
     const online = new OnlineClient((message) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
     });
     client.current = online;
-    setStatus("connecting");
     setError(undefined);
-    ws.addEventListener("open", () => setStatus("open"));
-    ws.addEventListener("message", (event) => {
-      let message;
-      try {
-        message = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      online.receive(message, performance.now());
-      if (message.type === "lobby") setLobby(message);
-      if (message.type === "error") setError(message.message);
-    });
-    ws.addEventListener("close", () => setStatus("closed"));
+
+    const connect = () => {
+      const opened = new WebSocket(socketUrl(opening.current));
+      ws = opened;
+      socket.current = opened;
+      setStatus(attempts ? "reconnecting" : "connecting");
+      opened.addEventListener("open", () => {
+        attempts = 0;
+        setStatus("open");
+      });
+      opened.addEventListener("message", (event) => {
+        let message;
+        try {
+          message = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        online.receive(message, performance.now());
+        if (message.type === "lobby") setLobby(message);
+        if (message.type === "error") setError(message.message);
+      });
+      opened.addEventListener("close", (event) => {
+        if (done || opened !== ws) return;
+        // Turned away, or the seat taken over by this tab's newer connection: nothing to come back to.
+        if (event.code === ROOM_UNAVAILABLE || event.code === REPLACED || attempts >= MAX_RECONNECTS) {
+          setStatus("closed");
+          return;
+        }
+        // Anything else is a drop the room holds the seat through; come back to it.
+        attempts += 1;
+        setStatus("reconnecting");
+        retry = setTimeout(connect, Math.min(8_000, 500 * 2 ** attempts));
+      });
+    };
+    connect();
+    // On a timer as well as every frame: a hidden tab draws no frames but must still be heard from.
+    const heartbeat = setInterval(() => online.heartbeat(performance.now()), 1_000);
     return () => {
-      ws.close();
+      done = true;
+      clearTimeout(retry);
+      clearInterval(heartbeat);
+      // Leaving the page within the site is giving up the seat; a reload never gets here and keeps it.
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "leave" }));
+      ws?.close();
       socket.current = undefined;
       client.current = undefined;
     };
@@ -185,6 +220,5 @@ export function useOnlineMatch(setup: OnlineSetup): OnlineMatch {
     setReady: useCallback((ready: boolean) => send({ type: "ready", ready }), [send]),
     setWeapons: useCallback((weapons: Loadout) => send({ type: "weapons", weapons }), [send]),
     chooseAircraft: useCallback((airframe: AirframeId) => send({ type: "choose", airframe }), [send]),
-    rename: useCallback((name: string, airframe: AirframeId) => send({ type: "hello", name, airframe }), [send]),
   };
 }

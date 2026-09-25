@@ -260,15 +260,79 @@ describe("an online match", () => {
     expect(room.currentPhase).toBe("flying");
   });
 
-  it("lets go of a player it has not heard from", () => {
+  it("lets go of a player it has not heard from: first their connection, then, if they never come back, their seat", () => {
     const net = new Network();
     const room = new MatchRoom("TEST7");
     let closed = false;
     const quiet: Connection = { send: () => {}, close: () => (closed = true) };
     room.join(quiet, "Quiet", "f16c");
-    run(net, room, 16_000, () => {});
+    run(net, room, 60_000, () => {});
+    // A hidden tab can be quiet for a minute and still be there.
+    expect(closed).toBe(false);
+    run(net, room, 35_000, () => {});
     expect(closed).toBe(true);
+    expect(room.empty).toBe(false);
+    run(net, room, 25_000, () => {});
     expect(room.empty).toBe(true);
+  });
+
+  it("holds a seat through a dropped connection mid-fight, and gives the fight up only if nobody comes back", () => {
+    const flying = () => {
+      const net = new Network();
+      const room = new MatchRoom("TEST8");
+      const messages: ServerMessage[] = [];
+      const connect = (session: string, sink: ServerMessage[] = []) => {
+        const connection: Connection = { send: (message) => sink.push(wire(message)), close: () => {} };
+        room.join(connection, session, "f16c", session);
+        return connection;
+      };
+      const a = connect("tab-a");
+      const b = connect("tab-b", messages);
+      room.receive(a, { type: "ready", ready: true });
+      room.receive(b, { type: "ready", ready: true });
+      const talk = (...connections: Connection[]) => () => connections.forEach((c) => room.receive(c, { type: "ping", id: 1 }));
+      run(net, room, 3_500, talk(a, b));
+      expect(room.currentPhase).toBe("flying");
+      return { net, room, a, b, connect, talk, messages };
+    };
+
+    // Dropped and back within the grace: the fight goes on, the same seat.
+    const back = flying();
+    back.room.disconnect(back.a);
+    run(back.net, back.room, 5_000, back.talk(back.b));
+    expect(back.room.currentPhase).toBe("flying");
+    const lobby = back.messages.filter((message) => message.type === "lobby").at(-1);
+    expect(lobby?.type === "lobby" && lobby.players.find((p) => p.seat === "blue-1")?.connected).toBe(false);
+    const returned: ServerMessage[] = [];
+    const again = back.connect("tab-a", returned);
+    run(back.net, back.room, 200, back.talk(again, back.b));
+    expect(returned.find((message) => message.type === "start")).toMatchObject({ you: "blue-1" });
+    expect(back.room.currentPhase).toBe("flying");
+
+    // Dropped for good: after the grace, the other pilot has the fight.
+    const gone = flying();
+    gone.room.disconnect(gone.a);
+    run(gone.net, gone.room, 25_000, gone.talk(gone.b));
+    expect(gone.room.simulation?.state.winnerId).toBe("red-1");
+    expect(gone.room.simulation?.state.finishReason).toBe("opponent left");
+  });
+
+  it("keeps each pilot in the jet they readied in, whatever arrives after", () => {
+    const net = new Network();
+    const room = new MatchRoom("TEST9");
+    const a: Connection = { send: () => {}, close: () => {} };
+    const b: Connection = { send: () => {}, close: () => {} };
+    room.join(a, "Alpha", "f16c");
+    room.join(b, "Bravo", "f16c");
+    room.receive(a, { type: "ready", ready: true });
+    room.receive(b, { type: "ready", ready: true });
+    // Mid-countdown, a rename that carries a different jet: the name changes, the jet does not.
+    room.receive(a, { type: "hello", name: "Renamed", airframe: "su27s" });
+    run(net, room, 3_500, () => {
+      room.receive(a, { type: "ping", id: 1 });
+      room.receive(b, { type: "ping", id: 1 });
+    });
+    expect(room.simulation?.state.aircraft[0]?.airframe).toBe("f16c");
   });
 });
 

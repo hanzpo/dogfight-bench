@@ -1,12 +1,12 @@
 import type { AirframeId } from "../sim/airframes";
 import { fox2Merge, neutralMerge } from "../sim/scenario";
+import { sanitizeControls } from "../sim/flight-model";
 import { DogfightSimulation } from "../sim/simulation";
 import type { ControlInput, Loadout, ScenarioConfig } from "../sim/types";
 import {
   COUNTDOWN_MS,
   SEATS,
   SNAPSHOT_EVERY_TICKS,
-  clampControls,
   cleanName,
   clientMessage,
   type LobbyPlayer,
@@ -26,7 +26,10 @@ interface Player {
   name: string;
   airframe: AirframeId;
   ready: boolean;
-  connection: Connection;
+  /** Unset while they are away: the connection dropped, and the seat is held for them to come back. */
+  connection?: Connection;
+  /** When they went away, stamped at the next tick. */
+  awaySinceMs?: number;
   /** Controls waiting for their tick, oldest first. */
   inputs: Array<{ tick: number; controls: ControlInput }>;
   /** What the jet is flying now. */
@@ -56,8 +59,14 @@ const NEUTRAL: ControlInput = { pitch: 0, roll: 0, yaw: 0, throttle: 0.85, fire:
 const MAX_LEAD_TICKS = 240;
 /** Past this the room stops trying to catch up with the clock, rather than freezing to do it. */
 const MAX_CATCH_UP_MS = 250;
-/** Players ping every second; one silent this long is gone, however the connection looks. */
-const SILENT_FOR_MS = 15_000;
+/**
+ * Players ping every second, but a browser slows a hidden tab's timers to
+ * one a minute; one silent longer than this is taken to have gone away,
+ * however its connection looks.
+ */
+const SILENT_FOR_MS = 90_000;
+/** How long a seat is held for a player whose connection dropped: long enough for a reload or a blip. */
+const AWAY_GRACE_MS = 20_000;
 
 /**
  * One online match: two seats, a lobby, and the fight itself.
@@ -94,6 +103,11 @@ export class MatchRoom {
 
   get empty(): boolean {
     return this.players.size === 0;
+  }
+
+  /** Whether the room needs its clock at full rate: counting down or fighting. */
+  get busy(): boolean {
+    return this.phase === "countdown" || this.phase === "flying";
   }
 
   /** How many of a player's inputs have arrived too late to fly at their own tick. */
@@ -140,10 +154,10 @@ export class MatchRoom {
    * second mount -- takes its seat back, and mid-fight picks the fight up.
    */
   private rejoin(player: Player, connection: Connection): Seat {
-    const old = player.connection;
+    player.connection?.close(4001, "replaced by a newer connection");
     player.connection = connection;
     player.lastHeardMs = undefined;
-    old.close(4001, "replaced by a newer connection");
+    player.awaySinceMs = undefined;
     if (this.phase === "flying" && this.sim) {
       player.sentEvents = 0;
       player.needsEverything = true;
@@ -153,9 +167,30 @@ export class MatchRoom {
     return player.seat;
   }
 
-  leave(connection: Connection): void {
-    const player = [...this.players.values()].find((candidate) => candidate.connection === connection);
+  /**
+   * A connection dropped. The seat is held a while for the same tab to come
+   * back -- a reload, a network blip -- with the jet flying on meanwhile.
+   */
+  disconnect(connection: Connection): void {
+    const player = this.playerOn(connection);
     if (!player) return;
+    player.connection = undefined;
+    player.awaySinceMs = undefined;
+    if (this.phase === "countdown") this.cancelCountdown();
+    this.broadcastLobby();
+  }
+
+  /** A player gave up their seat: in a fight, that is conceding it. */
+  leave(connection: Connection): void {
+    const player = this.playerOn(connection);
+    if (player) this.remove(player);
+  }
+
+  private playerOn(connection: Connection): Player | undefined {
+    return [...this.players.values()].find((candidate) => candidate.connection === connection);
+  }
+
+  private remove(player: Player): void {
     this.players.delete(player.seat);
     if (this.phase === "flying" && this.sim && !this.sim.state.finished) {
       // Leaving mid-fight is conceding it.
@@ -165,17 +200,14 @@ export class MatchRoom {
       state.finishReason = "opponent left";
       this.finish();
     }
-    if (this.phase === "countdown") {
-      this.phase = "lobby";
-      this.countdownEndsAt = undefined;
-    }
+    if (this.phase === "countdown") this.cancelCountdown();
     for (const other of this.players.values()) other.ready = false;
     if (player.seat === this.host) this.host = this.players.keys().next().value ?? "blue-1";
     this.broadcastLobby();
   }
 
   receive(connection: Connection, raw: unknown): void {
-    const player = [...this.players.values()].find((candidate) => candidate.connection === connection);
+    const player = this.playerOn(connection);
     if (!player) return;
     const parsed = clientMessage.safeParse(raw);
     if (!parsed.success) {
@@ -188,8 +220,13 @@ export class MatchRoom {
     switch (message.type) {
       case "hello":
         player.name = cleanName(message.name, player.name);
-        player.airframe = message.airframe;
+        // A name can change any time; the jet only between fights, as with `choose`.
+        if (between) player.airframe = message.airframe;
         this.broadcastLobby();
+        break;
+      case "leave":
+        this.remove(player);
+        connection.close(1000, "left");
         break;
       case "choose":
         if (!between) return;
@@ -220,7 +257,7 @@ export class MatchRoom {
         const last = player.inputs.at(-1);
         if (last && tick < last.tick) return;
         if (last && tick === last.tick) player.inputs.pop();
-        player.inputs.push({ tick, controls: clampControls(message.controls) });
+        player.inputs.push({ tick, controls: sanitizeControls(message.controls) });
         if (player.inputs.length > MAX_LEAD_TICKS) player.inputs.shift();
         player.ackTick = Math.max(player.ackTick, message.tick);
         break;
@@ -234,10 +271,16 @@ export class MatchRoom {
   /** Moves the room on to `nowMs`: the countdown, and every tick of the fight that is due. */
   advance(nowMs: number): void {
     for (const player of [...this.players.values()]) {
-      player.lastHeardMs ??= nowMs;
-      if (nowMs - player.lastHeardMs > SILENT_FOR_MS) {
-        this.leave(player.connection);
-        player.connection.close(4002, "no word for too long");
+      if (player.connection) {
+        player.lastHeardMs ??= nowMs;
+        if (nowMs - player.lastHeardMs > SILENT_FOR_MS) {
+          const silent = player.connection;
+          this.disconnect(silent);
+          silent.close(4002, "no word for too long");
+        }
+      } else {
+        player.awaySinceMs ??= nowMs;
+        if (nowMs - player.awaySinceMs > AWAY_GRACE_MS) this.remove(player);
       }
     }
     if (this.phase === "countdown") {
@@ -281,6 +324,12 @@ export class MatchRoom {
     this.countdownEndsAt = undefined;
   }
 
+  private cancelCountdown(): void {
+    this.phase = "lobby";
+    this.countdownEndsAt = undefined;
+    for (const player of this.players.values()) player.ready = false;
+  }
+
   private startMatch(nowMs: number): void {
     const base = this.weapons === "fox2" ? fox2Merge : neutralMerge;
     const seed = Math.floor((this.options.seed ?? Math.random)() * 2 ** 31);
@@ -299,7 +348,7 @@ export class MatchRoom {
       player.sentEvents = 0;
       player.late = 0;
       player.ready = false;
-      player.connection.send({ type: "start", scenario, you: player.seat });
+      player.connection?.send({ type: "start", scenario, you: player.seat });
     }
     this.broadcastLobby();
     this.broadcastState();
@@ -338,7 +387,7 @@ export class MatchRoom {
       player.sentEvents = sim.state.events.length;
       const everything = player.needsEverything ? { ...sim.snapshot(), roundsGone: [] } : snapshot;
       player.needsEverything = false;
-      player.connection.send({ type: "state", snapshot: everything, events, ackTick: player.ackTick });
+      player.connection?.send({ type: "state", snapshot: everything, events, ackTick: player.ackTick });
     }
   }
 
@@ -346,11 +395,11 @@ export class MatchRoom {
     const players: LobbyPlayer[] = SEATS.flatMap((seat) => {
       const player = this.players.get(seat);
       return player
-        ? [{ seat, name: player.name, airframe: player.airframe, ready: player.ready, connected: true }]
+        ? [{ seat, name: player.name, airframe: player.airframe, ready: player.ready, connected: player.connection !== undefined }]
         : [];
     });
     for (const player of this.players.values()) {
-      player.connection.send({
+      player.connection?.send({
         type: "lobby",
         code: this.code,
         you: player.seat,

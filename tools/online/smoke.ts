@@ -15,7 +15,7 @@ const base = process.argv[2] ?? "http://localhost:8788";
 const FLY_MS = 8_000;
 
 const { code } = (await (await fetch(`${base}/api/online/rooms`, { method: "POST" })).json()) as { code: string };
-const received = { bytes: 0, states: 0 };
+const received = { bytes: 0, states: 0, lastAt: 0, maxGapMs: 0 };
 
 function connect(name: string, airframe: string) {
   const query = new URLSearchParams({ name, airframe, session: `smoke-${name}-${code}` });
@@ -29,6 +29,12 @@ function connect(name: string, airframe: string) {
     if (message.type === "state") {
       received.bytes += text.length;
       received.states += 1;
+      const now = performance.now();
+      // Measured on one player, once the fight is under way: a gap much over 50 ms means the clock stalls.
+      if (name === "Alpha" && received.lastAt && message.snapshot.tick > 120) {
+        received.maxGapMs = Math.max(received.maxGapMs, now - received.lastAt);
+      }
+      if (name === "Alpha") received.lastAt = now;
     }
     client.receive(message, performance.now());
   });
@@ -63,6 +69,7 @@ const report = {
   expectedTicksAbout: expectedTicks,
   snapshotsPerPlayerPerSecond: Math.round(received.states / 2 / (FLY_MS / 1000)),
   averageSnapshotKB: Number((received.bytes / Math.max(received.states, 1) / 1024).toFixed(1)),
+  longestGapBetweenSnapshotsMs: Math.round(received.maxGapMs),
   roundTripMs: Math.round(shooter.client.rttMs),
   leadTicks: Number(shooter.client.leadTicks.toFixed(1)),
   roundsInTheAir: shooter.client.state?.projectiles.length ?? 0,
@@ -75,6 +82,7 @@ target.ws.close();
 const problems = [
   serverTick < expectedTicks * 0.9 && "the room fell behind the clock",
   report.snapshotsPerPlayerPerSecond < 15 && "too few snapshots",
+  report.longestGapBetweenSnapshotsMs > 200 && "the room's clock stalls between snapshots",
   report.roundsInTheAir === 0 && "no rounds reached the shooter's own view",
   shooter.client.scenario?.weapons !== "fox2" && "the host's weapons choice did not take",
 ].filter(Boolean);

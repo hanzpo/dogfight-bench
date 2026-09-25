@@ -1,21 +1,26 @@
 import { MatchRoom, type Connection } from "../src/net/room";
 import { Matchmaker } from "../src/net/matchmaker";
+import { isRoomCode } from "../src/net/protocol";
 import { isAirframeId } from "../src/sim/airframes";
 
-/**
- * How often the room's clock is checked: a little faster than its 120 Hz, so
- * no tick waits long. An interval, because the Workers runtime will not run a
- * timer that a timer's callback sets once the request behind it has finished.
- */
-const CLOCK_MS = 4;
+/** A countdown or a fight: a little faster than the fight's 120 Hz, so no tick waits long. */
+const FAST_CLOCK_MS = 4;
+/** In the lobby only the silence and the reconnection grace need the clock. */
+const SLOW_CLOCK_MS = 250;
 
 /**
  * One online match, as a Durable Object: every player in a room reaches this
  * same instance, which holds the room and runs its clock while anyone is in it.
+ *
+ * The clock is two intervals, a slow one always and a fast one while the room
+ * is counting down or fighting. Intervals, and started only while handling a
+ * request or a message: the Workers runtime will not run a timer set from
+ * inside another timer's callback once the request behind it has finished.
  */
 export class MatchRoomObject {
   private room?: MatchRoom;
-  private clock?: ReturnType<typeof setInterval>;
+  private slow?: ReturnType<typeof setInterval>;
+  private fast?: ReturnType<typeof setInterval>;
 
   constructor(
     readonly state: DurableObjectState,
@@ -23,10 +28,12 @@ export class MatchRoomObject {
   ) {}
 
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    // Asked whether the code is free before it is handed out as a new room.
+    if (url.searchParams.has("probe")) return Response.json({ free: !this.room || this.room.empty });
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket.", { status: 426 });
     }
-    const url = new URL(request.url);
     const airframe = url.searchParams.get("airframe");
     this.room ??= new MatchRoom(url.searchParams.get("code") ?? "", { quick: url.searchParams.get("quick") === "1" });
     const room = this.room;
@@ -52,12 +59,7 @@ export class MatchRoomObject {
     };
 
     const session = url.searchParams.get("session")?.slice(0, 64) || undefined;
-    const seat = room.join(
-      connection,
-      url.searchParams.get("name") ?? "",
-      isAirframeId(airframe) ? airframe : "f16c",
-      session,
-    );
+    const seat = room.join(connection, url.searchParams.get("name") ?? "", isAirframeId(airframe) ? airframe : "f16c", session);
     if (seat) {
       server.addEventListener("message", (event) => {
         let message: unknown;
@@ -67,31 +69,42 @@ export class MatchRoomObject {
           return;
         }
         room.receive(connection, message);
+        this.pace();
       });
-      const gone = () => {
-        room.leave(connection);
-        if (room.empty) this.stopClock();
-      };
-      server.addEventListener("close", gone);
-      server.addEventListener("error", gone);
-      this.startClock();
+      // A dropped connection holds the seat for a while; the room lets it go if nobody comes back.
+      const dropped = () => room.disconnect(connection);
+      server.addEventListener("close", dropped);
+      server.addEventListener("error", dropped);
+      this.slow ??= setInterval(() => this.tick(), SLOW_CLOCK_MS);
+      this.pace();
     }
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private startClock(): void {
-    this.clock ??= setInterval(() => {
-      try {
-        this.room?.advance(Date.now());
-      } catch (error) {
-        console.error("room clock", error);
-      }
-    }, CLOCK_MS);
+  private tick(): void {
+    try {
+      this.room?.advance(Date.now());
+    } catch (error) {
+      console.error("room clock", error);
+    }
+    if (!this.room || this.room.empty) {
+      this.stop();
+    } else if (!this.room.busy && this.fast !== undefined) {
+      clearInterval(this.fast);
+      this.fast = undefined;
+    }
   }
 
-  private stopClock(): void {
-    if (this.clock !== undefined) clearInterval(this.clock);
-    this.clock = undefined;
+  /** The fast clock on when the room has just become busy. */
+  private pace(): void {
+    if (this.room?.busy) this.fast ??= setInterval(() => this.tick(), FAST_CLOCK_MS);
+  }
+
+  private stop(): void {
+    clearInterval(this.slow);
+    clearInterval(this.fast);
+    this.slow = undefined;
+    this.fast = undefined;
     this.room = undefined;
   }
 }
@@ -112,7 +125,9 @@ export class MatchmakerObject {
       if (code) this.matchmaker.cancel(code);
       return Response.json({ ok: true });
     }
+    if (url.pathname.endsWith("/status")) return Response.json({ waiting: this.matchmaker.someoneWaiting(Date.now()) });
     const session = url.searchParams.get("session")?.slice(0, 64) || crypto.randomUUID();
-    return Response.json(this.matchmaker.request(session, Date.now()));
+    const current = url.searchParams.get("code") ?? undefined;
+    return Response.json(this.matchmaker.request(session, Date.now(), current && isRoomCode(current) ? current : undefined));
   }
 }

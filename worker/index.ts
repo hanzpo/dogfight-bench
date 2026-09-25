@@ -18,12 +18,21 @@ export interface WorkerBindings {
 async function online(request: Request, url: URL, bindings: WorkerBindings): Promise<Response | undefined> {
   const path = url.pathname;
   if (path === "/api/online/rooms" && request.method === "POST") {
-    return Response.json({ code: newRoomCode() });
+    // A handful of tries: with millions of codes, a live room is almost never drawn twice in a row.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = newRoomCode();
+      const probe = await bindings.ROOMS.get(bindings.ROOMS.idFromName(code)).fetch(`https://room/?probe=1`);
+      if (((await probe.json()) as { free: boolean }).free) return Response.json({ code });
+    }
+    return Response.json({ error: "No free room just now; try again." }, { status: 503 });
   }
-  if (path === "/api/online/quick" || path === "/api/online/quick/cancel") {
-    if (request.method !== "POST") return new Response(null, { status: 405 });
+  if (path === "/api/online/quick" || path === "/api/online/quick/cancel" || path === "/api/online/quick/status") {
+    const reading = path.endsWith("/status");
+    if (request.method !== (reading ? "GET" : "POST")) return new Response(null, { status: 405 });
     const matchmaker = bindings.MATCHMAKER.get(bindings.MATCHMAKER.idFromName("quick"));
-    return matchmaker.fetch(new Request(`https://matchmaker${path.slice("/api/online".length)}${url.search}`, { method: "POST" }));
+    return matchmaker.fetch(
+      new Request(`https://matchmaker${path.slice("/api/online".length)}${url.search}`, { method: request.method }),
+    );
   }
   const room = /^\/api\/online\/rooms\/([^/]+)\/socket$/.exec(path);
   if (room) {

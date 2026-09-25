@@ -1,7 +1,12 @@
 import { newRoomCode } from "./protocol";
 
-/** How long a quick-match room waits for someone to join it before it is forgotten. */
+/**
+ * How long a quick-match room stays in the queue without its player asking
+ * again. A player still looking asks every `QUICK_STAY_MS`, so it only runs
+ * out for one who has gone.
+ */
 export const QUICK_WAIT_MS = 60_000;
+export const QUICK_STAY_MS = 20_000;
 
 /**
  * Pairs up quick-match players: the first gets a new room and waits in it,
@@ -16,16 +21,30 @@ export class Matchmaker {
 
   constructor(private readonly makeCode: () => string = newRoomCode) {}
 
-  request(session: string, nowMs: number): { code: string; waiting: boolean } {
+  /**
+   * A player looking for a match. `current` is the room they are already
+   * waiting in, when they ask again to stay in the queue: a player still
+   * looking after the wait runs out is put back rather than forgotten, and
+   * one who finds someone else waiting is sent to them.
+   */
+  request(session: string, nowMs: number, current?: string): { code: string; waiting: boolean } {
     const open = this.waiting && nowMs - this.waiting.since < QUICK_WAIT_MS ? this.waiting : undefined;
-    if (open && open.session === session) return { code: open.code, waiting: true };
-    if (open) {
+    if (open && open.session === session) {
+      open.since = nowMs;
+      return { code: open.code, waiting: true };
+    }
+    if (open && open.code !== current) {
       this.waiting = undefined;
       return { code: open.code, waiting: false };
     }
-    const code = this.makeCode();
+    const code = current ?? this.makeCode();
     this.waiting = { code, session, since: nowMs };
     return { code, waiting: true };
+  }
+
+  /** Whether someone is waiting now: a quick match started this moment would begin at once. */
+  someoneWaiting(nowMs: number): boolean {
+    return this.waiting !== undefined && nowMs - this.waiting.since < QUICK_WAIT_MS;
   }
 
   /** The waiting player gave up: nobody else should be sent to their empty room. */
