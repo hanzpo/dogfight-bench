@@ -300,14 +300,16 @@ with latency and jitter. It checks that your own jet is predicted to within
 5 cm of the room, that inputs arrive in time, and that a fight ends the same
 way for both players.
 
-To play online locally, run the Worker beside the dev server. Vite sends
-`/api/online` to it:
+Locally, `npm run dev:all` starts everything in one terminal:
 
-```sh
-npm run dev:online   # the Worker with its Durable Objects, on :8788
-npm run dev          # the site, on :5173
-npm run check:online # two scripted players against the local Worker
-```
+- the site, on :5173;
+- the API server, on :8787, for the leaderboard, results and model pilots;
+- the online Worker, on :8788.
+
+Vite sends `/api/online` to the Worker and the rest of `/api` to the API
+server. To run one part alone, use `npm run dev`, `dev:server` or
+`dev:online`. `npm run check:online` plays two scripted pilots against the
+local Worker.
 
 ## Deploying
 

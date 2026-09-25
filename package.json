@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "node tools/dev.mjs",
     "dev:server": "tsx watch --env-file-if-exists=.env server/node.ts",
     "dev:online": "mkdir -p dist && npx wrangler@4 dev --port 8788",
     "check:online": "tsx tools/online/smoke.ts",

@@ -83,7 +83,11 @@ export interface LiveTicket {
 
 export class ServerUnavailableError extends Error {
   constructor() {
-    super("The benchmark server is not reachable. Start it with `npm run server`.");
+    super(
+      import.meta.env.DEV
+        ? "The API server isn't running. Start everything with `npm run dev:all`, or just it with `npm run dev:server`."
+        : "The server is not reachable just now.",
+    );
     this.name = "ServerUnavailableError";
   }
 }
@@ -103,6 +107,8 @@ async function request<T>(path: string, init: RequestInit, headers: Record<strin
     throw new ServerUnavailableError();
   }
   const parsed = (await response.json().catch(() => ({}))) as T & { error?: string };
+  // In development a proxy with nothing behind it answers 500 with no body; the server itself always says why.
+  if (import.meta.env.DEV && response.status >= 500 && !parsed.error) throw new ServerUnavailableError();
   if (!response.ok) throw new Error(parsed.error ?? `${path} returned HTTP ${response.status}`);
   return parsed;
 }
