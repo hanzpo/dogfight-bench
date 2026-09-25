@@ -50,10 +50,20 @@ const frames = setInterval(() => {
   target.client.frame(now, level);
 }, 16);
 
-await new Promise((resolve) => setTimeout(resolve, 800));
-// Whoever reached the room first is its host, and only the host picks the weapons.
+async function until(test: () => boolean, what: string, ms = 10_000): Promise<void> {
+  const started = performance.now();
+  while (!test()) {
+    if (performance.now() - started > ms) throw new Error(`Timed out waiting for ${what}.`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+await until(() => [shooter, target].every((player) => player.client.lobby?.players.length === 2), "both players in the lobby");
+// Whoever reached the room first is its host, and only the host picks the weapons. Changing them
+// un-readies everyone, so both ready up only once both have seen the change.
 const host = [shooter, target].find((player) => player.client.lobby?.you === player.client.lobby?.host) ?? shooter;
 host.client.choose({ type: "weapons", weapons: "fox2" });
+await until(() => [shooter, target].every((player) => player.client.lobby?.weapons === "fox2"), "the weapons change");
 shooter.client.choose({ type: "ready", ready: true });
 target.client.choose({ type: "ready", ready: true });
 
