@@ -334,5 +334,26 @@ describe("an online match", () => {
     });
     expect(room.simulation?.state.aircraft[0]?.airframe).toBe("f16c");
   });
+
+  it("never starts a quick match against a seat held for someone who has gone", () => {
+    const net = new Network();
+    const room = new MatchRoom("TESTA", { quick: true });
+    const gone: Connection = { send: () => {}, close: () => {} };
+    room.join(gone, "Gone", "f16c", "tab-gone");
+    room.disconnect(gone);
+    expect(room.abandoned).toBe(true);
+    const here: Connection = { send: () => {}, close: () => {} };
+    room.join(here, "Here", "f16c", "tab-here");
+    run(net, room, 4_000, () => room.receive(here, { type: "ping", id: 1 }));
+    expect(room.currentPhase).toBe("lobby");
+    // Once the other pilot is back, it starts on its own.
+    const back: Connection = { send: () => {}, close: () => {} };
+    room.join(back, "Gone", "f16c", "tab-gone");
+    run(net, room, 3_500, () => {
+      room.receive(here, { type: "ping", id: 1 });
+      room.receive(back, { type: "ping", id: 1 });
+    });
+    expect(room.currentPhase).toBe("flying");
+  });
 });
 

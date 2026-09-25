@@ -19,12 +19,13 @@ const SLOW_CLOCK_MS = 250;
  */
 export class MatchRoomObject {
   private room?: MatchRoom;
+  private quick = false;
   private slow?: ReturnType<typeof setInterval>;
   private fast?: ReturnType<typeof setInterval>;
 
   constructor(
     readonly state: DurableObjectState,
-    readonly env: unknown,
+    readonly env: { MATCHMAKER: DurableObjectNamespace },
   ) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -35,7 +36,8 @@ export class MatchRoomObject {
       return new Response("Expected a WebSocket.", { status: 426 });
     }
     const airframe = url.searchParams.get("airframe");
-    this.room ??= new MatchRoom(url.searchParams.get("code") ?? "", { quick: url.searchParams.get("quick") === "1" });
+    if (!this.room) this.quick = url.searchParams.get("quick") === "1";
+    this.room ??= new MatchRoom(url.searchParams.get("code") ?? "", { quick: this.quick });
     const room = this.room;
 
     const pair = new WebSocketPair();
@@ -72,7 +74,14 @@ export class MatchRoomObject {
         this.pace();
       });
       // A dropped connection holds the seat for a while; the room lets it go if nobody comes back.
-      const dropped = () => room.disconnect(connection);
+      const dropped = () => {
+        room.disconnect(connection);
+        // A quick-match room with nobody in it must not be the next player's match.
+        if (this.quick && room.abandoned) {
+          const matchmaker = this.env.MATCHMAKER.get(this.env.MATCHMAKER.idFromName("quick"));
+          void matchmaker.fetch(`https://matchmaker/quick/cancel?code=${room.code}`, { method: "POST" }).catch(() => {});
+        }
+      };
       server.addEventListener("close", dropped);
       server.addEventListener("error", dropped);
       this.slow ??= setInterval(() => this.tick(), SLOW_CLOCK_MS);

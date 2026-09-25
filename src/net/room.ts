@@ -158,6 +158,7 @@ export class MatchRoom {
     player.connection = connection;
     player.lastHeardMs = undefined;
     player.awaySinceMs = undefined;
+    this.maybeQuickStart();
     if (this.phase === "flying" && this.sim) {
       player.sentEvents = 0;
       player.needsEverything = true;
@@ -242,7 +243,7 @@ export class MatchRoom {
       case "ready":
         if (!between) return;
         player.ready = message.ready;
-        if (this.players.size === 2 && [...this.players.values()].every((candidate) => candidate.ready)) {
+        if (this.bothHere() && [...this.players.values()].every((candidate) => candidate.ready)) {
           this.startCountdown();
         }
         this.broadcastLobby();
@@ -315,8 +316,18 @@ export class MatchRoom {
     return this.sim.state.tick + this.accumulatorMs / (this.sim.config.fixedDt * 1000);
   }
 
+  /** A quick match starts on its own, but only with both pilots actually there: not against a seat held for someone gone. */
   private maybeQuickStart(): void {
-    if (this.options.quick && this.players.size === 2 && this.phase === "lobby") this.startCountdown();
+    if (this.options.quick && this.phase === "lobby" && this.bothHere()) this.startCountdown();
+  }
+
+  private bothHere(): boolean {
+    return this.players.size === 2 && [...this.players.values()].every((player) => player.connection !== undefined);
+  }
+
+  /** Nobody connected: a quick-match room in this state should not be handed to the next player. */
+  get abandoned(): boolean {
+    return [...this.players.values()].every((player) => player.connection === undefined);
   }
 
   private startCountdown(): void {
