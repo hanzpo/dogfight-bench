@@ -14,6 +14,7 @@ import { useCockpitAudio } from "../hooks/useCockpitAudio";
 import { useOnlineMatch } from "../hooks/useOnlineMatch";
 import { loadCallsign, saveCallsign } from "../callsign";
 import { outcomeOf } from "../outcome";
+import { tabSession } from "../session";
 import { LOADOUTS, SCHEMES, loadSetup, saveSetup, type Choice } from "../setup";
 import type { ControlScheme } from "../input/pilot-input";
 import { isRoomCode, NAME_MAX, type LobbyPlayer } from "../../net/protocol";
@@ -31,6 +32,33 @@ const ZOOM_PER_WHEEL_PIXEL = 0.0012;
 const pendingCancels = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
+ * One request for a room however often the page mounts -- React mounts it
+ * twice in development -- so a quick match never asks the matchmaker twice.
+ */
+let roomRequest: { quick: boolean; code: Promise<string> } | undefined;
+
+function askForRoom(quick: boolean): Promise<string> {
+  if (roomRequest?.quick === quick) return roomRequest.code;
+  const code = fetch(quick ? `/api/online/quick?session=${encodeURIComponent(tabSession())}` : "/api/online/rooms", {
+    method: "POST",
+  }).then(async (response) => {
+    if (!response.ok) {
+      // In development the online server is a second process; a proxy with nothing behind it answers 500.
+      throw new Error(
+        import.meta.env.DEV && response.status >= 500
+          ? "Online play isn't running. Start it with npm run dev:online."
+          : `The server said ${response.status}.`,
+      );
+    }
+    return ((await response.json()) as { code: string }).code;
+  });
+  roomRequest = { quick, code };
+  // Asked for afresh next time: the request is for this visit to the page, not for good.
+  void code.finally(() => setTimeout(() => (roomRequest = undefined), 1_000)).catch(() => {});
+  return code;
+}
+
+/**
  * `/online`: asks for a room -- a fresh one to invite a friend to, or with
  * `?quick=1` a quick match -- and goes to it.
  */
@@ -42,19 +70,8 @@ export function OnlineStartPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(quick ? "/api/online/quick" : "/api/online/rooms", { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok) {
-          // In development the online server is a second process; a proxy with nothing behind it answers 500.
-          throw new Error(
-            import.meta.env.DEV && response.status >= 500
-              ? "Online play isn't running. Start it with npm run dev:online."
-              : `The server said ${response.status}.`,
-          );
-        }
-        return (await response.json()) as { code: string };
-      })
-      .then(({ code }) => {
+    askForRoom(quick)
+      .then((code) => {
         if (!cancelled) navigate(`/online/${code}${quick ? "?quick=1" : ""}`, { replace: true });
       })
       .catch((cause: unknown) => {

@@ -1,5 +1,5 @@
 import { MatchRoom, type Connection } from "../src/net/room";
-import { newRoomCode } from "../src/net/protocol";
+import { Matchmaker } from "../src/net/matchmaker";
 import { isAirframeId } from "../src/sim/airframes";
 
 /**
@@ -96,16 +96,9 @@ export class MatchRoomObject {
   }
 }
 
-/** How long a quick-match room waits for someone to join it before it is forgotten. */
-const QUICK_WAIT_MS = 60_000;
-
-/**
- * Pairs up quick-match players: the first gets a new room and waits in it,
- * the next is sent to the same room. One instance for everyone, so two
- * players asking at once cannot both be told to wait.
- */
+/** The quick-match queue, as a Durable Object: one instance for everyone, so two players asking at once cannot both be told to wait. */
 export class MatchmakerObject {
-  private waiting?: { code: string; since: number };
+  private readonly matchmaker = new Matchmaker();
 
   constructor(
     readonly state: DurableObjectState,
@@ -114,19 +107,12 @@ export class MatchmakerObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const now = Date.now();
     if (url.pathname.endsWith("/cancel")) {
       const code = url.searchParams.get("code");
-      if (code && this.waiting?.code === code) this.waiting = undefined;
+      if (code) this.matchmaker.cancel(code);
       return Response.json({ ok: true });
     }
-    if (this.waiting && now - this.waiting.since < QUICK_WAIT_MS) {
-      const { code } = this.waiting;
-      this.waiting = undefined;
-      return Response.json({ code, waiting: false });
-    }
-    const code = newRoomCode();
-    this.waiting = { code, since: now };
-    return Response.json({ code, waiting: true });
+    const session = url.searchParams.get("session")?.slice(0, 64) || crypto.randomUUID();
+    return Response.json(this.matchmaker.request(session, Date.now()));
   }
 }

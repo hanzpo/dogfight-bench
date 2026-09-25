@@ -5,6 +5,7 @@ import type { AirframeId } from "../../sim/airframes";
 import type { Loadout, MatchState } from "../../sim/types";
 import { snapshotFromMatch, type ViewerSnapshot } from "../../viewer";
 import { PilotInput, loadSettings, type ControlScheme, type MouseMode } from "../input/pilot-input";
+import { tabSession } from "../session";
 
 const UI_REFRESH_MS = 100;
 
@@ -37,19 +38,6 @@ export interface OnlineSetup {
   name: string;
   aircraft: AirframeId;
   scheme: ControlScheme;
-}
-
-/** This tab, to the room: a connection from it again takes its seat back rather than a new one. */
-function tabSession(): string {
-  try {
-    const stored = sessionStorage.getItem("dogfight.session");
-    if (stored) return stored;
-    const made = crypto.randomUUID();
-    sessionStorage.setItem("dogfight.session", made);
-    return made;
-  } catch {
-    return crypto.randomUUID();
-  }
 }
 
 function socketUrl({ code, quick, name, aircraft }: OnlineSetup): string {
