@@ -51,7 +51,9 @@ const frames = setInterval(() => {
 }, 16);
 
 await new Promise((resolve) => setTimeout(resolve, 800));
-shooter.client.choose({ type: "weapons", weapons: "fox2" });
+// Whoever reached the room first is its host, and only the host picks the weapons.
+const host = [shooter, target].find((player) => player.client.lobby?.you === player.client.lobby?.host) ?? shooter;
+host.client.choose({ type: "weapons", weapons: "fox2" });
 shooter.client.choose({ type: "ready", ready: true });
 target.client.choose({ type: "ready", ready: true });
 
