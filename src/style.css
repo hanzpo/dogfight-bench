@@ -619,10 +619,12 @@ kbd {
 .choice span {
   display: grid; place-items: center; min-height: 40px; padding: 0 16px;
   border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text-muted);
+  /* One weight whether chosen or not: a bolder chosen label is wider, and the row would shift under the pointer. */
+  font-weight: 600; white-space: nowrap;
   transition: background .15s, border-color .15s, color .15s;
 }
 .choice:hover span { color: var(--text); border-color: #ffffff40; }
-.choice input:checked + span { background: #f6f3ec; border-color: #f6f3ec; color: #0b0d10; font-weight: 600; }
+.choice input:checked + span { background: #f6f3ec; border-color: #f6f3ec; color: #0b0d10; }
 .choice input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .choice-caption { margin: 8px 0 0; font-size: 13px; color: var(--text-faint); }
