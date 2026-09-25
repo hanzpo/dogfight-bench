@@ -86,13 +86,48 @@ export function Countdown({ ms }: { ms: number | undefined }) {
   );
 }
 
-/** A radar scope sweeping for contacts, with the player's own jet in the middle of it. */
-export function Radar({ airframe, found }: { airframe: AirframeId; found?: boolean }) {
+/** Bearing ticks round the scope's rim: long every thirty degrees, short every ten. */
+const TICKS = Array.from({ length: 36 }, (_, index) => index * 10);
+
+/**
+ * A radar scope sweeping for contacts, with the player's own jet in the
+ * middle of it: range rings, a bearing scale, and a sweep that leaves a
+ * fading trail, drawn in the HUD's phosphor green.
+ */
+export function Radar({ airframe }: { airframe: AirframeId }) {
   return (
-    <div className={`radar${found ? " found" : ""}`} aria-hidden>
-      <div className="radar-rings" />
+    <div className="radar" aria-hidden>
       <div className="radar-sweep" />
-      {found ? <div className="radar-contact" /> : null}
+      <svg className="radar-scale" viewBox="-100 -100 200 200">
+        {[30, 60, 90].map((radius) => (
+          <circle key={radius} r={radius} className="radar-ring" />
+        ))}
+        <line x1={-90} y1={0} x2={90} y2={0} className="radar-cross" />
+        <line x1={0} y1={-90} x2={0} y2={90} className="radar-cross" />
+        {TICKS.map((bearing) => {
+          const long = bearing % 30 === 0;
+          const angle = ((bearing - 90) * Math.PI) / 180;
+          const inner = long ? 84 : 87;
+          return (
+            <line
+              key={bearing}
+              x1={Math.cos(angle) * inner}
+              y1={Math.sin(angle) * inner}
+              x2={Math.cos(angle) * 90}
+              y2={Math.sin(angle) * 90}
+              className={long ? "radar-tick long" : "radar-tick"}
+            />
+          );
+        })}
+        {[0, 90, 180, 270].map((bearing) => {
+          const angle = ((bearing - 90) * Math.PI) / 180;
+          return (
+            <text key={bearing} x={Math.cos(angle) * 76} y={Math.sin(angle) * 76} className="radar-bearing">
+              {String(bearing).padStart(3, "0")}
+            </text>
+          );
+        })}
+      </svg>
       <Silhouette id={airframe} className="radar-jet" />
     </div>
   );

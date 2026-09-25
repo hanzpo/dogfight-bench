@@ -250,22 +250,25 @@ function Searching({
   return (
     <>
       <AttractBackdrop blue={aircraft} red={aircraft} />
-      <div className="home-shade" aria-hidden />
-      <main className="online-page">
-        <section className="online-panel searching" aria-live="polite" aria-labelledby="searching-title">
-          <Radar airframe={aircraft} />
-          <h1 id="searching-title" className="online-title">
-            Looking for an opponent
-          </h1>
-          <p className="searching-meta">
-            <Elapsed since={since} />
-            {name ? ` · ${name}` : ""} · {AIRFRAMES[aircraft].name} · Guns only
-            {ping !== undefined ? ` · ${ping} ms` : ""}
-          </p>
-          <button type="button" onClick={onCancel ?? (() => navigate("/"))}>
-            Cancel
-          </button>
-        </section>
+      <div className="searching-shade" aria-hidden />
+      <main className="searching" aria-live="polite" aria-labelledby="searching-title">
+        <p className="searching-kicker">Quick match</p>
+        <Radar airframe={aircraft} />
+        <h1 id="searching-title" className="searching-title">
+          Looking for an opponent
+        </h1>
+        <p className="searching-time">
+          <Elapsed since={since} />
+        </p>
+        <ul className="searching-chips" aria-label="Your loadout">
+          {name ? <li>{name}</li> : null}
+          <li>{AIRFRAMES[aircraft].name}</li>
+          <li>Guns only</li>
+          {ping !== undefined ? <li>{ping} ms</li> : null}
+        </ul>
+        <button type="button" className="searching-cancel" onClick={onCancel ?? (() => navigate("/"))}>
+          Cancel
+        </button>
       </main>
     </>
   );
