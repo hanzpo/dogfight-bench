@@ -8,6 +8,15 @@ export interface Choice<T extends string> {
   label: string;
 }
 
+/** How to fly: against whoever is online, with a friend in a private room, or against the AI. */
+export type Mode = "quick" | "friend" | "training";
+
+export const MODES: readonly Choice<Mode>[] = [
+  { value: "quick", label: "Quick match" },
+  { value: "friend", label: "With a friend" },
+  { value: "training", label: "Training" },
+];
+
 export type Opponent = "basic-pursuit" | "basic";
 
 export const OPPONENTS: readonly Choice<Opponent>[] = [
@@ -82,6 +91,7 @@ export const GAME_KEYS: KeyBinding[] = [
 const STORAGE_KEY = "dogfight.setup";
 
 export interface Setup {
+  mode: Mode;
   aircraft: AirframeId;
   enemyAircraft: EnemyAircraft;
   opponent: Opponent;
@@ -90,6 +100,7 @@ export interface Setup {
 }
 
 export const DEFAULT_SETUP: Setup = {
+  mode: "quick",
   aircraft: "f16c",
   enemyAircraft: "same",
   opponent: "basic-pursuit",
@@ -104,6 +115,7 @@ function pick<T extends string>(choices: readonly Choice<T>[], value: unknown, f
 /** Whatever was stored or typed into the address bar, made into something flyable. */
 export function readSetup(source: Record<string, unknown>): Setup {
   return {
+    mode: pick(MODES, source["mode"], DEFAULT_SETUP.mode),
     aircraft: pick(AIRCRAFT, source["jet"] ?? source["aircraft"], DEFAULT_SETUP.aircraft),
     enemyAircraft: pick(ENEMY_AIRCRAFT, source["enemy"] ?? source["enemyAircraft"], DEFAULT_SETUP.enemyAircraft),
     opponent: pick(OPPONENTS, source["opponent"], DEFAULT_SETUP.opponent),
@@ -116,6 +128,7 @@ export function setupFromSearch(search: string): Setup {
   const params = new URLSearchParams(search);
   const stored = loadSetup();
   return readSetup({
+    mode: stored.mode,
     jet: params.get("jet") ?? stored.aircraft,
     enemy: params.get("enemy") ?? stored.enemyAircraft,
     opponent: params.get("opponent") ?? stored.opponent,

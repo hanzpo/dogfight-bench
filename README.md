@@ -262,9 +262,13 @@ and marked accordingly.
 
 ## Online play
 
-Two people can fight each other from the home page: a quick match pairs you
-with whoever else is waiting, and "Invite a friend" makes a room with a link
-to send.
+The home page offers three ways to fly:
+
+- **Quick match** pairs you with whoever else is looking, and the home page
+  shows when someone is already waiting.
+- **With a friend** makes a private room with a code and a link to send. A
+  friend can also type the code into the home page.
+- **Training** is you against the AI.
 
 Each room is a Cloudflare Durable Object, so everyone in it reaches the same
 instance. That instance runs the same `DogfightSimulation` the game runs
@@ -283,9 +287,13 @@ again on top, and eases any difference into view rather than jumping to it.
   before the room needs them.
 - A round is sent once, when it is fired, since it flies the same everywhere
   from then on. A snapshot comes to about 4 KB, twenty times a second.
-- A tab that reconnects gets its seat back, even mid-fight. Leaving
-  mid-fight concedes, and a player the room hasn't heard from in 15 seconds
-  is let go.
+- A dropped connection doesn't end anything. The room holds the seat for
+  20 seconds, with the jet flying on, and the page reconnects on its own. The
+  same tab, by its session, takes the seat back, even mid-fight. Leaving
+  through the page gives the seat up at once, and in a fight that concedes.
+- Quick match queues one waiting player at a time. A player still searching
+  asks again every 20 seconds, so the queue never forgets them, and two
+  searchers who ended up in separate rooms are brought together.
 
 `test/online.test.ts` runs whole matches in memory over a simulated network
 with latency and jitter. It checks that your own jet is predicted to within

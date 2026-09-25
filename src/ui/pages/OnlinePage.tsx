@@ -1,34 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, Copy, List } from "@phosphor-icons/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AircraftPicker } from "../components/AircraftPicker";
 import { AttractBackdrop } from "../components/AttractBackdrop";
 import { ChoiceGroup } from "../components/ChoiceGroup";
-import { Dialog } from "../components/Dialog";
-import { FlightDisplay } from "../components/FlightDisplay";
-import { Silhouette } from "../components/Silhouette";
-import { TacticalOverlay } from "../components/TacticalOverlay";
-import { ViewerCanvas } from "../components/ViewerCanvas";
-import { useAccount } from "../hooks/useAccount";
-import { useCockpitAudio } from "../hooks/useCockpitAudio";
-import { useOnlineMatch } from "../hooks/useOnlineMatch";
-import { loadCallsign, saveCallsign } from "../callsign";
-import { outcomeOf } from "../outcome";
+import { Countdown, Elapsed, PilotCard, Radar, RoomCode, Versus } from "../components/online/Lobby";
+import { OnlineFlight } from "../components/online/OnlineFlight";
+import { useOnlineMatch, type OnlineMatch } from "../hooks/useOnlineMatch";
+import { loadCallsign } from "../callsign";
 import { tabSession } from "../session";
-import { LOADOUTS, SCHEMES, loadSetup, saveSetup, type Choice } from "../setup";
-import type { ControlScheme } from "../input/pilot-input";
-import { isRoomCode, NAME_MAX, type LobbyPlayer } from "../../net/protocol";
-import { AIRFRAMES, airframe, type AirframeId } from "../../sim/airframes";
-import type { DogfightViewer, ViewMode } from "../../viewer";
+import { LOADOUTS, loadSetup, saveSetup } from "../setup";
+import { QUICK_STAY_MS } from "../../net/matchmaker";
+import { isRoomCode, SEATS } from "../../net/protocol";
+import { AIRFRAMES, type AirframeId } from "../../sim/airframes";
+import type { Loadout } from "../../sim/types";
 
-const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
-  { value: "chase", label: "Chase" },
-  { value: "cockpit", label: "Cockpit" },
-  { value: "track", label: "Target track" },
-  { value: "arena", label: "Arena" },
-  { value: "free", label: "Free look" },
-];
-const ZOOM_PER_WHEEL_PIXEL = 0.0012;
 const pendingCancels = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
@@ -58,6 +43,22 @@ function askForRoom(quick: boolean): Promise<string> {
   return code;
 }
 
+/** A plain panel over the backdrop, for the moments with nothing to choose: an error, a missing room. */
+function Notice({ title, children }: { title: string; children?: ReactNode }) {
+  const navigate = useNavigate();
+  return (
+    <main className="online-page">
+      <section className="online-panel" aria-live="polite">
+        <h1 className="online-title">{title}</h1>
+        {children}
+        <button type="button" onClick={() => navigate("/")}>
+          Back to the menu
+        </button>
+      </section>
+    </main>
+  );
+}
+
 /**
  * `/online`: asks for a room -- a fresh one to invite a friend to, or with
  * `?quick=1` a quick match -- and goes to it.
@@ -66,13 +67,17 @@ export function OnlineStartPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const quick = params.get("quick") === "1";
+  const weapons = params.get("weapons");
   const [error, setError] = useState<string>();
+  const [since] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
     askForRoom(quick)
       .then((code) => {
-        if (!cancelled) navigate(`/online/${code}${quick ? "?quick=1" : ""}`, { replace: true });
+        if (cancelled) return;
+        const passOn = new URLSearchParams(quick ? { quick: "1" } : weapons ? { weapons } : {});
+        navigate(`/online/${code}${passOn.size ? `?${passOn}` : ""}`, { replace: true });
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -80,23 +85,16 @@ export function OnlineStartPage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, quick]);
+  }, [navigate, quick, weapons]);
 
-  return (
-    <main className="online-page">
-      <section className="online-panel" aria-live="polite">
-        {error ? (
-          <>
-            <h1 className="online-title">Couldn't reach the server</h1>
-            <p className="online-note">{error}</p>
-            <BackButton />
-          </>
-        ) : (
-          <h1 className="online-title">{quick ? "Finding a match…" : "Making a room…"}</h1>
-        )}
-      </section>
-    </main>
-  );
+  if (error) {
+    return (
+      <Notice title="Couldn't reach the server">
+        <p className="online-note">{error}</p>
+      </Notice>
+    );
+  }
+  return quick ? <Searching aircraft={loadSetup().aircraft} since={since} /> : <Notice title="Making a room…" />;
 }
 
 /** `/online/:code`: the room -- its lobby, the fight, and the result. */
@@ -105,25 +103,29 @@ export function OnlineRoomPage() {
   const code = rawCode.toUpperCase();
   const [params] = useSearchParams();
   const quick = params.get("quick") === "1";
+  const weapons = params.get("weapons");
   if (!isRoomCode(code)) {
     return (
-      <main className="online-page">
-        <section className="online-panel">
-          <h1 className="online-title">No such room</h1>
-          <p className="online-note">Room codes are five letters and numbers, like K7QMX.</p>
-          <BackButton />
-        </section>
-      </main>
+      <Notice title="No such room">
+        <p className="online-note">Room codes are five letters and numbers, like K7QMX.</p>
+      </Notice>
     );
   }
-  return <OnlineRoom key={code} code={code} quick={quick} />;
+  return (
+    <OnlineRoom
+      key={code}
+      code={code}
+      quick={quick}
+      weapons={LOADOUTS.some((choice) => choice.value === weapons) ? (weapons as Loadout) : undefined}
+    />
+  );
 }
 
-function OnlineRoom({ code, quick }: { code: string; quick: boolean }) {
+function OnlineRoom({ code, quick, weapons }: { code: string; quick: boolean; weapons?: Loadout }) {
   const navigate = useNavigate();
-  const account = useAccount();
   const [setup, setSetup] = useState(() => loadSetup());
-  const [name, setName] = useState(() => (account.user ? account.displayName : loadCallsign()));
+  const [name] = useState(() => loadCallsign());
+  const [arrived] = useState(() => Date.now());
   const match = useOnlineMatch({ code, quick, name, aircraft: setup.aircraft, scheme: setup.scheme });
   const { lobby, seat } = match;
 
@@ -144,345 +146,275 @@ function OnlineRoom({ code, quick }: { code: string; quick: boolean }) {
     };
   }, [code, quick]);
 
+  // Still looking: stay in the quick-match queue, and go to whoever else is waiting if there is someone.
+  const searching = quick && lobby !== undefined && lobby.players.length < 2 && lobby.phase === "lobby";
+  useEffect(() => {
+    if (!searching) return;
+    const stay = () =>
+      fetch(`/api/online/quick?session=${encodeURIComponent(tabSession())}&code=${code}`, { method: "POST" })
+        .then((response) => (response.ok ? (response.json() as Promise<{ code: string }>) : undefined))
+        .then((answer) => {
+          if (answer && answer.code !== code) navigate(`/online/${answer.code}?quick=1`, { replace: true });
+        })
+        .catch(() => {});
+    const timer = setInterval(stay, QUICK_STAY_MS);
+    return () => clearInterval(timer);
+  }, [searching, code, navigate]);
+
+  // The weapons chosen on the home page, set once the room says we are its host.
+  const weaponsSet = useRef(false);
+  const { setWeapons } = match;
+  useEffect(() => {
+    if (weaponsSet.current || !weapons || !lobby || lobby.host !== lobby.you) return;
+    weaponsSet.current = true;
+    if (lobby.weapons !== weapons) setWeapons(weapons);
+  }, [lobby, weapons, setWeapons]);
+
+  const leave = () => navigate("/");
   const phase = lobby?.phase;
-  const inFight = phase === "flying" || (phase === "finished" && match.state !== undefined);
 
   if (match.status === "closed" && !lobby) {
     return (
-      <main className="online-page">
-        <section className="online-panel">
-          <h1 className="online-title">Couldn't join</h1>
-          <p className="online-note">{match.error ?? "The connection closed."}</p>
-          <BackButton />
-        </section>
-      </main>
+      <Notice title="Couldn't join">
+        <p className="online-note">{match.error ?? "The connection closed."}</p>
+      </Notice>
     );
   }
-
-  if (inFight && seat) return <OnlineFlight match={match} seat={seat} onLeave={() => navigate("/")} />;
+  if (match.status === "closed" && phase !== "finished") {
+    return (
+      <Notice title="Lost the connection">
+        <p className="online-note">The room keeps your seat for a few seconds; trying again takes it back if it's still there.</p>
+        <button type="button" className="primary" onClick={() => location.reload()}>
+          Try again
+        </button>
+      </Notice>
+    );
+  }
+  if ((phase === "flying" || (phase === "finished" && match.state)) && seat) {
+    return <OnlineFlight match={match} seat={seat} onLeave={leave} />;
+  }
 
   const you = lobby?.players.find((player) => player.seat === seat);
   const other = lobby?.players.find((player) => player.seat !== seat);
-  const host = lobby?.host === seat;
+  const mine = you?.airframe ?? setup.aircraft;
+
+  if (quick && !other) {
+    return <Searching aircraft={mine} since={arrived} name={you?.name} ping={match.pingMs} onCancel={leave} />;
+  }
 
   return (
     <>
-      <AttractBackdrop blue={you?.airframe ?? setup.aircraft} red={other?.airframe ?? you?.airframe ?? setup.aircraft} />
+      <AttractBackdrop blue={mine} red={other?.airframe ?? mine} />
       <div className="home-shade" aria-hidden />
       <main className="online-page">
-        <section className="online-panel online-lobby" aria-labelledby="lobby-title">
-          <div className="online-head">
-            <h1 id="lobby-title" className="online-title">
-              {quick ? "Quick match" : "Online match"}
-            </h1>
-            {match.pingMs !== undefined && match.status === "open" ? (
-              <span className="online-ping" title="Round trip to the server">
-                {match.pingMs} ms
-              </span>
-            ) : null}
-          </div>
-
-          {quick ? null : <Invite code={code} />}
-
-          <ol className="online-seats" aria-label="Pilots">
-            {[you, other].map((player, index) =>
-              player ? (
-                <Seat key={player.seat} player={player} you={player.seat === seat} host={player.seat === lobby?.host} />
-              ) : (
-                <li key={`empty-${index}`} className="online-seat empty">
-                  {index === 0 ? "Connecting…" : quick ? "Looking for an opponent…" : "Waiting for someone to join…"}
-                </li>
-              ),
-            )}
-          </ol>
-
-          <label className="online-name">
-            <span>Callsign</span>
-            <input
-              value={name}
-              maxLength={NAME_MAX}
-              onChange={(changed) => setName(changed.target.value)}
-              onBlur={() => {
-                const trimmed = name.trim();
-                if (!trimmed) return;
-                if (!account.user) saveCallsign(trimmed);
-                match.rename(trimmed, you?.airframe ?? setup.aircraft);
-              }}
-            />
-          </label>
-
-          <AircraftPicker
-            value={you?.airframe ?? setup.aircraft}
-            onChange={(chosen: AirframeId) => {
+        {match.status === "reconnecting" ? (
+          <p className="online-lost" role="status">
+            Connection dropped. Reconnecting…
+          </p>
+        ) : null}
+        {quick ? (
+          <MatchFound match={match} onLeave={leave} />
+        ) : (
+          <PrivateRoom
+            code={code}
+            match={match}
+            onLeave={leave}
+            onChooseAircraft={(chosen) => {
               const next = { ...setup, aircraft: chosen };
               setSetup(next);
               saveSetup(next);
               match.chooseAircraft(chosen);
             }}
           />
+        )}
+      </main>
+    </>
+  );
+}
 
-          <div className="home-options">
-            <ChoiceGroup
-              legend={host ? "Weapons" : "Weapons · the host picks"}
-              name="weapons"
-              variant="segmented"
-              choices={LOADOUTS}
-              value={lobby?.weapons ?? "guns"}
-              onChange={(weapons) => host && match.setWeapons(weapons)}
-            />
-            <ChoiceGroup
-              legend="Controls"
-              name="controls"
-              variant="segmented"
-              choices={SCHEMES}
-              value={match.scheme}
-              onChange={(scheme: ControlScheme) => match.setScheme(scheme)}
-            />
-          </div>
-
-          {phase === "countdown" ? (
-            <Countdown ms={lobby?.countdownMs} />
-          ) : quick ? null : (
-            <button
-              className={`large home-fly ${you?.ready ? "" : "primary"}`}
-              onClick={() => match.setReady(!you?.ready)}
-              disabled={!you}
-            >
-              {you?.ready ? (other ? `Waiting for ${other.name}…` : "Ready · waiting for an opponent") : "Ready"}
-            </button>
-          )}
-
-          <Link className="online-leave" to="/">
-            Leave
-          </Link>
+/** Quick match, alone in the room: the radar sweeps until someone else looks too. */
+function Searching({
+  aircraft,
+  since,
+  name,
+  ping,
+  onCancel,
+}: {
+  aircraft: AirframeId;
+  since: number;
+  name?: string;
+  ping?: number;
+  onCancel?: () => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <AttractBackdrop blue={aircraft} red={aircraft} />
+      <div className="home-shade" aria-hidden />
+      <main className="online-page">
+        <section className="online-panel searching" aria-live="polite" aria-labelledby="searching-title">
+          <Radar airframe={aircraft} />
+          <h1 id="searching-title" className="online-title">
+            Looking for an opponent
+          </h1>
+          <p className="searching-meta">
+            <Elapsed since={since} />
+            {name ? ` · ${name}` : ""} · {AIRFRAMES[aircraft].name} · Guns only
+            {ping !== undefined ? ` · ${ping} ms` : ""}
+          </p>
+          <p className="online-note">
+            You'll be paired with the next pilot who looks. Keep this page open; the fight starts on its own.
+          </p>
+          <button type="button" onClick={onCancel ?? (() => navigate("/"))}>
+            Cancel
+          </button>
         </section>
       </main>
     </>
   );
 }
 
-function BackButton() {
-  const navigate = useNavigate();
+/** Quick match, paired: who you are about to fight, and the countdown to the merge. */
+function MatchFound({ match, onLeave }: { match: OnlineMatch; onLeave: () => void }) {
+  const { lobby, seat } = match;
+  const you = lobby?.players.find((player) => player.seat === seat);
+  const other = lobby?.players.find((player) => player.seat !== seat);
   return (
-    <button type="button" onClick={() => navigate("/")}>
-      Back
-    </button>
+    <section className="online-panel matchup" aria-live="polite" aria-labelledby="matchup-title">
+      <div className="online-head">
+        <h1 id="matchup-title" className="online-title">
+          Opponent found
+        </h1>
+        <Ping ms={match.pingMs} />
+      </div>
+      <Versus
+        left={<PilotCard player={you} you seat={seat ?? "blue-1"} />}
+        right={<PilotCard player={other} seat={other?.seat ?? "red-1"} />}
+        middle={lobby?.phase === "countdown" ? <Countdown ms={lobby.countdownMs} /> : undefined}
+      />
+      <p className="matchup-rules">Guns only · Head-on from eight kilometres</p>
+      <button type="button" className="quiet online-leave" onClick={onLeave}>
+        Leave
+      </button>
+    </section>
   );
 }
 
-function Invite({ code }: { code: string }) {
-  const link = `${location.origin}/online/${code}`;
-  const [copied, setCopied] = useState(false);
+/** A room for two friends: its code to share, both pilots, the host's weapons, and ready. */
+function PrivateRoom({
+  code,
+  match,
+  onLeave,
+  onChooseAircraft,
+}: {
+  code: string;
+  match: OnlineMatch;
+  onLeave: () => void;
+  onChooseAircraft: (airframe: AirframeId) => void;
+}) {
+  const { lobby, seat } = match;
+  const [picking, setPicking] = useState(false);
+  const you = lobby?.players.find((player) => player.seat === seat);
+  const other = lobby?.players.find((player) => player.seat !== seat);
+  const host = lobby !== undefined && lobby.host === seat;
+  const counting = lobby?.phase === "countdown";
+  const otherSeat = SEATS.find((candidate) => candidate !== seat) ?? "red-1";
+
   return (
-    <div className="online-invite">
-      <span className="online-invite-label">Send this link to a friend</span>
-      <div className="online-invite-row">
-        <code className="online-invite-link">{link}</code>
+    <section className="online-panel room" aria-labelledby="room-title">
+      <div className="online-head">
+        <h1 id="room-title" className="online-title">
+          Private room
+        </h1>
+        <Ping ms={match.pingMs} />
+      </div>
+
+      {other ? null : <RoomCode code={code} />}
+
+      <Versus
+        left={
+          <PilotCard
+            player={you}
+            you
+            host={host}
+            seat={seat ?? "blue-1"}
+            action={
+              counting || !you ? null : (
+                <button
+                  type="button"
+                  className="quiet pilot-change"
+                  onClick={() => setPicking((open) => !open)}
+                  aria-expanded={picking}
+                >
+                  {picking ? "Done" : "Change jet"}
+                </button>
+              )
+            }
+          />
+        }
+        right={
+          <PilotCard
+            player={other}
+            host={other !== undefined && lobby?.host === other.seat}
+            seat={otherSeat}
+            placeholder={
+              <>
+                Waiting for your friend
+                <span className="pilot-waiting-hint">Send them the link or the code</span>
+              </>
+            }
+          />
+        }
+        middle={counting ? <Countdown ms={lobby?.countdownMs} /> : undefined}
+      />
+
+      {picking && !counting ? <AircraftPicker value={you?.airframe ?? "f16c"} onChange={onChooseAircraft} /> : null}
+
+      {host && !counting ? (
+        <ChoiceGroup
+          legend="Weapons"
+          name="weapons"
+          variant="segmented"
+          choices={LOADOUTS}
+          value={lobby?.weapons ?? "guns"}
+          onChange={(weapons) => match.setWeapons(weapons)}
+        />
+      ) : (
+        <p className="room-rules">
+          {LOADOUTS.find((choice) => choice.value === lobby?.weapons)?.label ?? "Guns only"}
+          {host ? "" : " · chosen by the host"}
+        </p>
+      )}
+
+      {counting ? null : (
         <button
           type="button"
-          className="quiet"
-          onClick={() => {
-            void navigator.clipboard?.writeText(link).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1_500);
-            });
-          }}
-          aria-label="Copy the invite link"
+          className={`large home-fly${you?.ready ? "" : " primary"}`}
+          onClick={() => match.setReady(!you?.ready)}
+          disabled={!you}
         >
-          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-          {copied ? "Copied" : "Copy"}
+          {you?.ready
+            ? other
+              ? `Ready · waiting for ${other.name}`
+              : "Ready · waiting for your friend"
+            : other?.ready
+              ? `${other.name} is ready. Ready up`
+              : "Ready"}
         </button>
-      </div>
-    </div>
-  );
-}
+      )}
 
-function Seat({ player, you, host }: { player: LobbyPlayer; you: boolean; host: boolean }) {
-  return (
-    <li className={`online-seat${player.ready ? " ready" : ""}`}>
-      <Silhouette id={player.airframe} className="online-seat-jet" />
-      <span className="online-seat-name">
-        {player.name}
-        {you ? <span className="online-seat-tag"> · you</span> : null}
-        {host ? <span className="online-seat-tag"> · host</span> : null}
-      </span>
-      <span className="online-seat-aircraft">{AIRFRAMES[player.airframe].name}</span>
-      <span className="online-seat-state">{player.ready ? "Ready" : "Not ready"}</span>
-    </li>
-  );
-}
-
-function Countdown({ ms }: { ms: number | undefined }) {
-  const [left, setLeft] = useState(ms ?? 3_000);
-  const started = useRef(performance.now());
-  useEffect(() => {
-    started.current = performance.now();
-    setLeft(ms ?? 3_000);
-    const timer = setInterval(() => setLeft(Math.max(0, (ms ?? 3_000) - (performance.now() - started.current))), 100);
-    return () => clearInterval(timer);
-  }, [ms]);
-  return (
-    <p className="online-countdown" role="status">
-      Merging in {Math.max(1, Math.ceil(left / 1000))}
-    </p>
-  );
-}
-
-function OnlineFlight({
-  match,
-  seat,
-  onLeave,
-}: {
-  match: ReturnType<typeof useOnlineMatch>;
-  seat: string;
-  onLeave: () => void;
-}) {
-  const viewer = useRef<DogfightViewer>(undefined);
-  const [view, setView] = useState<ViewMode>("chase");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const finished = match.lobby?.phase === "finished";
-  const you = match.lobby?.players.find((player) => player.seat === seat);
-  const other = match.lobby?.players.find((player) => player.seat !== seat);
-  // Who it was, for the result, even after they have gone.
-  const opponentName = useRef<string>(undefined);
-  if (other) opponentName.current = other.name;
-
-  useCockpitAudio(match.liveStateRef, seat, !finished);
-
-  useEffect(() => viewer.current?.setView(view), [view]);
-  const pointerFlying = match.scheme === "mouse";
-  useEffect(() => viewer.current?.setPointerCaptured(pointerFlying), [pointerFlying]);
-
-  // The fight goes on while the menu is open: there is no pausing someone else's match.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.repeat || document.querySelector("dialog[open]")) return;
-      if (event.code === "Escape" || event.code === "KeyP") {
-        event.preventDefault();
-        if (!finished) setMenuOpen(true);
-      } else if (event.code === "KeyV") {
-        setView((current) => VIEWS[(VIEWS.findIndex((entry) => entry.value === current) + 1) % VIEWS.length]!.value);
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [finished]);
-
-  useEffect(() => {
-    if (finished) match.inputRef.current.releasePointerLock();
-  }, [finished, match.inputRef]);
-
-  useEffect(() => {
-    let frame = 0;
-    const orbit = () => {
-      const instance = viewer.current;
-      if (instance) {
-        const delta = match.inputRef.current.consumeViewDelta();
-        if (delta.orbitX || delta.orbitY) instance.orbitBy(delta.orbitX, delta.orbitY);
-        if (delta.zoom) instance.zoomBy(Math.exp(delta.zoom * ZOOM_PER_WHEEL_PIXEL));
-      }
-      frame = requestAnimationFrame(orbit);
-    };
-    frame = requestAnimationFrame(orbit);
-    return () => cancelAnimationFrame(frame);
-  }, [match.inputRef]);
-
-  const resume = useCallback(() => {
-    setMenuOpen(false);
-    (document.activeElement as HTMLElement | null)?.blur();
-    if (match.scheme === "mouse") void match.inputRef.current.requestPointerLock();
-  }, [match.scheme, match.inputRef]);
-
-  const outcome = useMemo(
-    () => (finished && match.state ? outcomeOf(match.state, seat) : undefined),
-    [finished, match.state, seat],
-  );
-  const jets = match.state?.aircraft.map((aircraft) => airframe(aircraft.airframe).name) ?? [];
-
-  return (
-    <div className="game">
-      <ViewerCanvas
-        snapshotRef={match.snapshotRef}
-        followId={seat}
-        onReady={(instance) => {
-          viewer.current = instance;
-          instance.setView(view);
-          instance.setPointerCaptured(pointerFlying);
-        }}
-      />
-      <FlightDisplay stateRef={match.liveStateRef} viewerRef={viewer} followId={seat} detailsOpen={false} />
-      <TacticalOverlay stateRef={match.liveStateRef} viewerRef={viewer} followId={seat} />
-
-      <button className="hud-menu" onClick={() => setMenuOpen(true)} aria-label="Menu (Esc)" title="Menu (Esc)">
-        <List aria-hidden />
+      {other ? <p className="room-code-small">Room {code}</p> : null}
+      <button type="button" className="quiet online-leave" onClick={onLeave}>
+        Leave room
       </button>
-      {match.pingMs !== undefined ? <span className="online-ping in-flight">{match.pingMs} ms</span> : null}
-      {match.status === "closed" && !finished ? (
-        <p className="online-lost" role="alert">
-          Connection lost
-        </p>
-      ) : null}
+    </section>
+  );
+}
 
-      {pointerFlying && match.canCapturePointer && !menuOpen && !finished ? (
-        <button className="capture-hint" onClick={() => void match.inputRef.current.requestPointerLock()}>
-          Click to fly with the mouse
-        </button>
-      ) : null}
-
-      <Dialog open={menuOpen} onClose={resume} title="Menu" description="The fight carries on while this is open." className="menu">
-        <div className="menu-primary">
-          <button className="primary large" onClick={resume} autoFocus>
-            Back to the fight
-          </button>
-          <button className="large" onClick={onLeave}>
-            Leave match
-          </button>
-        </div>
-        <ChoiceGroup
-          legend="Controls"
-          name="controls"
-          choices={SCHEMES}
-          value={match.scheme}
-          onChange={(scheme: ControlScheme) => match.setScheme(scheme)}
-        />
-      </Dialog>
-
-      <Dialog
-        open={outcome !== undefined}
-        onClose={onLeave}
-        title={outcome?.headline ?? ""}
-        description={outcome?.reason}
-        className={`results results-${outcome?.verdict ?? "draw"}`}
-        dismissible={false}
-      >
-        <p className="results-matchup">
-          {you?.name ?? "You"} vs {opponentName.current ?? "—"} · {jets.join(" vs ")}
-        </p>
-        <dl className="results-stats">
-          {outcome?.stats.map((stat) => (
-            <div key={stat.label}>
-              <dt>{stat.label}</dt>
-              <dd>{stat.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="dialog-actions">
-          {other ? (
-            <>
-              <button className={`large ${you?.ready ? "" : "primary"}`} onClick={() => match.setReady(!you?.ready)} autoFocus>
-                {you?.ready ? `Waiting for ${other.name}…` : other.ready ? `${other.name} wants a rematch` : "Rematch"}
-              </button>
-              <button className="quiet" onClick={onLeave}>
-                Leave
-              </button>
-            </>
-          ) : (
-            <button className="primary large" onClick={onLeave} autoFocus>
-              Back to the menu
-            </button>
-          )}
-        </div>
-      </Dialog>
-    </div>
+function Ping({ ms }: { ms?: number }) {
+  return ms === undefined ? null : (
+    <span className="online-ping" title="Round trip to the server">
+      {ms} ms
+    </span>
   );
 }
