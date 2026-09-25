@@ -10,20 +10,14 @@ import { TacticalOverlay } from "../components/TacticalOverlay";
 import { ViewerCanvas } from "../components/ViewerCanvas";
 import { useCockpitAudio } from "../hooks/useCockpitAudio";
 import { useLiveMatch } from "../hooks/useLiveMatch";
-import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup, type Choice } from "../setup";
+import { VIEWS, useFlightView } from "../hooks/useFlightView";
+import { SCHEMES, introSeen, markIntroSeen, setupFromSearch, toMatchSetup } from "../setup";
 import type { ControlScheme } from "../input/pilot-input";
-import type { DogfightViewer, ViewMode } from "../../viewer";
+import type { DogfightViewer } from "../../viewer";
 import type { ReplayFile } from "../../sim/replay";
 import { airframe } from "../../sim/airframes";
 import { outcomeOf } from "../outcome";
 
-const VIEWS: ReadonlyArray<Choice<ViewMode>> = [
-  { value: "chase", label: "Chase" },
-  { value: "cockpit", label: "Cockpit" },
-  { value: "track", label: "Target track" },
-  { value: "arena", label: "Arena" },
-  { value: "free", label: "Free look" },
-];
 
 const PLAYER = "blue-1";
 /** How far back an instant replay starts: enough to see the kill set up. */
@@ -34,12 +28,7 @@ interface Watching {
   startAt: number;
   from: "menu" | "results";
 }
-const ZOOM_PER_WHEEL_PIXEL = 0.0012;
 
-/** Keys the page answers itself, so they are not read while typing into a dialog. */
-function typingInto(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName));
-}
 
 export function GamePage() {
   const location = useLocation();
@@ -48,7 +37,6 @@ export function GamePage() {
   const match = useLiveMatch(toMatchSetup(setup));
   const viewer = useRef<DogfightViewer>(undefined);
 
-  const [view, setView] = useState<ViewMode>("chase");
   const [introOpen, setIntroOpen] = useState(() => !introSeen());
   const [menuOpen, setMenuOpen] = useState(false);
   const [watching, setWatching] = useState<Watching>();
@@ -71,6 +59,14 @@ export function GamePage() {
   }, []);
   const finished = match.state?.finished === true;
   const holding = introOpen || menuOpen || watching !== undefined;
+  const openMenu = useCallback(() => setMenuOpen(true), []);
+  const { view, viewLabel } = useFlightView({
+    viewerRef: viewer,
+    inputRef: match.inputRef,
+    enabled: watching === undefined,
+    menu: !finished,
+    onMenu: openMenu,
+  });
 
   useCockpitAudio(match.liveStateRef, PLAYER, !holding && !finished);
 
@@ -81,9 +77,6 @@ export function GamePage() {
     if (paused !== holding) setPaused(holding);
   }, [holding, paused, setPaused]);
 
-  useEffect(() => {
-    viewer.current?.setView(view);
-  }, [view]);
 
   const pointerFlying = match.scheme === "mouse";
   useEffect(() => {
@@ -103,55 +96,12 @@ export function GamePage() {
     (document.activeElement as HTMLElement | null)?.blur();
   }, []);
 
-  // Esc opens the menu and V changes the camera. Escape inside an open dialog
-  // is the dialog's own, which closes it.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.repeat || watching || typingInto(event.target) || document.querySelector("dialog[open]")) return;
-      if (event.code === "Escape" || event.code === "KeyP") {
-        // Otherwise the browser reads this same Escape as a request to close
-        // the dialog it has just opened, and the menu flashes shut.
-        event.preventDefault();
-        if (!finished) setMenuOpen(true);
-      } else if (event.code === "KeyV") {
-        setView((current) => VIEWS[(VIEWS.findIndex((entry) => entry.value === current) + 1) % VIEWS.length]!.value);
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, [finished, watching]);
 
-  // The browser takes Escape for itself to release a captured mouse, so the
-  // page never hears it; losing the capture mid-flight is the same request.
-  useEffect(() => {
-    let wasLocked = false;
-    const changed = () => {
-      const locked = document.pointerLockElement !== null;
-      if (wasLocked && !locked && !finished && !watching && !document.querySelector("dialog[open]")) setMenuOpen(true);
-      wasLocked = locked;
-    };
-    document.addEventListener("pointerlockchange", changed);
-    return () => document.removeEventListener("pointerlockchange", changed);
-  }, [finished, watching]);
 
   useEffect(() => {
     if (finished) match.inputRef.current.releasePointerLock();
   }, [finished, match.inputRef]);
 
-  useEffect(() => {
-    let frame = 0;
-    const orbit = () => {
-      const instance = viewer.current;
-      if (instance) {
-        const delta = match.inputRef.current.consumeViewDelta();
-        if (delta.orbitX || delta.orbitY) instance.orbitBy(delta.orbitX, delta.orbitY);
-        if (delta.zoom) instance.zoomBy(Math.exp(delta.zoom * ZOOM_PER_WHEEL_PIXEL));
-      }
-      frame = requestAnimationFrame(orbit);
-    };
-    frame = requestAnimationFrame(orbit);
-    return () => cancelAnimationFrame(frame);
-  }, [match.inputRef]);
 
   const watch = (from: Watching["from"]) => {
     const file = match.replaySoFar();
@@ -174,7 +124,6 @@ export function GamePage() {
   const outcome = finished && match.state ? outcomeOf(match.state, PLAYER) : undefined;
   const jets = match.state?.aircraft.map((aircraft) => airframe(aircraft.airframe).name) ?? [];
   const matchup = jets.length === 2 ? `${jets[0]} vs ${jets[1]}` : "";
-  const viewLabel = VIEWS.find((entry) => entry.value === view)?.label ?? "";
 
   if (watching) {
     return (

@@ -10,15 +10,7 @@ import { Random, mixSeed } from "./random";
 import { createNeutralMerge } from "./scenario";
 import { terrainHeight } from "./terrain";
 import { observationFor } from "./telemetry";
-import {
-  packRounds,
-  reviveAircraft,
-  reviveFlares,
-  reviveMissiles,
-  toPlain,
-  unpackRounds,
-  type SimSnapshot,
-} from "./snapshot";
+import { fromPlain, packRounds, toPlain, unpackRounds, type SimSnapshot } from "./snapshot";
 import type { AircraftState, MatchState, ProjectileState, ScenarioConfig, SimEvent } from "./types";
 
 const BOUNDARY_GRACE_S = 5;
@@ -476,9 +468,9 @@ export class DogfightSimulation {
     state.finished = snapshot.finished;
     state.winnerId = snapshot.winnerId;
     state.finishReason = snapshot.finishReason;
-    state.aircraft = reviveAircraft(snapshot.aircraft);
-    state.missiles = reviveMissiles(snapshot.missiles);
-    state.flares = reviveFlares(snapshot.flares);
+    state.aircraft = snapshot.aircraft.map((plain) => fromPlain<AircraftState>(plain));
+    state.missiles = snapshot.missiles.map((plain) => fromPlain<MatchState["missiles"][number]>(plain));
+    state.flares = snapshot.flares.map((plain) => fromPlain<MatchState["flares"][number]>(plain));
     state.projectiles = rounds
       ? rounds.map((round) => ({
           ...round,

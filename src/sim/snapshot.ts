@@ -1,5 +1,5 @@
 import { Quaternion, Vector3 } from "three";
-import type { AircraftState, FlareState, MissileState, ProjectileState } from "./types";
+import type { AircraftState, ProjectileState } from "./types";
 
 /**
  * A simulation frozen at one tick, in a form that survives JSON: everything a
@@ -115,16 +115,4 @@ export function unpackRounds(packed: string, aircraft: readonly AircraftState[])
     });
   }
   return rounds;
-}
-
-export function reviveAircraft(plain: unknown[]): AircraftState[] {
-  return plain.map((entry) => fromPlain<AircraftState>(entry));
-}
-
-export function reviveMissiles(plain: unknown[]): MissileState[] {
-  return plain.map((entry) => fromPlain<MissileState>(entry));
-}
-
-export function reviveFlares(plain: unknown[]): FlareState[] {
-  return plain.map((entry) => fromPlain<FlareState>(entry));
 }
